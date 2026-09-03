@@ -1,0 +1,76 @@
+version: '3'
+
+tasks:
+  default:
+    desc: List the available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  install:
+    desc: Install Node dependencies
+    cmds:
+      - npm install
+
+  dev:
+    desc: Run the Tauri desktop app in development mode
+    deps: [install]
+    interactive: true
+    cmds:
+      - npm run tauri dev
+
+  dev:web:
+    desc: Run only the Vite web layer, without the Tauri shell
+    deps: [install]
+    interactive: true
+    cmds:
+      - npm run dev
+
+  build:
+    desc: Build the Tauri desktop bundle
+    deps: [install]
+    cmds:
+      - npm run tauri build
+
+  build:web:
+    desc: Build only the web assets
+    deps: [install]
+    cmds:
+      - npm run build
+
+  preview:
+    desc: Preview the built web assets
+    deps: [build:web]
+    interactive: true
+    cmds:
+      - npm run preview
+
+  typecheck:
+    desc: Type-check the frontend without emitting output
+    deps: [install]
+    cmds:
+      - npx tsc --noEmit
+
+  rust:check:
+    desc: Type-check the Rust side of the Tauri app
+    dir: src-tauri
+    cmds:
+      - cargo check
+
+  rust:fmt:
+    desc: Format the Rust sources
+    dir: src-tauri
+    cmds:
+      - cargo fmt
+
+  check:
+    desc: Run every static check (TypeScript + Rust)
+    cmds:
+      - task: typecheck
+      - task: rust:check
+
+  clean:
+    desc: Remove build output and installed dependencies
+    cmds:
+      - rm -rf dist node_modules
+      - cargo clean --manifest-path src-tauri/Cargo.toml
