@@ -15,17 +15,27 @@
     "welcome": {
       "tagline": "Tu identidad, en tu poder y presentada cuando tú decides.",
       "create": "Crear una identidad",
-      "createHint": "Doce palabras y una identidad que solo tú puedes usar",
+      "createHint": "Una frase que solo tú tienes y una identidad que solo tú puedes usar",
       "signIn": "Ya tengo una frase",
       "signInHint": "Recupera una identidad con las palabras que anotaste"
     },
     "phrase": {
-      "title": "Tus doce palabras",
-      "intro": "Estas doce palabras son la identidad. Anótalas en este orden y guárdalas donde solo llegues tú.",
+      "title": {
+        "other": "Tus {count} palabras"
+      },
+      "length": "Cuántas palabras tiene la frase",
+      "lengthOption": {
+        "other": "{count} palabras"
+      },
+      "intro": {
+        "other": "Estas {count} palabras son la identidad. Anótalas en este orden y guárdalas donde solo llegues tú."
+      },
       "warning": "Nadie puede devolvértelas. Quien las tenga tiene la identidad, y perderlas es perderla.",
       "copy": "Copiar la frase",
       "copied": "Copiada",
-      "acknowledge": "He anotado las doce palabras y las tengo conmigo",
+      "acknowledge": {
+        "other": "He anotado las {count} palabras y las tengo conmigo"
+      },
       "continue": "Continuar",
       "restarted": "Esa no era la palabra que se pedía. Estas son palabras nuevas: las anteriores ya no valen, anótalas antes de seguir."
     },
@@ -34,11 +44,13 @@
       "intro": "Elige la palabra que va en cada posición, leyendo de la copia que guardas.",
       "progress": "{current} de {total}",
       "question": "¿Cuál es la palabra número {position}?",
-      "warning": "Un fallo empieza todo otra vez, con doce palabras nuevas que anotar."
+      "warning": {
+        "other": "Un fallo empieza todo otra vez, con {count} palabras nuevas que anotar."
+      }
     },
     "restore": {
       "title": "Tu frase",
-      "intro": "Escribe las doce palabras en el orden en que las anotaste.",
+      "intro": "Escribe tu frase en el orden en que la anotaste. Doce palabras o veinticuatro, las que tengas, y en el idioma en que la creaste.",
       "placeholder": "palabra uno, palabra dos, …",
       "submit": "Recuperar la identidad"
     },
@@ -47,14 +59,14 @@
     },
     "errors": {
       "identity_entropy_unavailable": "Este dispositivo no ha proporcionado la aleatoriedad con la que se crea una frase. No se ha creado nada.",
-      "identity_word_count": "Una frase tiene doce palabras.",
-      "identity_checksum": "Esas doce palabras no son una frase que esta cartera haya producido. Revisa la ortografía y el orden.",
+      "identity_word_count": "Una frase tiene doce palabras o veinticuatro.",
+      "identity_checksum": "Esas palabras no son una frase que esta cartera haya producido. Revisa la ortografía y el orden.",
       "identity_no_draft": "No había ninguna frase que confirmar. Empieza de nuevo.",
       "identity_unknown": "No se ha podido crear la identidad. Inténtalo otra vez."
     },
     "protect": {
       "title": "Elige un PIN",
-      "intro": "La identidad queda escrita en este dispositivo, cifrada, y estos dígitos son los que la abren. No hay nada que los restablezca: olvidar el PIN es empezar de nuevo desde tus doce palabras.",
+      "intro": "La identidad queda escrita en este dispositivo, cifrada, y estos dígitos son los que la abren. No hay nada que los restablezca: olvidar el PIN es empezar de nuevo desde tu frase.",
       "saving": "Protegiendo tu identidad"
     }
   },
@@ -300,15 +312,15 @@
     "replaceIntro": "La identidad no se toca. Solo cambian los dígitos que la abren.",
     "armSubtitle": "Tu PIN, una vez, y este dispositivo recibe una llave propia.",
     "attemptsLeft": {
-      "one": "Queda {count} intento. Cuando se acabe, la identidad se retira de este dispositivo y tus doce palabras son la vuelta atrás.",
-      "other": "Quedan {count} intentos. Cuando se acaben, la identidad se retira de este dispositivo y tus doce palabras son la vuelta atrás."
+      "one": "Queda {count} intento. Cuando se acabe, la identidad se retira de este dispositivo y tu frase es la vuelta atrás.",
+      "other": "Quedan {count} intentos. Cuando se acaben, la identidad se retira de este dispositivo y tu frase es la vuelta atrás."
     },
     "checking": "Comprobando tu PIN"
   },
   "vault": {
     "errors": {
       "vault_wrong_pin": "Ese no es el PIN.",
-      "vault_destroyed": "Ese era el último intento. La identidad se ha retirado de este dispositivo, y tus doce palabras son la vuelta atrás.",
+      "vault_destroyed": "Ese era el último intento. La identidad se ha retirado de este dispositivo, y tu frase es la vuelta atrás.",
       "vault_nothing": "En este dispositivo no hay ninguna identidad.",
       "vault_exists": "Este dispositivo ya tiene una identidad.",
       "vault_pin_length": "Un PIN son cuatro o seis dígitos.",
@@ -334,8 +346,8 @@
     "intro": "Léelo antes de hacerlo. No hay ningún soporte que pueda deshacerlo.",
     "identity": "La identidad se va. La tiene este dispositivo y nadie más: ni quien hace la cartera, ni la plataforma, ni una copia guardada en ningún sitio.",
     "credentials": "Lo que te hayan emitido se va con ella. Una credencial pertenece a la identidad, y una identidad que nadie puede demostrar es una credencial que nadie va a aceptar.",
-    "phrase": "Tus doce palabras son la única vuelta atrás. Con ellas la identidad vuelve tal cual, en este dispositivo o en otro. Sin ellas se ha perdido, y perdida es para siempre.",
-    "question": "¿Tienes tus doce palabras delante?",
+    "phrase": "Tu frase es la única vuelta atrás. Con ella la identidad vuelve tal cual, en este dispositivo o en otro. Sin ella se ha perdido, y perdida es para siempre.",
+    "question": "¿Tienes tu frase delante?",
     "waiting": "Podrás cerrar la sesión en {seconds} s",
     "slide": "Desliza para cerrar la sesión",
     "slideDone": "Cerrando la sesión",

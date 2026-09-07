@@ -25,7 +25,7 @@
 //! The tray is the other thing only a computer has, and it changes what closing
 //! the window means — see [`tray`].
 //!
-//! Making an identity is [`identity`]: twelve words, the key they derive, and the
+//! Making an identity is [`identity`]: the words, the key they derive, and the
 //! DID document that describes it.
 //!
 //! [`vault`] is what keeps that identity between launches, and what stands in

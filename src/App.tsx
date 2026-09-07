@@ -148,7 +148,7 @@ export default function App() {
   useIdle(autoLock, identity !== null, lockNow);
 
   // Signing out is the other thing entirely: the record itself goes, and the
-  // twelve words are what is left.
+  // the phrase is what is left.
   const signOut = useCallback(async () => {
     setRoute("home");
     setSignOutAsked(false);

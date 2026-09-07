@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { ChevronLeftIcon } from "../../components/icons";
-import { fill, useTranslations } from "../../i18n";
+import { fill, plural, useI18n } from "../../i18n";
 
 type ConfirmPhraseScreenProps = {
   words: string[];
@@ -35,12 +35,16 @@ function shuffled<T>(items: T[]): T[] {
 }
 
 /**
- * Three rounds, six words each.
+ * Three rounds, six words each, whatever the phrase is long.
  *
  * The five wrong options are other words from the same phrase, which is what
  * makes this a test of the copy somebody keeps rather than of their memory of
  * what the screen looked like: every option is a word they wrote down, and only
  * the paper says which one is number seven.
+ *
+ * **Three rounds either way.** A longer phrase is not a longer quiz: the check
+ * is that a copy exists and can be read from, and three positions out of
+ * twenty-four settle that as well as three out of twelve.
  */
 function rounds(words: string[]): Round[] {
   return shuffled(words.map((_, index) => index))
@@ -58,7 +62,7 @@ export function ConfirmPhraseScreen({
   onPassed,
   onFailed,
 }: ConfirmPhraseScreenProps) {
-  const t = useTranslations();
+  const { t, locale } = useI18n();
   const asked = useMemo(() => rounds(words), [words]);
   const [round, setRound] = useState(0);
 
@@ -109,7 +113,11 @@ export function ConfirmPhraseScreen({
         </div>
       </section>
 
-      <p className="card__note card__note--warning">{t.onboarding.confirm.warning}</p>
+      {/* What a wrong answer costs, counted in the words actually being
+          checked: a phrase of twenty-four is twenty-four to write down again. */}
+      <p className="card__note card__note--warning">
+        {plural(t.onboarding.confirm.warning, words.length, locale)}
+      </p>
     </div>
   );
 }

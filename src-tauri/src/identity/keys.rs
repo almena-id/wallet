@@ -1,8 +1,8 @@
 //! From the words to the key that governs the identity, and to how it is written.
 //!
 //! **The derivation path is frozen.** It decides which key a phrase produces, so
-//! changing it after anybody has created an identity would make the same twelve
-//! words open a different, empty one — with no error anywhere to explain it. It
+//! changing it after anybody has created an identity would make the same words
+//! open a different, empty one — with no error anywhere to explain it. It
 //! is SLIP-0010 over ed25519, one hardened step, pinned here against the same
 //! constants the rest of the platform is pinned to.
 
@@ -89,11 +89,17 @@ pub fn written(key: &[u8; 32]) -> String {
 }
 
 /// Walk a path of hardened SLIP-0010 steps down from the seed.
-fn walk(seed: &[u8; 64], path: &[u32]) -> [u8; 32] {
+///
+/// The seed arrives as a slice and not as the 64 bytes BIP-39 makes, which is
+/// the one concession this file makes to being checkable from outside itself:
+/// SLIP-0010 publishes its vectors for seeds of other lengths, and a walk that
+/// could not be handed one could only ever be tested against its own output.
+/// Everything above this still passes exactly 64 bytes.
+fn walk(seed: &[u8], path: &[u32]) -> [u8; 32] {
     // The master key and chain code. Both are worth as much as the seed:
     // whoever holds them derives every key these words will ever produce, so
     // each pair is wiped as the walk leaves it behind.
-    let master = Zeroizing::new(hmac_sha512(MASTER_KEY, &[seed.as_slice()]));
+    let master = Zeroizing::new(hmac_sha512(MASTER_KEY, &[seed]));
     let (mut key, mut chain) = split(*master);
 
     for index in path {
@@ -143,6 +149,109 @@ mod tests {
     const ONE: &str = "did:web:almena.id:v0000000000000001";
     const ANOTHER: &str = "did:web:almena.id:v0000000000000002";
 
+    /// **The vectors SLIP-0010 publishes for ed25519, both of them, every node.**
+    ///
+    /// This is what says the walk above is the standard's and not merely its
+    /// own. Everything else here asks whether the derivation is consistent with
+    /// itself — the same verifier always answering the same key, two verifiers
+    /// never sharing one — and a walk that split the HMAC output the wrong way
+    /// round would pass all of it while producing keys no other implementation
+    /// on earth arrives at. These twelve rows are the only thing that would
+    /// catch that.
+    ///
+    /// It matters because the words are the whole of the backup. If the day
+    /// comes that somebody has to recover an identity with something that is not
+    /// this binary — a rescue tool, a second implementation, an audit — that
+    /// works if and only if this walk is the published one.
+    ///
+    /// Each row is a seed, the hardened path below it, and what the standard
+    /// says that path derives. The public key carries SLIP-0010's leading
+    /// `00`, which is how that document writes an ed25519 public key and is not
+    /// part of the key.
+    const PUBLISHED: [(&str, &[u32], &str, &str); 12] = [
+        // Test vector 1, whose seed is deliberately not 64 bytes long.
+        (
+            VECTOR_ONE,
+            &[],
+            "2b4be7f19ee27bbf30c667b642d5f4aa69fd169872f8fc3059c08ebae2eb19e7",
+            "00a4b2856bfec510abab89753fac1ac0e1112364e7d250545963f135f2a33188ed",
+        ),
+        (
+            VECTOR_ONE,
+            &[0],
+            "68e0fe46dfb67e368c75379acec591dad19df3cde26e63b93a8e704f1dade7a3",
+            "008c8a13df77a28f3445213a0f432fde644acaa215fc72dcdf300d5efaa85d350c",
+        ),
+        (
+            VECTOR_ONE,
+            &[0, 1],
+            "b1d0bad404bf35da785a64ca1ac54b2617211d2777696fbffaf208f746ae84f2",
+            "001932a5270f335bed617d5b935c80aedb1a35bd9fc1e31acafd5372c30f5c1187",
+        ),
+        (
+            VECTOR_ONE,
+            &[0, 1, 2],
+            "92a5b23c0b8a99e37d07df3fb9966917f5d06e02ddbd909c7e184371463e9fc9",
+            "00ae98736566d30ed0e9d2f4486a64bc95740d89c7db33f52121f8ea8f76ff0fc1",
+        ),
+        (
+            VECTOR_ONE,
+            &[0, 1, 2, 2],
+            "30d1dc7e5fc04c31219ab25a27ae00b50f6fd66622f6e9c913253d6511d1e662",
+            "008abae2d66361c879b900d204ad2cc4984fa2aa344dd7ddc46007329ac76c429c",
+        ),
+        (
+            VECTOR_ONE,
+            &[0, 1, 2, 2, 1_000_000_000],
+            "8f94d394a8e8fd6b1bc2f3f49f5c47e385281d5c17e65324b0f62483e37e8793",
+            "003c24da049451555d51a7014a37337aa4e12d41e485abccfa46b47dfb2af54b7a",
+        ),
+        // Test vector 2, whose seed is 64 bytes, as a phrase produces.
+        (
+            VECTOR_TWO,
+            &[],
+            "171cb88b1b3c1db25add599712e36245d75bc65a1a5c9e18d76f9f2b1eab4012",
+            "008fe9693f8fa62a4305a140b9764c5ee01e455963744fe18204b4fb948249308a",
+        ),
+        (
+            VECTOR_TWO,
+            &[0],
+            "1559eb2bbec5790b0c65d8693e4d0875b1747f4970ae8b650486ed7470845635",
+            "0086fab68dcb57aa196c77c5f264f215a112c22a912c10d123b0d03c3c28ef1037",
+        ),
+        (
+            VECTOR_TWO,
+            &[0, 2_147_483_647],
+            "ea4f5bfe8694d8bb74b7b59404632fd5968b774ed545e810de9c32a4fb4192f4",
+            "005ba3b9ac6e90e83effcd25ac4e58a1365a9e35a3d3ae5eb07b9e4d90bcf7506d",
+        ),
+        (
+            VECTOR_TWO,
+            &[0, 2_147_483_647, 1],
+            "3757c7577170179c7868353ada796c839135b3d30554bbb74a4b1e4a5a58505c",
+            "002e66aa57069c86cc18249aecf5cb5a9cebbfd6fadeab056254763874a9352b45",
+        ),
+        (
+            VECTOR_TWO,
+            &[0, 2_147_483_647, 1, 2_147_483_646],
+            "5837736c89570de861ebc173b1086da4f505d4adb387c6a1b1342d5e4ac9ec72",
+            "00e33c0f7d81d843c572275f287498e8d408654fdf0d1e065b84e2e6f157aab09b",
+        ),
+        (
+            VECTOR_TWO,
+            &[0, 2_147_483_647, 1, 2_147_483_646, 2],
+            "551d333177df541ad876a60ea71f00447931c0a9da16f227c11ea080d7391b8d",
+            "0047150c75db263559a70d5778bf36abbab30fb061ad69f69ece61a72b0cfa4fc0",
+        ),
+    ];
+
+    /// The seed SLIP-0010's first ed25519 vector is derived from.
+    const VECTOR_ONE: &str = "000102030405060708090a0b0c0d0e0f";
+
+    /// The seed of the second, which is 64 bytes — the length a phrase makes.
+    const VECTOR_TWO: &str = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a2\
+9f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542";
+
     #[test]
     fn a_verifier_always_gets_the_same_key() {
         // A phrase restored on a new device has to arrive at the same
@@ -172,6 +281,24 @@ mod tests {
     }
 
     #[test]
+    fn the_walk_is_the_one_the_standard_publishes() {
+        for (seed, path, private, public) in PUBLISHED {
+            let derived = walk(&decode(seed), path);
+            assert_eq!(encode(&derived), private, "the private key at m{}", named(path));
+
+            // And that the key ed25519 builds from it is the one the standard
+            // says, which is what ties this walk to the identifier it ends at.
+            let verifying = SigningKey::from_bytes(&derived).verifying_key();
+            assert_eq!(
+                format!("00{}", encode(&verifying.to_bytes())),
+                public,
+                "the public key at m{}",
+                named(path)
+            );
+        }
+    }
+
+    #[test]
     fn the_path_spends_the_whole_digest() {
         // Anything less and two verifiers could land on one key, which would
         // hand them both the same person.
@@ -179,5 +306,21 @@ mod tests {
         assert_eq!(path.len(), SITE_STEPS);
         assert!(path.iter().all(|index| *index < 0x8000_0000));
         assert_ne!(path, site_path(ANOTHER));
+    }
+
+    /// A path as SLIP-0010 writes it, for a failure that says which node broke.
+    fn named(path: &[u32]) -> String {
+        path.iter().map(|index| format!("/{index}H")).collect()
+    }
+
+    fn decode(hex: &str) -> Vec<u8> {
+        (0..hex.len())
+            .step_by(2)
+            .map(|at| u8::from_str_radix(&hex[at..at + 2], 16).expect("hexadecimal"))
+            .collect()
+    }
+
+    fn encode(bytes: &[u8]) -> String {
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
     }
 }

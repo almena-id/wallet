@@ -157,8 +157,7 @@ export function ApprovalScreen({ link, onBack }: ApprovalScreenProps) {
 
           {/* Refusing on the left, accepting on the right, the same size. The
               one that gives something away is not the one under the thumb by
-              default, and neither is dressed as the obvious answer — see the
-              approval screen in `specs/sign-in.md`. */}
+              default, and neither is dressed as the obvious answer. */}
           <div className="button-row button-row--split">
             <button
               type="button"

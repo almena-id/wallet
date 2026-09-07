@@ -57,15 +57,51 @@ identity and the same twelve words start opening a different, empty one, with no
 error anywhere to explain it. `src-tauri/src/identity/keys.rs` says so at the
 top, and a test pins a phrase to the identifier it has to keep producing.
 
-**Nothing is stored yet.** Not the phrase, not the key, not the document — not
-on the device and not in the platform's API. Every launch starts at the welcome
-screen, and an identity lives as long as the session does. Where it should be
-kept, and what the API should be told, are the next decisions.
+**What is written down is the seed, and nothing else.** The words are the
+backup and the backup belongs to the person: a wallet that held them would hold
+something that can be read aloud, photographed off a screen or typed into
+somebody else's wallet. The seed derives every key this wallet will ever sign
+with, so keeping it is enough, and it cannot be turned back into words.
 
-Settings is a list of three places rather than a page of switches — **Appearance**,
+The seed is encrypted by a random data key, and that data key is wrapped twice:
+once by a key the PIN derives with Argon2id, and — where the platform has a
+secret store — once by the device, which is what lets a face open the wallet
+without the digits. Either wrap opens it and neither is the wallet, so a sensor
+that stops recognising somebody is not the end of an identity and a forgotten
+PIN is not either.
+
+The record carries its own version, cost parameters, salt and nonces, because a
+wallet installed over an older one has to read what that one wrote; a record
+from a newer wallet is refused by name rather than misread.
+
+Where it is kept is the platform's own secret store, named rather than guessed —
+Keychain on Apple platforms, the Credential Manager on Windows, the Secret
+Service on Linux. It is not chosen for secrecy alone, since the record is
+already encrypted, but for what it survives: a Keychain item outlives the app
+being deleted, so a wallet reinstalled on the same phone finds its identity
+where it left it.
+
+**Android has no store this side can reach**, so the record goes to the
+application's private storage instead. Reaching the Android Keystore needs a
+Kotlin bridge and a JNI symbol the wallet does not have yet; until it does, this
+is said out loud rather than implied.
+
+On Apple platforms the record is pinned to the device it was written on —
+`when-unlocked-this-device-only`, so it is in no backup and on no other phone —
+and the device key sits behind `kSecAccessControlUserPresence`, which means the
+prompt is the operating system asking, not a screen this wallet drew. One
+consequence worth knowing before it bites: a Keychain item belongs to the team
+and the bundle identifier together, so changing `APPLE_DEVELOPMENT_TEAM` or the
+identifier gives the next build a different access group and the record already
+on the phone becomes somebody else's. The way back is the phrase.
+
+Nothing about the identity is sent to the platform's API. `src-tauri/src/vault/`
+holds all of it.
+
+Settings is a list of places rather than a page of switches — **Appearance**,
 where the identity colour is picked from a row of the colours themselves and the
 mode is set to system, dark or light, **Permissions**, where what the device has
-granted is read back from the device itself and can be asked for, and
+granted is read back from the device itself and can be asked for,
 **Security**, which holds the lock and signing out, and **Development**, which holds
 what this build is and what it can do on the device it is running on.
 
@@ -85,12 +121,22 @@ It closes when the wallet leaves the screen — backgrounded on a phone, put awa
 on the tray on a computer, which the webview only learns because the Rust side
 says so — and opens with the keypad or the reader.
 
-**It guards a running session, not a stored one.** Nothing about the identity is
-written anywhere yet, so the lock lives in memory and dies with the process, like
-the identity behind it. When the identity gains somewhere to live, the lock moves
-with it: the hash belongs in the platform's keychain and needs a real key
-derivation, which `src-tauri/src/lock.rs` says at the top of the function that
-will have to change.
+**The lock is the record.** There is no PIN hash anywhere, because a PIN is
+right if and only if what it derives opens what was written down — so there is
+nothing stored to steal and compare against, and the check is a message
+authentication code rather than a comparison.
+
+**Every PIN goes through one door.** Exactly one function checks digits and it
+is the one that spends an attempt, out of ten, under a single lock — because a
+check that does not count is a wallet that can be guessed at forever through
+whichever screen forgot to count, and two answers arriving at once must not both
+start from nine attempts left.
+
+Argon2id is the whole of the protection on four digits, so its cost is written
+into the record rather than assumed: 64 MiB over three passes, about a third of
+a second on a mid-range phone, which is a wait somebody accepts once per launch
+and an attacker pays for every one of a million guesses. Raising it later must
+not lock out a wallet that was sealed with less.
 
 Biometrics are mobile only. Tauri's plugin covers Android and iOS; Windows Hello
 and Touch ID have no plugin, so on a computer the lock is the PIN alone and the
@@ -131,9 +177,25 @@ shows what arrived.
 
 **Nothing a link carries is acted on.** A link comes from outside — a page, a
 message, anything that can put a URL in front of somebody — and nothing outside
-gets to tell a wallet what to do with the identity it holds. What an
-`almena://` link may legitimately ask for is a decision that has not been made
-yet; until it is, the payload is shown and no more.
+gets to tell a wallet what to do with the identity it holds. A link that is not
+a sign-in request is shown and no more.
+
+`almena://signin?…` is the one thing the wallet knows how to answer, and it
+still decides nothing on its own. **The platform is pinned at build time**, not
+taken from the link: a wallet that followed whichever address a QR code named
+could be pointed at a stranger's server, and the person scanning would have no
+way to see the difference. The request has to sit under that platform, carry
+that platform's signature and still be in time; then who is asking is shown, and
+the answer goes out only when somebody says so. A scanned code takes the same
+road as a link — the camera is a way of typing a URL, not a second kind of
+trust.
+
+**The answer is signed with a key that belongs to that verifier alone**, derived
+from the digest of the verifier's own identifier. Every verifier is shown a
+different public key, and the only thing that knows they belong together is this
+device — nothing is stored to make that work, so the same phrase on a new phone
+derives exactly the same keys again. The identifier the key hangs off is the DID
+in the signed request, not a label anybody asserted in passing.
 
 Where each platform gets the scheme from, all of it generated from
 `plugins.deep-link` in `tauri.conf.json` at build time:
@@ -281,3 +343,10 @@ One quirk worth knowing: `icon.icns` comes out byte-different on every run
 because the Tauri CLI writes its entries in a random order. The image is the
 same — the entries and their sizes match — so a diff limited to that file after
 `task icons` can be dropped.
+
+## More
+
+- [CONTRIBUTING.md](CONTRIBUTING.md)
+- [SECURITY.md](SECURITY.md)
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- [LICENSE](LICENSE) — Apache-2.0

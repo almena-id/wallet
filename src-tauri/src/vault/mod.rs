@@ -1,11 +1,11 @@
 //! Keeping the identity between launches.
 //!
 //! **This is what makes it a wallet.** Before it existed the seed lived in this
-//! process and died with it, so every cold start asked for twelve words again —
+//! process and died with it, so every cold start asked for the phrase again —
 //! which taught people to keep the phrase somewhere quick to reach, the one
 //! place it must not be.
 //!
-//! What is written down is the seed and nothing else. The twelve words are the
+//! What is written down is the seed and nothing else. The words are the
 //! backup and the backup belongs to the person: a wallet that held them would
 //! hold something that can be read aloud, photographed off a screen or typed
 //! into somebody else's wallet, and would make the sentence every warning in the
@@ -342,7 +342,7 @@ pub fn vault_set_device<R: Runtime>(
 /// Takes the identity off the device.
 ///
 /// Signing out is this and nothing else: the record, the device key and the seed
-/// in memory all go, and the twelve words are what is left.
+/// in memory all go, and the phrase is what is left.
 #[tauri::command(async)]
 pub fn vault_destroy<R: Runtime>(
     app: tauri::AppHandle<R>,

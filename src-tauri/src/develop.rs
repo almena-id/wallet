@@ -496,7 +496,7 @@ mod tests {
     /// identifier used with it, and a single log line carrying both would
     /// rebuild that map inside a file designed to be handed to somebody else.
     const SECRETS: &[&str] = &[
-        // The twelve words, as a phrase and as the words somebody would grep.
+        // The phrase, whole and as the words somebody would grep for.
         "vessel harbour lantern quarry",
         "vessel",
         "harbour",

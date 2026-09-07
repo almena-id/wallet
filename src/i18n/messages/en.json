@@ -15,17 +15,27 @@
     "welcome": {
       "tagline": "Your identity, held by you and presented when you decide to.",
       "create": "Create an identity",
-      "createHint": "Twelve words, and an identity only you can use",
+      "createHint": "A phrase only you hold, and an identity only you can use",
       "signIn": "I already have a phrase",
       "signInHint": "Bring an identity back from the words you wrote down"
     },
     "phrase": {
-      "title": "Your twelve words",
-      "intro": "These twelve words are the identity. Write them down, in this order, and keep them somewhere only you reach.",
+      "title": {
+        "other": "Your {count} words"
+      },
+      "length": "How long the phrase is",
+      "lengthOption": {
+        "other": "{count} words"
+      },
+      "intro": {
+        "other": "These {count} words are the identity. Write them down, in this order, and keep them somewhere only you reach."
+      },
       "warning": "Nobody can give them back to you. Whoever has them has the identity, and losing them loses it.",
       "copy": "Copy the phrase",
       "copied": "Copied",
-      "acknowledge": "I have written the twelve words down and I have them with me",
+      "acknowledge": {
+        "other": "I have written the {count} words down and I have them with me"
+      },
       "continue": "Continue",
       "restarted": "That was not the word asked for. These are new words: the old ones are gone, so write these down before going on."
     },
@@ -34,11 +44,13 @@
       "intro": "Pick the word that goes in each position, reading from the copy you keep.",
       "progress": "{current} of {total}",
       "question": "Which word is number {position}?",
-      "warning": "One wrong answer starts the whole thing again, with twelve new words to write down."
+      "warning": {
+        "other": "One wrong answer starts the whole thing again, with {count} new words to write down."
+      }
     },
     "restore": {
       "title": "Your phrase",
-      "intro": "Write the twelve words in the order you wrote them down.",
+      "intro": "Write your phrase in the order you wrote it down. Twelve words or twenty-four, whichever you have — and in whichever language you made it.",
       "placeholder": "word one, word two, …",
       "submit": "Bring the identity back"
     },
@@ -47,14 +59,14 @@
     },
     "errors": {
       "identity_entropy_unavailable": "This device would not supply the randomness a phrase is made from. Nothing has been created.",
-      "identity_word_count": "A phrase has twelve words.",
-      "identity_checksum": "Those twelve words are not a phrase this wallet ever produced. Check the spelling and the order.",
+      "identity_word_count": "A phrase has twelve words or twenty-four.",
+      "identity_checksum": "Those words are not a phrase this wallet ever produced. Check the spelling and the order.",
       "identity_no_draft": "There was no phrase to confirm. Start again.",
       "identity_unknown": "The identity could not be made. Try again."
     },
     "protect": {
       "title": "Choose a PIN",
-      "intro": "The identity is written down on this device now, encrypted, and these digits are what open it. There is nothing that can reset them: forgetting the PIN means starting again from your twelve words.",
+      "intro": "The identity is written down on this device now, encrypted, and these digits are what open it. There is nothing that can reset them: forgetting the PIN means starting again from your phrase.",
       "saving": "Protecting your identity"
     }
   },
@@ -300,15 +312,15 @@
     "replaceIntro": "The identity itself is untouched. Only the digits that open it change.",
     "armSubtitle": "Your PIN, once, and this device is given a key of its own.",
     "attemptsLeft": {
-      "one": "{count} attempt left. When it is gone the identity is removed from this device, and your twelve words are the way back.",
-      "other": "{count} attempts left. When they are gone the identity is removed from this device, and your twelve words are the way back."
+      "one": "{count} attempt left. When it is gone the identity is removed from this device, and your phrase is the way back.",
+      "other": "{count} attempts left. When they are gone the identity is removed from this device, and your phrase is the way back."
     },
     "checking": "Checking your PIN"
   },
   "vault": {
     "errors": {
       "vault_wrong_pin": "That is not the PIN.",
-      "vault_destroyed": "That was the last attempt. The identity has been removed from this device, and your twelve words are the way back.",
+      "vault_destroyed": "That was the last attempt. The identity has been removed from this device, and your phrase is the way back.",
       "vault_nothing": "There is no identity on this device.",
       "vault_exists": "This device is already holding an identity.",
       "vault_pin_length": "A PIN is four or six digits.",
@@ -334,8 +346,8 @@
     "intro": "Read this before you do. There is no support line that can undo it.",
     "identity": "The identity goes. This device is holding it and nothing else is: not the wallet's makers, not the platform, not a backup somewhere.",
     "credentials": "Anything issued to it goes with it. A credential belongs to the identity, and an identity nobody can prove is a credential nobody will accept.",
-    "phrase": "Your twelve words are the only way back. With them the identity comes back exactly as it was, on this device or any other. Without them it is gone, and gone is permanent.",
-    "question": "Do you have your twelve words in front of you?",
+    "phrase": "Your phrase is the only way back. With it the identity comes back exactly as it was, on this device or any other. Without it it is gone, and gone is permanent.",
+    "question": "Do you have your phrase in front of you?",
     "waiting": "You can sign out in {seconds} s",
     "slide": "Slide to sign out",
     "slideDone": "Signing out",

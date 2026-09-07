@@ -4,11 +4,14 @@ import { BrandSpinner } from "../../components/BrandSpinner";
 import { useI18n } from "../../i18n";
 import {
   createIdentity,
+  DEFAULT_PHRASE_LENGTH,
   discardDraft,
   draftPhrase,
   errorCode,
+  PHRASE_LENGTHS,
   restoreIdentity,
   type Identity,
+  type PhraseLength,
 } from "../../identity";
 import { createVault, errorCode as vaultErrorCode } from "../../vault";
 import { PinSetup } from "../PinSetup";
@@ -36,14 +39,18 @@ type OnboardingProps = {
 };
 
 /**
- * The way in: make an identity from twelve new words, or bring one back from
- * twelve somebody already has.
+ * The way in: make an identity from new words, or bring one back from words
+ * somebody already has.
  */
 export function Onboarding({ onReady }: OnboardingProps) {
   const { t, locale } = useI18n();
   const [step, setStep] = useState<Step>({ name: "welcome" });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // How long the phrase being made is. It lives out here rather than in the
+  // step so the choice registers the instant it is tapped, while the words it
+  // asks for are still being made.
+  const [length, setLength] = useState<PhraseLength>(DEFAULT_PHRASE_LENGTH);
 
   const say = useCallback(
     (failure: unknown) => setError(t.onboarding.errors[errorCode(failure)]),
@@ -53,22 +60,44 @@ export function Onboarding({ onReady }: OnboardingProps) {
   const toWelcome = useCallback(() => {
     setError(null);
     discardDraft();
+    // The next identity starts from the default again: a length is a choice
+    // made about the phrase being written down, not a setting left behind.
+    setLength(DEFAULT_PHRASE_LENGTH);
     setStep({ name: "welcome" });
   }, []);
 
-  /** A fresh phrase, either the first one or the one a wrong answer earned. */
+  /**
+   * A fresh phrase: the first one, the one a wrong answer earned, or the one
+   * choosing the other length asks for.
+   *
+   * Failing back to the welcome screen is only right for the first: somebody
+   * who already has words in front of them and taps the other length should
+   * keep the ones they have if the new ones cannot be made.
+   */
   const startCreating = useCallback(
-    async (restarted: boolean) => {
+    async (chosen: PhraseLength, restarted: boolean, onFailure: Step) => {
       setError(null);
+      setLength(chosen);
       setBusy(true);
       try {
         // The wordlist follows the interface, so the words are ones this person
         // reads rather than ones they transcribe.
-        const words = await draftPhrase(locale);
+        const words = await draftPhrase(locale, chosen);
         setStep({ name: "phrase", words, restarted });
       } catch (failure) {
         say(failure);
-        setStep({ name: "welcome" });
+        setStep(onFailure);
+        // A length nothing was ever made at is not the length to go on offering:
+        // falling back to words that are still on the screen falls back to
+        // their length too, so the choice keeps describing what is in front of
+        // somebody rather than what was asked for and never arrived.
+        const shown =
+          onFailure.name === "phrase"
+            ? PHRASE_LENGTHS.find((option) => option === onFailure.words.length)
+            : undefined;
+        if (shown) {
+          setLength(shown);
+        }
       } finally {
         setBusy(false);
       }
@@ -132,7 +161,17 @@ export function Onboarding({ onReady }: OnboardingProps) {
       return (
         <PhraseScreen
           words={step.words}
+          length={length}
           restarted={step.restarted}
+          busy={busy}
+          // The words on screen are gone the moment the other length is asked
+          // for. Failing leaves this screen exactly as it is, with the reason
+          // for the failure under it.
+          onLength={(chosen) => {
+            if (chosen !== length && !busy) {
+              void startCreating(chosen, false, step);
+            }
+          }}
           onBack={toWelcome}
           onContinue={() => setStep({ name: "confirm", words: step.words })}
         />
@@ -147,9 +186,11 @@ export function Onboarding({ onReady }: OnboardingProps) {
           }}
           // A wrong answer ends this phrase. The one being shown next is new,
           // and has to be written down like the first.
+          // The new phrase is the length that was being written down: somebody
+          // who chose twenty-four is not quietly handed twelve for slipping.
           onFailed={() => {
             discardDraft();
-            void startCreating(true);
+            void startCreating(length, true, { name: "welcome" });
           }}
         />
       );
@@ -186,7 +227,7 @@ export function Onboarding({ onReady }: OnboardingProps) {
         <>
           <WelcomeScreen
             onCreate={() => {
-              void startCreating(false);
+              void startCreating(DEFAULT_PHRASE_LENGTH, false, { name: "welcome" });
             }}
             onSignIn={() => {
               setError(null);

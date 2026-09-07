@@ -1588,9 +1588,12 @@ html[data-camera-preview="true"] .app::before {
 /* ---------------------------------------------------------------- phrase */
 
 /*
- * Twelve words, numbered, in two columns on a phone and three where there is
- * room. The number is part of the word: a phrase written down out of order is
- * a phrase that opens nothing.
+ * The words, numbered, in two columns on a phone and three where there is room.
+ * The number is part of the word: a phrase written down out of order is a
+ * phrase that opens nothing.
+ *
+ * Twelve or twenty-four, and the grid takes either: the longer phrase is twelve
+ * more rows on a phone, which is a scroll and not a second layout.
  */
 
 .phrase {

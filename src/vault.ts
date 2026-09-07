@@ -89,7 +89,7 @@ export function setVaultDevice(enabled: boolean, pin?: string): Promise<VaultSta
   return invoke<VaultStatus>("vault_set_device", { enabled, pin: pin ?? null });
 }
 
-/** Takes the identity off the device. The twelve words are what is left. */
+/** Takes the identity off the device. The phrase is what is left. */
 export function destroyVault(): Promise<VaultStatus> {
   return invoke<VaultStatus>("vault_destroy");
 }

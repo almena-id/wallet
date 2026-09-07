@@ -25,7 +25,7 @@
 //!   Changing `APPLE_DEVELOPMENT_TEAM` or the identifier in `tauri.conf.json`
 //!   gives the next build a different access group, and the record already on
 //!   the phone becomes unreachable — not corrupted, not deleted, simply somebody
-//!   else's. The way back is the twelve words.
+//!   else's. The way back is the phrase.
 //! - **The record is pinned to the device it was written on**, and the device key
 //!   to the person. `when-unlocked-this-device-only` keeps the record out of
 //!   every backup and off every other phone. `require-user-presence` makes the

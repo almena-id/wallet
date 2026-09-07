@@ -1,12 +1,12 @@
-//! Making an identity: twelve words, the key they produce, and the DID document
-//! that describes it.
+//! Making an identity: the words it is made of, the key they produce, and the
+//! DID document that describes it.
 //!
 //! **The phrase is never written down.** It is held only between being shown and
 //! being confirmed, and then it is gone: it is the backup, and the backup
 //! belongs to the person rather than to the device.
 //!
 //! The seed it produces is held here for as long as the wallet is open, because
-//! signing a request needs the key and asking for twelve words every time is not
+//! signing a request needs the key and asking for the phrase every time is not
 //! a wallet. Between launches it is [`crate::vault`] that keeps it, encrypted
 //! and behind a PIN — this module derives, and knows nothing about where.
 
@@ -29,9 +29,9 @@ use zeroize::Zeroizing;
 pub enum IdentityError {
     /// The operating system would not supply randomness.
     Entropy,
-    /// The phrase does not have twelve words.
+    /// The phrase is not one of the lengths [`phrase::Length`] allows.
     WordCount,
-    /// Twelve words, but not a phrase this scheme ever produced.
+    /// The right number of words, but not a phrase this scheme ever produced.
     Checksum,
     /// Asked to finish a creation that was never started.
     NoDraft,
@@ -116,23 +116,31 @@ pub struct Identity {
 /// A new phrase, held for confirmation and handed to the interface to show.
 ///
 /// `locale` is the language the interface is in: the wordlist follows it, so the
-/// words are ones the person reads rather than ones they transcribe.
+/// words are ones the person reads rather than ones they transcribe. `words` is
+/// the length somebody chose — see [`phrase::Length`] for why there are two.
+///
+/// Asking again replaces whatever was being held, which is what switching
+/// length is: the phrase that was on the screen is dropped unshown, and the one
+/// that comes back has to be written down from scratch.
 ///
 /// # Errors
 ///
-/// [`IdentityError::Entropy`] when the system will not supply randomness.
+/// [`IdentityError::WordCount`] when `words` is not a length this wallet makes,
+/// and [`IdentityError::Entropy`] when the system will not supply randomness.
 #[tauri::command]
 pub fn identity_draft(
     draft: State<'_, Draft>,
     locale: String,
+    words: usize,
 ) -> Result<Vec<String>, IdentityError> {
-    let mnemonic = phrase::generate(phrase::language_for(&locale))?;
-    let words = mnemonic.words().map(str::to_string).collect();
+    let length = phrase::Length::of(words)?;
+    let mnemonic = phrase::generate(phrase::language_for(&locale), length)?;
+    let shown = mnemonic.words().map(str::to_string).collect();
     *draft
         .0
         .lock()
         .expect("the draft lock is never held across a panic") = Some(mnemonic);
-    Ok(words)
+    Ok(shown)
 }
 
 /// The identity the held phrase produces, and the end of that phrase's stay here.
@@ -280,10 +288,21 @@ mod tests {
     use super::*;
 
     /// **The vector that pins the derivation.** A phrase, and the identity it has
-    /// to keep producing. If this changes, everybody's twelve words start opening
+    /// to keep producing. If this changes, everybody's words start opening
     /// a different identity — see the note at the top of `keys.rs`.
     const PHRASE: &str =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    /// The identifier those words have to keep producing, worked out from the
+    /// three published standards this chain is made of rather than from a run
+    /// of this code: BIP-39's own vector for the phrase above, SLIP-0010 for the
+    /// step down to `m/0'` — see `keys.rs`, where both its vectors are run — and
+    /// the multicodec `did:key` puts in front of an ed25519 key.
+    ///
+    /// Which is what makes this a check and not a photograph. A pin taken from
+    /// whatever the code happened to answer would keep agreeing with the code
+    /// after both had drifted away from the standard together.
+    const IDENTITY: &str = "did:key:z6MkrTgzDs6XmRgSKZZhMLvmPm1obfjazbpZ8so3FzchHJhL";
 
     #[test]
     fn the_same_words_always_give_the_same_identity() {
@@ -291,7 +310,7 @@ mod tests {
         let first = restore(PHRASE, &held).expect("a valid phrase");
         let second = restore(PHRASE, &held).expect("a valid phrase");
         assert_eq!(first.did, second.did);
-        assert!(first.did.starts_with("did:key:z6Mk"));
+        assert_eq!(first.did, IDENTITY);
     }
 
     #[test]
@@ -331,7 +350,7 @@ mod tests {
         // A phrase made in a language this wallet does not show its interface
         // in — as another wallet would have made it — is one this wallet reads.
         for language in [bip39::Language::French, bip39::Language::Japanese] {
-            let written = phrase::generate(language)
+            let written = phrase::generate(language, phrase::Length::Twelve)
                 .expect("entropy")
                 .words()
                 .collect::<Vec<_>>()
@@ -341,20 +360,64 @@ mod tests {
         }
     }
 
+    /// Both lengths are made and both come back. The point is not that the two
+    /// identities differ — any two phrases differ — but that neither length is
+    /// refused on the way in, which is the whole of what choosing one means.
     #[test]
-    fn a_phrase_of_the_wrong_length_is_refused_before_its_checksum() {
-        assert!(matches!(
-            restore("abandon about", &Held::default()),
-            Err(IdentityError::WordCount)
-        ));
+    fn either_length_makes_a_phrase_that_comes_back() {
+        for length in phrase::Length::ALL {
+            let mnemonic = phrase::generate(bip39::Language::English, length).expect("entropy");
+            let written = mnemonic.words().collect::<Vec<_>>();
+            assert_eq!(written.len(), length.words(), "{length:?}");
+
+            let identity = restore(&written.join(" "), &Held::default()).expect("a valid phrase");
+            assert!(identity.did.starts_with("did:key:z6Mk"), "{length:?}");
+        }
+    }
+
+    /// Twenty-four words, from BIP-39's own vector for thirty-two bytes of
+    /// zero entropy, and the identity they have to keep producing — worked out
+    /// the same way [`IDENTITY`] was, from the standards rather than from a run
+    /// of this code. A longer phrase is not a different derivation: it reaches
+    /// the same 64-byte seed the same way, and everything below the seed is the
+    /// chain `keys.rs` already pins.
+    #[test]
+    fn a_twenty_four_word_phrase_derives_the_identity_the_standards_name() {
+        const LONG_PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
+        const LONG_IDENTITY: &str = "did:key:z6MkpBPdwmZU5K3HxiZc4oEzo7UPTBVwZGa48Ce1DvMn9C8V";
+
+        let identity = restore(LONG_PHRASE, &Held::default()).expect("a valid phrase");
+        assert_eq!(identity.did, LONG_IDENTITY);
     }
 
     #[test]
-    fn twelve_words_that_are_not_a_phrase_are_refused() {
-        let words = vec!["abandon"; phrase::WORDS].join(" ");
-        assert!(matches!(
-            restore(&words, &Held::default()),
-            Err(IdentityError::Checksum)
-        ));
+    fn a_phrase_of_the_wrong_length_is_refused_before_its_checksum() {
+        // Two words, and eighteen: BIP-39 defines eighteen and this wallet does
+        // not offer it, so it is refused here like any other number that is not
+        // one of the two.
+        for count in [2, 18] {
+            let words = vec!["abandon"; count].join(" ");
+            assert!(
+                matches!(
+                    restore(&words, &Held::default()),
+                    Err(IdentityError::WordCount)
+                ),
+                "{count} words"
+            );
+        }
+    }
+
+    #[test]
+    fn words_of_a_right_length_that_are_not_a_phrase_are_refused() {
+        for length in phrase::Length::ALL {
+            let words = vec!["abandon"; length.words()].join(" ");
+            assert!(
+                matches!(
+                    restore(&words, &Held::default()),
+                    Err(IdentityError::Checksum)
+                ),
+                "{length:?}"
+            );
+        }
     }
 }

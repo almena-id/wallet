@@ -1,8 +1,23 @@
 import { invoke } from "@tauri-apps/api/core";
 
-/** How many words a phrase has. The Rust side owns this number; it is repeated
- *  here only so the interface can lay out a grid without asking. */
-export const PHRASE_WORDS = 12;
+/**
+ * The lengths a new phrase can be, in the order they are offered.
+ *
+ * The Rust side owns this list — see `identity::phrase::Length` for why it is
+ * these two and not the six BIP-39 defines — and it is repeated here so the
+ * interface can offer the choice without asking first. The first one is what a
+ * phrase is unless somebody says otherwise.
+ *
+ * **Only creating asks.** Bringing an identity back counts the words that were
+ * written rather than making somebody declare which kind they have.
+ */
+export const PHRASE_LENGTHS = [12, 24] as const;
+
+/** How long a phrase is, as one of the lengths this wallet makes. */
+export type PhraseLength = (typeof PHRASE_LENGTHS)[number];
+
+/** The length a new phrase is unless somebody chooses the other one. */
+export const DEFAULT_PHRASE_LENGTH: PhraseLength = PHRASE_LENGTHS[0];
 
 export type Identity = {
   /** The identifier itself, `did:key:z…`. */
@@ -13,9 +28,15 @@ export type Identity = {
   document: Record<string, unknown>;
 };
 
-/** A new phrase to show. The backend holds it until it is confirmed. */
-export function draftPhrase(locale: string): Promise<string[]> {
-  return invoke<string[]>("identity_draft", { locale });
+/**
+ * A new phrase to show, of the length asked for. The backend holds it until it
+ * is confirmed.
+ *
+ * Asking again replaces what was being held, so switching length is not two
+ * phrases in flight: the one that was on screen is gone the moment this returns.
+ */
+export function draftPhrase(locale: string, words: PhraseLength): Promise<string[]> {
+  return invoke<string[]>("identity_draft", { locale, words });
 }
 
 /** The identity the phrase being shown produces. Ends that phrase's stay in memory. */
@@ -23,7 +44,12 @@ export function createIdentity(): Promise<Identity> {
   return invoke<Identity>("identity_create");
 }
 
-/** The identity a phrase somebody already has produces. */
+/**
+ * The identity a phrase somebody already has produces.
+ *
+ * Of either length, and in any language BIP-39 defines: the words say which
+ * they are, so nothing has to be declared alongside them.
+ */
 export function restoreIdentity(input: string): Promise<Identity> {
   return invoke<Identity>("identity_restore", { input });
 }
