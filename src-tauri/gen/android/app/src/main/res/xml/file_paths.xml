@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What this application's FileProvider is allowed to hand to another one, and
+  it is one thing: the copy of the log the share sheet is holding, which is
+  written into the cache directory and swept on the next share.
+
+  The identity record is not reachable through here. It is in `files/`, not
+  `cache/`, and no entry below names it.
+
+  **The share plugin ships a file of this name too and this one wins**, because
+  an application module's resource overrides a library's. If this entry stops
+  covering the cache directory the share sheet fails at the moment it is opened,
+  with `Failed to find configured root that contains …`. The plugin's Kotlin
+  copies what it is given into `cacheDir` itself before handing out a URI, so
+  the whole of it has to be covered and not only the subdirectory the wallet
+  writes to.
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+  <cache-path name="share" path="." />
+</paths>

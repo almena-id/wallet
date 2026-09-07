@@ -1,0 +1,1700 @@
+/*
+ * Almena ID wallet — one stylesheet, organised by layer:
+ * tokens, shell, screens, cards and controls, floating menu, camera overlay.
+ *
+ * The interface is built mobile first. On a phone or tablet it fills the
+ * viewport and respects the safe areas; on a desktop window it keeps the same
+ * single column, centred, and reflows at any size the user drags it to.
+ */
+
+/* ---------------------------------------------------------------- tokens */
+
+:root {
+  color-scheme: light dark;
+
+  /* The identity colour, and everything derived from it. Swapped as a set by
+     the palettes below, so no component ever names a colour of its own. */
+  --brand: #eb7229;
+  --brand-ink: #ffffff;
+  --brand-soft: rgba(235, 114, 41, 0.14);
+  --brand-shadow: rgba(235, 114, 41, 0.8);
+
+  /* Kept clear of the brand orange: what it marks is not a highlight. */
+  --danger: #c9372c;
+  --danger-soft: rgba(201, 55, 44, 0.14);
+
+  --bg: #f2f3f6;
+  --bg-glow-a: var(--brand-glow, rgba(235, 114, 41, 0.18));
+  --bg-glow-b: rgba(23, 24, 28, 0.06);
+
+  --surface: rgba(255, 255, 255, 0.82);
+  --surface-strong: #ffffff;
+  --border: rgba(23, 24, 28, 0.1);
+
+  /* A switch that is off, which cannot borrow `--border`: the track sits on a
+     row that is nearly white, and a white knob on a hairline grey would read as
+     an outline of a switch rather than as one that is off. */
+  --switch-off: rgba(23, 24, 28, 0.24);
+
+  --text: #17181c;
+  --text-muted: rgba(23, 24, 28, 0.58);
+
+  --glass: rgba(255, 255, 255, 0.6);
+  --glass-edge: rgba(255, 255, 255, 0.72);
+  --glass-shadow: rgba(23, 24, 28, 0.28);
+  --glass-highlight: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.5));
+  --glass-highlight-edge: rgba(255, 255, 255, 0.95);
+
+  --radius-card: 20px;
+  --radius-control: 14px;
+
+  --ease-spring: cubic-bezier(0.32, 1.5, 0.52, 1);
+}
+
+/* ------------------------------------------------------- identity colour */
+
+/*
+ * Five palettes, one per colour somebody can pick in Appearance. Each names the
+ * whole set rather than a hue to derive from: `color-mix` is younger than the
+ * webviews this has to run in, and yellow needs dark ink where the rest take
+ * white, which no derivation would have guessed.
+ */
+
+/* Orange is what `:root` already carries, but a swatch offering it needs the
+   tokens on itself: without this block it would wear whatever colour is
+   currently chosen and offer to change nothing. */
+[data-accent="orange"] {
+  --brand: #eb7229;
+  --brand-ink: #ffffff;
+  --brand-soft: rgba(235, 114, 41, 0.14);
+  --brand-shadow: rgba(235, 114, 41, 0.8);
+  --brand-glow: rgba(235, 114, 41, 0.18);
+  --brand-glow-dark: rgba(235, 114, 41, 0.22);
+}
+
+[data-accent="blue"] {
+  --brand: #2f6fed;
+  --brand-ink: #ffffff;
+  --brand-soft: rgba(47, 111, 237, 0.14);
+  --brand-shadow: rgba(47, 111, 237, 0.8);
+  --brand-glow: rgba(47, 111, 237, 0.18);
+  --brand-glow-dark: rgba(47, 111, 237, 0.22);
+}
+
+[data-accent="red"] {
+  --brand: #e0413a;
+  --brand-ink: #ffffff;
+  --brand-soft: rgba(224, 65, 58, 0.14);
+  --brand-shadow: rgba(224, 65, 58, 0.8);
+  --brand-glow: rgba(224, 65, 58, 0.18);
+  --brand-glow-dark: rgba(224, 65, 58, 0.22);
+}
+
+[data-accent="yellow"] {
+  --brand: #f2b705;
+  /* Dark ink: white on yellow is unreadable at any size worth reading. */
+  --brand-ink: #17181c;
+  --brand-soft: rgba(242, 183, 5, 0.18);
+  --brand-shadow: rgba(242, 183, 5, 0.8);
+  --brand-glow: rgba(242, 183, 5, 0.2);
+  --brand-glow-dark: rgba(242, 183, 5, 0.24);
+}
+
+[data-accent="green"] {
+  --brand: #1f9d55;
+  --brand-ink: #ffffff;
+  --brand-soft: rgba(31, 157, 85, 0.14);
+  --brand-shadow: rgba(31, 157, 85, 0.8);
+  --brand-glow: rgba(31, 157, 85, 0.18);
+  --brand-glow-dark: rgba(31, 157, 85, 0.22);
+}
+
+/*
+ * Dark is asked for in two ways and answered once — twice over, because CSS has
+ * no way to share one declaration block between a media query and a selector.
+ * The system's answer is skipped when somebody has explicitly chosen light.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1013;
+    --bg-glow-a: var(--brand-glow-dark, rgba(235, 114, 41, 0.22));
+    --bg-glow-b: rgba(255, 255, 255, 0.05);
+
+    --danger: #ff6b5e;
+    --danger-soft: rgba(255, 107, 94, 0.18);
+
+    --surface: rgba(255, 255, 255, 0.06);
+    --surface-strong: #1b1d22;
+    --border: rgba(255, 255, 255, 0.1);
+
+    --switch-off: rgba(255, 255, 255, 0.24);
+
+    --text: #f4f4f6;
+    --text-muted: rgba(244, 244, 246, 0.6);
+
+    --glass: rgba(38, 40, 47, 0.62);
+    --glass-edge: rgba(255, 255, 255, 0.14);
+    --glass-shadow: rgba(0, 0, 0, 0.55);
+    --glass-highlight: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.07));
+    --glass-highlight-edge: rgba(255, 255, 255, 0.24);
+  }
+}
+
+:root[data-theme="dark"] {
+  /* The scrollbars, the form controls and the keyboard follow the choice too. */
+  color-scheme: dark;
+
+  --bg: #0f1013;
+  --bg-glow-a: var(--brand-glow-dark, rgba(235, 114, 41, 0.22));
+  --bg-glow-b: rgba(255, 255, 255, 0.05);
+
+  --danger: #ff6b5e;
+  --danger-soft: rgba(255, 107, 94, 0.18);
+
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-strong: #1b1d22;
+  --border: rgba(255, 255, 255, 0.1);
+
+  --switch-off: rgba(255, 255, 255, 0.24);
+
+  --text: #f4f4f6;
+  --text-muted: rgba(244, 244, 246, 0.6);
+
+  --glass: rgba(38, 40, 47, 0.62);
+  --glass-edge: rgba(255, 255, 255, 0.14);
+  --glass-shadow: rgba(0, 0, 0, 0.55);
+  --glass-highlight: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.07));
+  --glass-highlight-edge: rgba(255, 255, 255, 0.24);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+/* The root carries the colour as well as the body, so the canvas is painted
+   from an element that is always exactly the viewport. A body laid out to
+   `100dvh` is briefly the wrong height while a device is being turned, and the
+   gap is where the white underneath used to show. */
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  /* A wallet is not a document: no rubber banding, no accidental text drag. */
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* ----------------------------------------------------------------- shell */
+
+#root {
+  min-height: 100dvh;
+}
+
+.app {
+  position: relative;
+  display: flex;
+  min-height: 100dvh;
+  flex-direction: column;
+  isolation: isolate;
+}
+
+/* Soft brand light behind the content, so the glass has something to refract. */
+.app::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(70% 45% at 80% 0%, var(--bg-glow-a), transparent 70%),
+    radial-gradient(60% 40% at 0% 100%, var(--bg-glow-b), transparent 70%);
+  pointer-events: none;
+}
+
+.app__view {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding:
+    calc(env(safe-area-inset-top) + 24px)
+    calc(env(safe-area-inset-right) + 18px)
+    calc(env(safe-area-inset-bottom) + 136px)
+    calc(env(safe-area-inset-left) + 18px);
+  animation: view-in 0.3s ease both;
+}
+
+@keyframes view-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (min-width: 900px) {
+  .app__view {
+    padding-top: calc(env(safe-area-inset-top) + 40px);
+  }
+}
+
+/* --------------------------------------------------------------- screens */
+
+.screen {
+  display: flex;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.screen__header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.screen__header--scan {
+  gap: 12px;
+}
+
+.screen__eyebrow {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.screen__title {
+  margin: 0;
+  font-size: clamp(24px, 6vw, 30px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.screen__title--compact {
+  font-size: clamp(19px, 5vw, 22px);
+}
+
+.screen__intro {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--text-muted);
+}
+
+.brand-mark {
+  width: 46px;
+  height: 46px;
+  flex: none;
+}
+
+/* ----------------------------------------------------- cards and details */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 16px 34px -26px var(--glass-shadow);
+}
+
+.card--centered {
+  align-items: center;
+  text-align: center;
+}
+
+.card__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.card__subtitle {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.card__body {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.card__note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-control);
+  background: var(--brand-soft);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.card__icon--inline {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+}
+
+.card__icon--inline svg {
+  width: 17px;
+  height: 17px;
+}
+
+.detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+
+.detail-list__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-list__row:last-child {
+  border-bottom: 0;
+}
+
+.detail-list dt {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.detail-list dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: right;
+}
+
+.feature-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.feature {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.feature__dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.35;
+}
+
+.feature--on {
+  color: var(--text);
+}
+
+.feature--on .feature__dot {
+  background: var(--brand);
+  opacity: 1;
+  box-shadow: 0 0 0 4px var(--brand-soft);
+}
+
+.feature__label {
+  flex: 1;
+}
+
+.feature__state {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant: small-caps;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 8px 8px;
+  text-align: center;
+}
+
+.empty-state__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 4px;
+  border-radius: 16px;
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.empty-state__title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.empty-state__hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.scan-result {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* -------------------------------------------------------------- controls */
+
+.button {
+  padding: 11px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-strong);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 0.16s var(--ease-spring),
+    filter 0.16s ease;
+}
+
+.button--primary {
+  border-color: transparent;
+  background: var(--brand);
+  color: var(--brand-ink);
+  box-shadow: 0 10px 22px -12px var(--brand-shadow);
+}
+
+/* Not filled in: what it opens is a screen, and the weight belongs to the
+   confirmation at the end of that screen rather than to the way in. */
+.button--danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.button:hover:not(:disabled) {
+  filter: brightness(1.04);
+}
+
+.button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* Two answers to one question, the same size and on the same line, because
+   neither of them is the suggestion. Refusing is not a smaller thing to do than
+   accepting, and a row that made one of them wider would be saying it is. It
+   does not wrap: side by side is the whole point, and two words fit. */
+.button-row--split {
+  flex-wrap: nowrap;
+}
+
+.button-row--split > .button {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border: 1px solid var(--glass-edge);
+  border-radius: 50%;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  backdrop-filter: blur(18px) saturate(180%);
+  color: var(--text);
+  cursor: pointer;
+  transition: transform 0.16s var(--ease-spring);
+}
+
+.icon-button:active {
+  transform: scale(0.92);
+}
+
+.action {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 13px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-strong);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.16s var(--ease-spring);
+}
+
+.action:active {
+  transform: scale(0.985);
+}
+
+.action__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 12px;
+  background: var(--brand);
+  color: var(--brand-ink);
+}
+
+.action__text {
+  display: flex;
+  flex-direction: column;
+}
+
+.action__label {
+  font-weight: 600;
+}
+
+.action__hint {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.spinner {
+  width: 26px;
+  height: 26px;
+  border: 2.5px solid var(--brand-soft);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* --------------------------------------------------- floating menu (iOS) */
+
+.tab-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 16px);
+  z-index: 20;
+  max-width: calc(100% - 32px);
+  transform: translateX(-50%);
+}
+
+.tab-bar__glass {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--tab-count, 3), minmax(78px, 1fr));
+  padding: 6px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 30px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(30px) saturate(190%);
+  backdrop-filter: blur(30px) saturate(190%);
+  box-shadow:
+    0 22px 45px -20px var(--glass-shadow),
+    0 3px 10px -6px var(--glass-shadow),
+    inset 0 1px 0 var(--glass-highlight-edge);
+}
+
+/* The highlight is exactly one column wide, so it lands on each tab. */
+.tab-bar__highlight {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 6px;
+  width: calc((100% - 12px) / var(--tab-count, 3));
+  border-radius: 24px;
+  background: var(--glass-highlight);
+  box-shadow:
+    0 8px 18px -10px var(--glass-shadow),
+    inset 0 1px 0 var(--glass-highlight-edge);
+  transform: translateX(calc(var(--active-index, 0) * 100%));
+  transition: transform 0.45s var(--ease-spring);
+}
+
+.tab-bar__tab {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 12px 7px;
+  border: 0;
+  border-radius: 24px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    color 0.2s ease,
+    transform 0.18s var(--ease-spring);
+}
+
+.tab-bar__tab[aria-current="page"] {
+  color: var(--brand);
+}
+
+.tab-bar__tab:active {
+  transform: scale(0.93);
+}
+
+.tab-bar__icon {
+  display: inline-flex;
+}
+
+.tab-bar__icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.tab-bar__label {
+  max-width: 11ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------- camera overlay */
+
+/*
+ * While the scanner runs, the operating system draws the camera behind the
+ * webview: everything the page paints would cover it, so it paints nothing.
+ */
+html[data-camera-preview="true"],
+html[data-camera-preview="true"] body,
+html[data-camera-preview="true"] #root,
+html[data-camera-preview="true"] .app,
+html[data-camera-preview="true"] .card {
+  background: transparent;
+}
+
+html[data-camera-preview="true"] .app::before {
+  display: none;
+}
+
+.app--camera .app__view {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 24px);
+}
+
+/* The scan header stays above the dimmed surround, so Back is never dulled. */
+.screen--camera .screen__header {
+  position: relative;
+  z-index: 11;
+}
+
+.screen--camera .screen__title {
+  padding: 5px 14px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 999px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  backdrop-filter: blur(18px) saturate(180%);
+}
+
+.framing {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding:
+    calc(env(safe-area-inset-top) + 72px) 24px
+    calc(env(safe-area-inset-bottom) + 40px);
+  pointer-events: none;
+  text-align: center;
+}
+
+.framing__instruction,
+.framing__hint {
+  margin: 0;
+  max-width: 30ch;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(8, 9, 11, 0.55);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: #ffffff;
+  text-wrap: balance;
+}
+
+.framing__instruction {
+  font-weight: 600;
+}
+
+.framing__hint {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+/* The frame is a hole: its shadow spreads outwards to dim the surroundings. */
+.framing__frame {
+  position: relative;
+  width: min(72vw, 320px);
+  aspect-ratio: 1;
+  border-radius: 30px;
+  box-shadow: 0 0 0 100vmax rgba(8, 9, 11, 0.55);
+}
+
+.framing__corner {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--brand);
+}
+
+.framing__corner--tl {
+  top: -3px;
+  left: -3px;
+  border-right: 0;
+  border-bottom: 0;
+  border-top-left-radius: 30px;
+}
+
+.framing__corner--tr {
+  top: -3px;
+  right: -3px;
+  border-left: 0;
+  border-bottom: 0;
+  border-top-right-radius: 30px;
+}
+
+.framing__corner--br {
+  right: -3px;
+  bottom: -3px;
+  border-left: 0;
+  border-top: 0;
+  border-bottom-right-radius: 30px;
+}
+
+.framing__corner--bl {
+  bottom: -3px;
+  left: -3px;
+  border-right: 0;
+  border-top: 0;
+  border-bottom-left-radius: 30px;
+}
+
+.framing__sweep {
+  position: absolute;
+  left: 7%;
+  right: 7%;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--brand), transparent);
+  box-shadow: 0 0 12px var(--brand);
+  animation: sweep 2.4s ease-in-out infinite;
+}
+
+@keyframes sweep {
+  0%,
+  100% {
+    top: 10%;
+  }
+
+  50% {
+    top: 90%;
+  }
+}
+
+/* ----------------------------------------------------------- preferences */
+
+@media (prefers-reduced-transparency: reduce) {
+  .card,
+  .tab-bar__glass,
+  .icon-button,
+  .screen--camera .screen__title {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--surface-strong);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .framing__sweep {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------ onboarding */
+
+/*
+ * The way in has no menu under it, so its screens carry their own rhythm: the
+ * welcome centres itself in whatever height the device gives it, and the rest
+ * read as one column like every other screen.
+ */
+
+.screen--welcome {
+  gap: 24px;
+}
+
+/* Takes the height the choices do not, and centres itself in it. */
+.welcome {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 10px;
+}
+
+.welcome__mark {
+  width: 92px;
+  height: 92px;
+}
+
+.welcome__name {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.welcome__tagline {
+  margin: 0;
+  max-width: 30ch;
+  color: var(--text-muted);
+}
+
+.welcome__choices {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The two ways in weigh the same, so neither icon shouts over the other. */
+.action--choice {
+  padding: 16px;
+}
+
+.action__icon--quiet {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+/* Onboarding has no floating menu under it, so the view keeps its own footing
+   rather than the room the menu needs — and it is a column, so a screen can ask
+   for the height that is left. A percentage would not do: this view's own
+   height comes from the flex layout above it, and a percentage measured against
+   that resolves to nothing. */
+.app__view--plain {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 24px);
+}
+
+/* Grows into the space, never shrinks below what it holds: a screen taller than
+   the view still scrolls. */
+.app__view--plain > .screen {
+  flex: 1 0 auto;
+}
+
+/* The wait, centred in the whole view — in both directions, and in the middle
+   of the height rather than in the middle of what is left above a bar. */
+.screen--waiting {
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+}
+
+.brand-spinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.brand-spinner__mark {
+  width: 76px;
+  height: 76px;
+  animation: brand-pulse 1.5s var(--ease-spring) infinite;
+}
+
+.brand-spinner__label {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+@keyframes brand-pulse {
+  0%,
+  100% {
+    transform: scale(0.86);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-spinner__mark {
+    animation: none;
+  }
+}
+
+/* -------------------------------------------------------------- checkbox */
+
+/* The deliberate answer to the warning above it: the whole row is the target,
+   because a 16px box is not something anybody hits on a phone by accident —
+   or on purpose. */
+.checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-strong);
+  cursor: pointer;
+}
+
+.checkbox__input {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  margin: 0;
+  accent-color: var(--brand);
+}
+
+.checkbox__label {
+  line-height: 1.4;
+}
+
+/* ------------------------------------------------------------------- pin */
+
+/* The keypad fills the view it is given and sits at the bottom of it, where a
+   thumb is: the dots and the reason for them stay above. */
+.screen--pin {
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+/* The way back sits hard against the leading edge with the title centred over
+   it, which is what every other application on these devices does. `.screen--pin`
+   centres what it holds, so without this the header shrank to its contents and
+   the arrow ended up floating in the middle of the screen next to the words. */
+.screen--pin .screen__header {
+  position: relative;
+  align-self: stretch;
+  justify-content: center;
+}
+
+.screen--pin .screen__header .icon-button {
+  position: absolute;
+  left: 0;
+}
+
+.screen__title--centred {
+  margin-top: 8px;
+}
+
+.pin__subtitle {
+  margin: 0;
+  max-width: 32ch;
+  color: var(--text-muted);
+}
+
+.pin__dots {
+  display: flex;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.pin__dot {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  transition: background 0.12s ease;
+}
+
+.pin__dot--filled {
+  border-color: var(--brand);
+  background: var(--brand);
+}
+
+.pin__error {
+  margin: 0;
+  min-height: 1.4em;
+  color: var(--danger);
+  font-size: 14px;
+}
+
+/* Kept in the layout when empty, so the keypad does not jump when it appears. */
+.pin__error--empty {
+  visibility: hidden;
+}
+
+/* Sized to the screen rather than to a number, but capped: a keypad is a
+   familiar object and one stretched the width of a tablet stops being one.
+   `margin-top: auto` puts it at the foot of the screen, which is where a thumb
+   is. */
+.pin__keys {
+  display: grid;
+  width: min(100%, 320px);
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.pin__key {
+  display: flex;
+  aspect-ratio: 1;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: inherit;
+  font: inherit;
+  font-size: 28px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.12s var(--ease-spring);
+}
+
+.pin__key:active {
+  transform: scale(0.94);
+}
+
+.pin__key:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* The two that are not digits: they do the work of the row without asking for
+   the weight of a number. */
+.pin__key--quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 22px;
+}
+
+.pin__key--empty {
+  border: none;
+  background: none;
+  cursor: default;
+}
+
+.pin__footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  max-width: 36ch;
+}
+
+/* ------------------------------------------------------------------ menu */
+
+/* Settings is a list of places rather than a page of switches: each row leads
+   somewhere and says what is there. */
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.menu__item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-strong);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.16s var(--ease-spring);
+}
+
+.menu__item:active {
+  transform: scale(0.985);
+}
+
+.menu__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.menu__title {
+  font-weight: 600;
+}
+
+.menu__hint {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.menu__chevron {
+  flex: none;
+  color: var(--text-muted);
+  transform: rotate(180deg);
+}
+
+/* ------------------------------------------------------------------ rows */
+
+/* A setting, said and changed in the same line. The shape is the menu row's,
+   because a list of settings and a list of places should not look like two
+   different kinds of list — what differs is what sits at the end of it: a
+   switch that changes something here, or an arrow that leads somewhere else. */
+.row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-strong);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.16s var(--ease-spring);
+}
+
+.row:active {
+  transform: scale(0.985);
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* Shown and explained rather than hidden: a setting this device cannot offer is
+   a thing somebody looked for, and an empty space answers nothing. */
+.row[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.row[aria-disabled="true"]:active {
+  transform: none;
+}
+
+.row__icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.row__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.row__label {
+  font-weight: 600;
+}
+
+.row__hint {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.row__chevron {
+  flex: none;
+  color: var(--text-muted);
+  transform: rotate(180deg);
+}
+
+/* The switch wears the accent rather than a fixed green: the colour of this
+   wallet is the one its owner chose, and "on" is the same colour everywhere
+   else in it. */
+.switch {
+  position: relative;
+  flex: none;
+  width: 50px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--switch-off);
+  transition: background 0.18s ease;
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px -2px rgb(0 0 0 / 45%);
+  transition: transform 0.18s var(--ease-spring);
+}
+
+[aria-checked="true"] > .switch {
+  background: var(--brand);
+}
+
+[aria-checked="true"] > .switch::after {
+  transform: translateX(20px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row,
+  .switch,
+  .switch::after {
+    transition: none;
+  }
+}
+
+/* ------------------------------------------------------------ segmented */
+
+/* Three states of one setting, side by side, so the one in force is read at a
+   glance against the other two. */
+.segmented {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.segmented__option {
+  flex: 1;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.segmented__option.is-active {
+  background: var(--surface-strong);
+  color: var(--text);
+  box-shadow: 0 6px 14px -10px var(--glass-shadow);
+}
+
+.segmented__option:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* -------------------------------------------------------------- swatches */
+
+/* The colours are the control: a row of the things being chosen, each wearing
+   its own palette, and the chosen one wearing a tick in its own ink — which is
+   dark on yellow and white on the rest without anything here saying so. */
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.swatch {
+  display: flex;
+  width: 46px;
+  height: 46px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--brand-ink);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+  transition: transform 0.16s var(--ease-spring);
+}
+
+.swatch:active {
+  transform: scale(0.94);
+}
+
+.swatch:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+
+/* The ring is drawn in the page's own colours rather than the swatch's, so it
+   reads as a mark on the row and not as part of the colour underneath. */
+.swatch--chosen {
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.12),
+    0 0 0 3px var(--bg),
+    0 0 0 5px var(--text);
+}
+
+.swatch__tick {
+  width: 22px;
+  height: 22px;
+}
+
+/* ----------------------------------------------------------------- slide */
+
+/*
+ * The confirmation that has to be carried across. The track is a button's
+ * height and the knob is square, so what is left to cross is the track minus
+ * itself — which is what the component measures.
+ */
+.slide {
+  position: relative;
+  display: flex;
+  height: 56px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-strong);
+  touch-action: none;
+  user-select: none;
+}
+
+.slide--closed {
+  opacity: 0.55;
+}
+
+/* Fills in behind the knob, so the distance covered is visible without reading. */
+.slide__fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  transform: scaleX(var(--progress, 0));
+  background: var(--danger-soft);
+}
+
+.slide__caption {
+  position: relative;
+  padding: 0 62px;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.slide__knob {
+  position: absolute;
+  display: flex;
+  width: 50px;
+  height: 50px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--danger);
+  color: var(--brand-ink);
+  cursor: grab;
+  left: calc(3px + var(--progress, 0) * (100% - 56px));
+  transition: left 0.25s var(--ease-spring);
+}
+
+/* Under a finger it follows exactly, with no easing lagging behind it. */
+.slide[data-dragging="true"] .slide__knob {
+  cursor: grabbing;
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide__knob {
+    transition: none;
+  }
+}
+
+.slide--closed .slide__knob {
+  cursor: not-allowed;
+}
+
+.slide__knob:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+/* The back arrow, turned to point at the way out. */
+.slide__arrow {
+  transform: rotate(180deg);
+}
+
+/* --------------------------------------------------------- consequences */
+
+.consequences {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.consequences__item {
+  padding-left: 16px;
+  border-left: 2px solid var(--danger);
+  line-height: 1.5;
+}
+
+/* --------------------------------------------------------------- choices */
+
+/* Six words, two columns: wide enough for the longest word in any wordlist and
+   still two thumbs apart. */
+.choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.choices__option {
+  padding: 14px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-strong);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  transition: transform 0.16s var(--ease-spring);
+}
+
+.choices__option:active {
+  transform: scale(0.97);
+}
+
+.choices__option:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- phrase */
+
+/*
+ * Twelve words, numbered, in two columns on a phone and three where there is
+ * room. The number is part of the word: a phrase written down out of order is
+ * a phrase that opens nothing.
+ */
+
+.phrase {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 460px) {
+  .phrase {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.phrase__word {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-strong);
+}
+
+.phrase__position {
+  min-width: 1.4em;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.phrase__text {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------- fields */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.field__label {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.field__input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-strong);
+  color: inherit;
+  font: inherit;
+}
+
+.field__input:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.field__input--wrong {
+  border-color: var(--brand);
+}
+
+.field__input--phrase {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.field__error {
+  color: var(--brand);
+  font-size: 13px;
+}
+
+/* A warning is drawn in the warning colour and not in the identity one: what it
+   says does not change because somebody picked green in Appearance, and a
+   caution wearing the accent reads as decoration. */
+.card__note--warning {
+  padding: 12px 14px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-control);
+  background: var(--danger-soft);
+  color: inherit;
+}
+
+/* The DID document, shown as what it is: a document, scrollable on its own. */
+.document {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-strong);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}

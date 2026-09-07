@@ -1,8 +1,8 @@
 [package]
 name = "wallet"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Almena ID wallet"
+authors = ["Almena ID"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -18,8 +18,104 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# `tray-icon` puts the wallet on the desktop bar; `image-png` is what decodes
+# the glyph it draws.
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tauri-plugin-notification = "2.4.0"
+tauri-plugin-deep-link = "2.4.10"
+# Every wordlist BIP-39 has: the phrase is written in the language the wallet
+# is being read in whenever the standard has words for it, and a phrase
+# written in any of them is one this wallet can read back.
+bip39 = { version = "2.2.2", features = ["zeroize", "all-languages"] }
+zeroize = "1.9.0"
+bs58 = "0.5.1"
+ed25519-dalek = "2"
+hmac = "0.12"
+sha2 = "0.10"
+getrandom = "0.2"
+# Answering a sign-in request: fetching it, checking who signed it, and posting
+# the answer back. `rustls` rather than the system stack, so the wallet behaves
+# the same on every platform it runs on.
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "rustls-tls",
+] }
+p256 = { version = "0.13", features = ["ecdsa"] }
+base64 = "0.22"
+url = "2"
+# Keeping the identity between launches. XChaCha20-Poly1305 rather than AES-GCM:
+# its nonce is wide enough to be drawn at random with no counter to keep, and it
+# is constant-time in software everywhere, which AES is only where the hardware
+# guarantees it. Argon2id is what stands between four digits and a stolen record,
+# so the cost parameters are the protection and they are written into the record.
+# `alloc` and nothing else: the randomness comes from `getrandom`, which is
+# already here, and the default features would pull a second copy of it.
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+argon2 = { version = "0.5", features = ["zeroize"] }
+# Logs the Development section can hand over, so a phone in somebody's hand can
+# say what happened on it.
+tauri-plugin-log = "2"
+log = "0.4"
+# Only to stamp each log line. It is already in the tree under the log plugin;
+# naming it here is what lets this crate format a timestamp of its own.
+time = { version = "0.3", features = ["formatting"] }
+# Getting the log off the device. `dialog` raises the system save dialog — the
+# native panel on a computer, the document picker on iOS, ACTION_CREATE_DOCUMENT
+# on Android, which is what puts a copy somewhere the phone's own file explorer
+# opens. `fs` is here for its Rust side only: `FsExt::fs().open` is the one call
+# that writes both to a path and to the `content://` URI an Android save dialog
+# answers with, and `std::fs` cannot open the second. **No `fs` command is
+# granted to the webview** — see `capabilities/default.json`.
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+# The platform's own secret store, where the record is kept — the Keychain, the
+# Credential Manager, the Secret Service. Not the `keyring` umbrella crate: it
+# picks a store for you, and the one it picks on Android is an in-memory stub
+# that looks like it is working and loses the identity on every launch. This is
+# `keyring-core` with the store named per platform below, which is what its own
+# author tells applications to do, and it answers `NoDefaultStore` where nothing
+# was registered rather than quietly pretending. See `vault::store`.
+keyring-core = "1"
+
+[dev-dependencies]
+# For the one test that talks to a running platform.
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = { version = "2.4.4", features = ["deep-link"] }
+tauri-plugin-window-state = "2.4.1"
+
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-barcode-scanner = "2.4.6"
+tauri-plugin-biometric = "2.3.3"
+# The system share sheet: `UIActivityViewController` on iOS, `ACTION_SEND`
+# through the FileProvider on Android. **Tauri has no first-party plugin for
+# this** — `plugins-workspace` has never shipped one — so this is third party,
+# and it is pinned rather than floated for that reason. It is the only
+# maintained one that covers both phones. Its whole implementation is about a
+# hundred lines of Swift and as many of Kotlin; the day it stops being
+# maintained it gets vendored, not replaced.
+tauri-plugin-sharekit = "=0.3.1"
+
+
+[target.'cfg(target_os = "ios")'.dependencies]
+# `protected` is the data protection keychain, which is the only one that can be
+# told the item is for this device and no other.
+apple-native-keyring-store = { version = "1", features = ["protected"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# The file keychain, because a desktop build is not signed with a provisioning
+# profile and the data protection keychain requires one.
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-native-keyring-store = "1"
+
+[target.'cfg(all(unix, not(any(target_os = "macos", target_os = "ios", target_os = "android"))))'.dependencies]
+# The pure Rust D-Bus client. The alternative links libdbus and needs a C
+# toolchain for every target this is cross-compiled from.
+zbus-secret-service-keyring-store = "1"
 

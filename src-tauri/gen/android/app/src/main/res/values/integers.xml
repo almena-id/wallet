@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Which way the wallet may be held.
+
+  A phone is held one way and a wallet is read one way: the approval screen, the
+  keypad and the twelve words are each a single column, and there is nothing on
+  any of them that a phone turned sideways would show more of.
+
+  1 is SCREEN_ORIENTATION_PORTRAIT. The tablet answer is in values-sw600dp.
+-->
+<resources>
+    <integer name="screen_orientation">1</integer>
+</resources>

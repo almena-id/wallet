@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Tablets, which Android calls anything at least 600dp across at its narrowest.
+
+  A tablet is held either way on purpose — propped on a desk, in two hands — so
+  it keeps both orientations.
+
+  -1 is SCREEN_ORIENTATION_UNSPECIFIED: the system decides, which is what it did
+  before any of this was declared.
+-->
+<resources>
+    <integer name="screen_orientation">-1</integer>
+</resources>

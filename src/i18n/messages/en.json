@@ -1,0 +1,344 @@
+{
+  "app": {
+    "name": "Almena ID Wallet",
+    "shortName": "Almena ID"
+  },
+  "nav": {
+    "label": "Main sections",
+    "home": "Home",
+    "scan": "Scan QR",
+    "settings": "Settings",
+    "back": "Back",
+    "backToHome": "Back to home"
+  },
+  "onboarding": {
+    "welcome": {
+      "tagline": "Your identity, held by you and presented when you decide to.",
+      "create": "Create an identity",
+      "createHint": "Twelve words, and an identity only you can use",
+      "signIn": "I already have a phrase",
+      "signInHint": "Bring an identity back from the words you wrote down"
+    },
+    "phrase": {
+      "title": "Your twelve words",
+      "intro": "These twelve words are the identity. Write them down, in this order, and keep them somewhere only you reach.",
+      "warning": "Nobody can give them back to you. Whoever has them has the identity, and losing them loses it.",
+      "copy": "Copy the phrase",
+      "copied": "Copied",
+      "acknowledge": "I have written the twelve words down and I have them with me",
+      "continue": "Continue",
+      "restarted": "That was not the word asked for. These are new words: the old ones are gone, so write these down before going on."
+    },
+    "confirm": {
+      "title": "Check what you wrote",
+      "intro": "Pick the word that goes in each position, reading from the copy you keep.",
+      "progress": "{current} of {total}",
+      "question": "Which word is number {position}?",
+      "warning": "One wrong answer starts the whole thing again, with twelve new words to write down."
+    },
+    "restore": {
+      "title": "Your phrase",
+      "intro": "Write the twelve words in the order you wrote them down.",
+      "placeholder": "word one, word two, …",
+      "submit": "Bring the identity back"
+    },
+    "creating": {
+      "title": "Making the identity"
+    },
+    "errors": {
+      "identity_entropy_unavailable": "This device would not supply the randomness a phrase is made from. Nothing has been created.",
+      "identity_word_count": "A phrase has twelve words.",
+      "identity_checksum": "Those twelve words are not a phrase this wallet ever produced. Check the spelling and the order.",
+      "identity_no_draft": "There was no phrase to confirm. Start again.",
+      "identity_unknown": "The identity could not be made. Try again."
+    },
+    "protect": {
+      "title": "Choose a PIN",
+      "intro": "The identity is written down on this device now, encrypted, and these digits are what open it. There is nothing that can reset them: forgetting the PIN means starting again from your twelve words.",
+      "saving": "Protecting your identity"
+    }
+  },
+  "tray": {
+    "quit": "Quit"
+  },
+  "home": {
+    "greeting": "Your wallet",
+    "credentials": {
+      "title": "Credentials",
+      "empty": "No credentials yet",
+      "emptyHint": "Credentials issued to you will show up here."
+    },
+    "identity": {
+      "title": "Identity",
+      "didLabel": "Identifier"
+    }
+  },
+  "platform": {
+    "desktop": "Desktop",
+    "mobile": "Mobile",
+    "unknown": "Unknown",
+    "os": {
+      "macos": "macOS",
+      "windows": "Windows",
+      "linux": "Linux",
+      "android": "Android",
+      "ios": "iOS"
+    }
+  },
+  "scan": {
+    "title": "Scan QR",
+    "instruction": "Line the QR code up inside the frame",
+    "hint": "Hold the device steady until the code is read",
+    "starting": "Starting the camera",
+    "cancel": "Cancel",
+    "permission": {
+      "title": "The camera needs your permission",
+      "body": "The wallet reads QR codes with the camera. Nothing is recorded and nothing leaves the device.",
+      "action": "Allow the camera",
+      "deniedTitle": "Camera access is turned off",
+      "deniedBody": "Turn the camera back on for the wallet in the system settings, then come back to this screen.",
+      "openSettings": "Open system settings"
+    },
+    "unsupported": {
+      "title": "Scanning needs a phone or a tablet",
+      "body": "The camera scanner is provided by iOS and Android. On a computer, use the wallet on your phone to read the code."
+    },
+    "error": {
+      "title": "The camera could not be started",
+      "retry": "Try again"
+    },
+    "result": {
+      "title": "Code read",
+      "again": "Scan another code"
+    }
+  },
+  "link": {
+    "title": "Link",
+    "received": "A request arrived",
+    "body": "The wallet was opened by an almena:// link. It is shown here and nothing more has been done with it.",
+    "urlLabel": "What arrived"
+  },
+  "signin": {
+    "title": "Sign-in request",
+    "reading": "Checking who is asking",
+    "asks": "wants you to sign in",
+    "proves": "You will prove that you hold this identity, and nothing else.",
+    "separate": "This site is given an identifier of its own. Nowhere else can recognise it.",
+    "verifiedBy": "Request signed by Almena ID",
+    "expiresIn": "Expires in {time}",
+    "accept": "Accept",
+    "accepting": "Answering…",
+    "decline": "Cancel",
+    "declined": "Request refused",
+    "declinedBody": "Nothing was shared.",
+    "errors": {
+      "signin_unreadable": "This is not a request the wallet can read.",
+      "signin_not_ours": "This request points somewhere that is not Almena ID.",
+      "signin_unverified": "The request is not signed by Almena ID.",
+      "signin_expired": "The request has expired. Ask for a new code.",
+      "signin_unreachable": "Almena ID could not be reached.",
+      "signin_no_identity": "Create or restore an identity before signing in.",
+      "signin_nothing": "There is no request to answer.",
+      "signin_refused": "Almena ID would not accept the answer.",
+      "signin_unknown": "Something went wrong."
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "sections": {
+      "appearance": {
+        "title": "Appearance",
+        "hint": "The colour the wallet wears"
+      },
+      "permissions": {
+        "title": "Permissions",
+        "hint": "What this device lets the wallet do"
+      },
+      "security": {
+        "title": "Security",
+        "hint": "The identity on this device"
+      },
+      "development": {
+        "title": "Development",
+        "hint": "What this build is, and what it can do here"
+      }
+    },
+    "appearance": {
+      "title": "Appearance",
+      "colour": {
+        "title": "Identity colour"
+      },
+      "colours": {
+        "orange": "Orange",
+        "blue": "Blue",
+        "red": "Red",
+        "yellow": "Yellow",
+        "green": "Green"
+      },
+      "default": "Default",
+      "theme": {
+        "title": "Mode",
+        "system": "System",
+        "dark": "Dark",
+        "light": "Light"
+      }
+    },
+    "permissions": {
+      "title": "Permissions",
+      "statusLabel": "Permission",
+      "granted": "Granted",
+      "denied": "Denied",
+      "prompt": "Not requested yet",
+      "unenrolled": "Nothing set up on this device",
+      "unsupported": "Not available on this platform",
+      "request": "Ask for it",
+      "openSettings": "Open system settings",
+      "deniedHint": "It was turned off for the wallet. Only the system settings can turn it back on.",
+      "notifications": {
+        "title": "Notifications"
+      },
+      "camera": {
+        "title": "Camera"
+      },
+      "biometrics": {
+        "title": "Face and fingerprint"
+      }
+    },
+    "security": {
+      "title": "Security",
+      "lockTitle": "Locking the wallet",
+      "pinLabel": "PIN",
+      "pinDigits": "{digits} digits",
+      "pinChange": "Change it",
+      "pinLength": "How long?",
+      "pinLengthFour": "4 digits",
+      "pinLengthSix": "6 digits",
+      "biometricsLabel": "Biometrics",
+      "biometricsUnavailable": "Not available on this device",
+      "biometricsDesktop": "Not available on a computer",
+      "autoLockLabel": "Lock after doing nothing for",
+      "autoLockMinutes": {
+        "one": "{count} minute",
+        "other": "{count} minutes"
+      },
+      "autoLockHint": "Only while the wallet is open and untouched. Leaving it for another app locks it straight away.",
+      "signOutTitle": "Sign out",
+      "signOut": "Sign out",
+      "keptLabel": "Kept in",
+      "keptInStore": "This device's own secret store",
+      "keptInFile": "This application's private storage"
+    },
+    "development": {
+      "device": {
+        "title": "This device",
+        "featuresLabel": "Active platform features",
+        "featureScanner": "Camera scanner",
+        "featureNotifications": "System notifications",
+        "featureWindowState": "Window state remembered",
+        "featureSingleInstance": "Single instance",
+        "featureTray": "System tray",
+        "featureDeepLink": "almena:// links",
+        "featureOn": "on",
+        "featureOff": "off"
+      },
+      "about": {
+        "title": "About",
+        "versionLabel": "Version",
+        "platformLabel": "Platform"
+      },
+      "logs": {
+        "title": "Log",
+        "locationLabel": "Where",
+        "sizeLabel": "Size",
+        "filesLabel": "Files",
+        "empty": "Nothing has been written yet.",
+        "show": "Show the last lines",
+        "hide": "Hide",
+        "export": "Gather it into one file",
+        "exported": "Written to {path}",
+        "share": "Share the log",
+        "shareTitle": "Almena ID wallet log",
+        "save": "Save a copy…",
+        "saved": "A copy has been saved.",
+        "fileKind": "Text file",
+        "copy": "Copy",
+        "copied": "Copied",
+        "reveal": "Show in folder",
+        "handOver": "Before you send this: the log says when you used the wallet, which sites you signed in to, and what device and version this is. It never holds your recovery phrase, your PIN or any key.",
+        "notBrowsable": "On Android the log stays in this application's private storage, where no file explorer reaches it. Share it or save a copy to get it out.",
+        "exportHeader": {
+          "what": "Almena ID wallet log, exported on {when}.",
+          "safe": "It holds no recovery phrase, no seed, no PIN and no key. The wallet never writes those down.",
+          "cost": "It does hold when this wallet was used, which sites it was used with, and what device and version this is.",
+          "care": "Send it only to somebody you mean to tell that."
+        },
+        "errors": {
+          "develop_no_logs": "There is nowhere to write a log on this device.",
+          "develop_unreadable": "The log could not be read.",
+          "develop_storage": "The log could not be written where you could pick it up.",
+          "develop_no_share": "There is nothing on this device to hand a file to.",
+          "develop_empty": "There is nothing in the log to hand over yet.",
+          "develop_cancelled": "Nothing was sent.",
+          "develop_unknown": "That did not work. Try again."
+        }
+      }
+    }
+  },
+  "pin": {
+    "chooseTitle": "Choose a PIN",
+    "chooseSubtitle": "{digits} digits, and this device is the only one that will ever check them.",
+    "repeatTitle": "Type it again",
+    "repeatSubtitle": "So a slip does not become a lock nobody can open.",
+    "unlockTitle": "Your PIN",
+    "unlockSubtitle": "The wallet is locked.",
+    "mismatch": "Those two do not match. Start again.",
+    "wrong": "That is not the PIN.",
+    "delete": "Delete",
+    "useBiometrics": "Use biometrics",
+    "currentTitle": "Your current PIN",
+    "currentSubtitle": "Asked for first, so nobody who finds the wallet open can replace it.",
+    "replaceIntro": "The identity itself is untouched. Only the digits that open it change.",
+    "armSubtitle": "Your PIN, once, and this device is given a key of its own.",
+    "attemptsLeft": {
+      "one": "{count} attempt left. When it is gone the identity is removed from this device, and your twelve words are the way back.",
+      "other": "{count} attempts left. When they are gone the identity is removed from this device, and your twelve words are the way back."
+    },
+    "checking": "Checking your PIN"
+  },
+  "vault": {
+    "errors": {
+      "vault_wrong_pin": "That is not the PIN.",
+      "vault_destroyed": "That was the last attempt. The identity has been removed from this device, and your twelve words are the way back.",
+      "vault_nothing": "There is no identity on this device.",
+      "vault_exists": "This device is already holding an identity.",
+      "vault_pin_length": "A PIN is four or six digits.",
+      "vault_pin_not_digits": "A PIN is digits and nothing else.",
+      "vault_no_identity": "There is no identity open to write down.",
+      "vault_no_device_key": "This device is not holding a key. Use your PIN.",
+      "vault_device_unproven": "This device did not recognise you, so nothing has been turned on. Try again, or carry on with your PIN.",
+      "vault_no_device_store": "This device cannot keep a key of its own, so the PIN is the way in.",
+      "vault_unreadable": "What is on this device is not something this wallet can read.",
+      "vault_too_new": "This was written by a newer version of the wallet. Update it, and the identity will be here.",
+      "vault_storage": "The identity could not be read from this device. Nothing has been changed.",
+      "vault_entropy": "This device would not supply the randomness the encryption needs. Nothing has been written.",
+      "vault_unknown": "That did not work. Try again."
+    },
+    "problem": {
+      "title": "This device is holding an identity it cannot open",
+      "body": "Nothing has been lost and nothing has been changed. Until this is answered the wallet will not offer to create a second identity over the one already here.",
+      "retry": "Try again"
+    }
+  },
+  "logout": {
+    "title": "Sign out",
+    "intro": "Read this before you do. There is no support line that can undo it.",
+    "identity": "The identity goes. This device is holding it and nothing else is: not the wallet's makers, not the platform, not a backup somewhere.",
+    "credentials": "Anything issued to it goes with it. A credential belongs to the identity, and an identity nobody can prove is a credential nobody will accept.",
+    "phrase": "Your twelve words are the only way back. With them the identity comes back exactly as it was, on this device or any other. Without them it is gone, and gone is permanent.",
+    "question": "Do you have your twelve words in front of you?",
+    "waiting": "You can sign out in {seconds} s",
+    "slide": "Slide to sign out",
+    "slideDone": "Signing out",
+    "cancel": "Stay signed in"
+  }
+}

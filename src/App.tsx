@@ -1,51 +1,423 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+import { LiquidTabBar, type TabDefinition } from "./components/LiquidTabBar";
+import { BrandSpinner } from "./components/BrandSpinner";
+import { HomeIcon, QrIcon, SettingsIcon } from "./components/icons";
+import { plural, useI18n } from "./i18n";
+import { useAccent } from "./appearance";
+import { useAutoLock, useIdle } from "./autolock";
+import { useBackdrop } from "./backdrop";
+import { useDeepLink } from "./deepLink";
+import { useOutOfSight } from "./lock";
+import { forgetSignIn, isSignInLink } from "./signin";
+import { usePlatform } from "./platform";
+import { useTheme } from "./theme";
+import { useTray } from "./tray";
+import { forgetIdentity, type Identity } from "./identity";
+import {
+  destroyVault,
+  errorCode as vaultErrorCode,
+  openVault,
+  openVaultWithDevice,
+  useVault,
+} from "./vault";
+import { HomeScreen } from "./screens/HomeScreen";
+import { PinChange } from "./screens/PinChange";
+import { PinConfirm } from "./screens/PinConfirm";
+import { PinScreen } from "./screens/PinScreen";
+import { LogoutScreen } from "./screens/LogoutScreen";
+import { ApprovalScreen } from "./screens/ApprovalScreen";
+import { LinkScreen } from "./screens/LinkScreen";
+import { ScanScreen } from "./screens/ScanScreen";
+import { Onboarding } from "./screens/onboarding/Onboarding";
+import { SettingsScreen } from "./screens/settings/SettingsScreen";
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
+/**
+ * `link` and `logout` are not tabs: one is where an `almena://` link puts the
+ * wallet, the other is what Settings opens to ask whether somebody means it.
+ * `pin` and `device` are the two things Security sends somebody to. All of them
+ * are left through their own back button.
+ */
+type Route = "home" | "scan" | "settings" | "link" | "approve" | "logout" | "pin" | "device";
+
+export default function App() {
+  const { t, locale } = useI18n();
+  const { platform } = usePlatform();
+  // Called for the tray it puts on the bar, not for what it answers: the wallet
+  // no longer has anything to say about the tray, but closing the window still
+  // means "put away" wherever one was installed.
+  useTray();
+  const deepLink = useDeepLink();
+  const { accent, setAccent } = useAccent();
+  const { autoLock, setAutoLock } = useAutoLock();
+  const { theme, setTheme } = useTheme();
+  const vault = useVault();
+  const [identity, setIdentity] = useState<Identity | null>(null);
+  const [route, setRoute] = useState<Route>("home");
+  // Where Settings opens: back where somebody was, when they are coming back
+  // from a screen a section sent them to.
+  const [settingsSection, setSettingsSection] = useState<"security" | null>(null);
+  const [cameraPreview, setCameraPreview] = useState(false);
+  // The window behind the page wears the same colour the page does, so turning
+  // the device does not flash the native white through — see `backdrop`. Read
+  // after `useTheme` above, because it reads the palette that hook just applied.
+  useBackdrop(theme, cameraPreview);
+  // A sign-in request, whether it arrived by link or through the camera.
+  const [request, setRequest] = useState<string | null>(null);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+  // Signing out is reachable from behind the lock and from a record that cannot
+  // be opened, neither of which has a Settings to route through.
+  const [signOutAsked, setSignOutAsked] = useState(false);
+  const [unlockBusy, setUnlockBusy] = useState(false);
+
+  // A link that arrives takes the screen, whatever was on it. It is the only
+  // thing here that can come from outside while somebody is looking elsewhere.
+  useEffect(() => {
+    if (!deepLink.url) {
+      return;
+    }
+
+    // A sign-in request is the one kind of link the wallet knows what to do
+    // with. Everything else is still only shown.
+    if (isSignInLink(deepLink.url)) {
+      setRequest(deepLink.url);
+      setRoute("approve");
+    } else {
+      setRoute("link");
+    }
+  }, [deepLink.url]);
+
+  const leaveLink = useCallback(() => {
+    deepLink.clear();
+    setRoute("home");
+  }, [deepLink]);
+
+  const leaveRequest = useCallback(() => {
+    // Whatever was not answered is dropped on this side too, so nothing is
+    // left waiting behind a screen nobody is looking at.
+    void forgetSignIn();
+    setRequest(null);
+    deepLink.clear();
+    setRoute("home");
+  }, [deepLink]);
+
+  // The wallet leaving the screen lets go of the identity rather than covering
+  // it: what is written on the device stays written, and the seed the wallet was
+  // signing with is no longer in this process at all. Coming back opens the
+  // record again, which costs one derivation and is the whole point of the lock.
+  //
+  // A request nobody answered goes with it, on both sides, rather than waiting
+  // behind a lock for somebody who has walked away.
+  const lockNow = useCallback(() => {
+    void forgetSignIn();
+    setRequest(null);
+    deepLink.clear();
+    setIdentity((open) => {
+      if (open) {
+        void forgetIdentity();
+      }
+      return null;
+    });
+    setRoute("home");
+  }, [deepLink]);
+
+  // Raised while an unlock is in flight, and the reason it exists is Face ID:
+  // the system's own prompt comes up over the wallet, which the webview may well
+  // report as the wallet leaving the screen. Without it, being recognised would
+  // open the wallet and then immediately close it again.
+  const unlocking = useRef(false);
+  // **Deferred, not ignored.** Suppressing the lock while a prompt is up would
+  // mean a wallet backgrounded mid-unlock came back already open — the one thing
+  // the lock exists to prevent. What happened during the unlock is answered
+  // after it instead.
+  const hiddenMidUnlock = useRef(false);
+
+  useOutOfSight(
+    useCallback(() => {
+      if (unlocking.current) {
+        hiddenMidUnlock.current = true;
+        return;
+      }
+      lockNow();
+    }, [lockNow]),
+  );
+
+  // The other way a wallet is no longer being used: still on screen, and
+  // nobody there. Only while one is open — there is nothing to let go of
+  // behind the lock, and a timer running there would be counting nothing.
+  useIdle(autoLock, identity !== null, lockNow);
+
+  // Signing out is the other thing entirely: the record itself goes, and the
+  // twelve words are what is left.
+  const signOut = useCallback(async () => {
+    setRoute("home");
+    setSignOutAsked(false);
+    setIdentity(null);
+    setUnlockError(null);
+    void forgetIdentity();
+    vault.adopt(await destroyVault().catch(() => vault.status));
+  }, [vault]);
+
+  const unlock = useCallback(
+    async (open: () => Promise<Identity>) => {
+      setUnlockError(null);
+      setUnlockBusy(true);
+      unlocking.current = true;
+      try {
+        setIdentity(await open());
+      } catch (failure) {
+        setUnlockError(t.vault.errors[vaultErrorCode(failure)]);
+        // The count of what is left changed, and a record spent to its last
+        // attempt is gone — which the welcome screen has to be told about.
+        void vault.refresh();
+      } finally {
+        setUnlockBusy(false);
+        unlocking.current = false;
+        if (hiddenMidUnlock.current || document.hidden) {
+          hiddenMidUnlock.current = false;
+          lockNow();
+        }
+      }
+    },
+    [lockNow, t, vault],
+  );
+
+  const goHome = useCallback(() => setRoute("home"), []);
+  const backToSecurity = useCallback(() => {
+    setSettingsSection("security");
+    setRoute("settings");
+  }, []);
+
+  // **Scanning is offered only where it can happen.** A computer has no camera
+  // the wallet may drive, and a request reaches it as an `almena://` link
+  // instead; a tab there would be a tab that only ever leads to an apology. The
+  // answer comes from the Rust side, which knows because it is the same switch
+  // that decided whether to register the scanner at all.
+  const tabs: TabDefinition<Route>[] = [
+    { id: "home", label: t.nav.home, icon: <HomeIcon /> },
+    ...(platform.barcodeScanner
+      ? [{ id: "scan" as const, label: t.nav.scan, icon: <QrIcon /> }]
+      : []),
+    { id: "settings", label: t.nav.settings, icon: <SettingsIcon /> },
+  ];
+
+  // Nothing is drawn on a guess. Until the device has said whether it is holding
+  // an identity, showing the welcome screen would tell somebody who has one that
+  // they do not.
+  if (!vault.read) {
+    return (
+      <div className="app">
+        <main className="app__view app__view--plain">
+          <BrandSpinner label={t.app.name} />
+        </main>
+      </div>
+    );
   }
 
-  return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+  // Somebody wanting out from behind the lock, or from a record that cannot be
+  // opened. The same screen, and the same ten seconds, as from Settings.
+  if (signOutAsked && !identity) {
+    return (
+      <div className="app">
+        <main className="app__view app__view--plain">
+          <LogoutScreen onBack={() => setSignOutAsked(false)} onConfirmed={() => void signOut()} />
+        </main>
       </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+    );
+  }
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
+  // There is something where the record goes and this wallet cannot read it. The
+  // one thing that must not happen here is the welcome screen: offering to create
+  // an identity would write a second one over the first.
+  if (vault.status.problem) {
+    return (
+      <div className="app">
+        <main className="app__view app__view--plain">
+          <div className="screen">
+            <header className="screen__header">
+              <h1 className="screen__title">{t.vault.problem.title}</h1>
+            </header>
+            <p className="screen__intro">{t.vault.errors[vault.status.problem]}</p>
+            <section className="card">
+              <p className="card__body">{t.vault.problem.body}</p>
+              <div className="button-row">
+                <button
+                  type="button"
+                  className="button button--primary"
+                  onClick={() => void vault.refresh()}
+                >
+                  {t.vault.problem.retry}
+                </button>
+                <button
+                  type="button"
+                  className="button button--danger"
+                  onClick={() => setSignOutAsked(true)}
+                >
+                  {t.settings.security.signOut}
+                </button>
+              </div>
+            </section>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // No identity on this device: the way in is the only thing there is.
+  if (!vault.status.exists) {
+    return (
+      <div className="app">
+        <main className="app__view app__view--plain">
+          <Onboarding
+            onReady={(made) => {
+              setIdentity(made);
+              void vault.refresh();
+            }}
+          />
+        </main>
+      </div>
+    );
+  }
+
+  // There is one, and it is not open. The only ways past are the PIN, a face
+  // where the system will vouch for one, and signing out to start from the words.
+  if (!identity) {
+    return (
+      <div className="app">
+        <main className="app__view app__view--plain">
+          <PinScreen
+            title={t.pin.unlockTitle}
+            subtitle={t.pin.unlockSubtitle}
+            digits={vault.status.digits ?? 4}
+            error={unlockError}
+            busy={unlockBusy}
+            busyLabel={t.pin.checking}
+            onBiometrics={
+              vault.status.deviceKey
+                ? () => {
+                    void unlock(openVaultWithDevice);
+                  }
+                : undefined
+            }
+            onComplete={(code) => {
+              void unlock(() => openVault(code));
+            }}
+            footer={
+              <>
+                {/* Said only once it is worth saying. A wallet that counts down
+                    from ten at every launch is a wallet that reads as broken;
+                    one that says nothing lets somebody destroy an identity by
+                    guessing. */}
+                {vault.status.attemptsLeft <= 3 ? (
+                  <p className="card__note card__note--warning">
+                    {plural(t.pin.attemptsLeft, vault.status.attemptsLeft, locale)}
+                  </p>
+                ) : null}
+                {/* Behind the lock this is still the button that destroys an
+                    identity, so it asks the same question Settings asks rather
+                    than doing it on one tap. */}
+                <button
+                  type="button"
+                  className="button button--danger"
+                  onClick={() => setSignOutAsked(true)}
+                >
+                  {t.settings.security.signOut}
+                </button>
+              </>
+            }
+          />
+        </main>
+      </div>
+    );
+  }
+
+  // Screens with no bar at the foot of them: the room the layout keeps for one
+  // is otherwise a band of nothing under a keypad, and it is what stops the
+  // keypad reaching the bottom of the screen at all.
+  const barless = route === "logout" || route === "pin" || route === "device";
+
+  return (
+    <div className={cameraPreview ? "app app--camera" : "app"}>
+      <main
+        className={barless && !cameraPreview ? "app__view app__view--plain" : "app__view"}
+        key={route}
       >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
+        {route === "home" ? <HomeScreen identity={identity} /> : null}
+        {route === "scan" ? (
+          <ScanScreen
+            platform={platform}
+            onBack={goHome}
+            onPreviewChange={setCameraPreview}
+            onSignIn={(link) => {
+              setRequest(link);
+              setRoute("approve");
+            }}
+          />
+        ) : null}
+        {route === "settings" ? (
+          <SettingsScreen
+            platform={platform}
+            accent={accent}
+            onAccentChange={setAccent}
+            theme={theme}
+            onThemeChange={setTheme}
+            autoLock={autoLock}
+            onAutoLockChange={setAutoLock}
+            vault={vault}
+            initialSection={settingsSection}
+            onChangePin={() => setRoute("pin")}
+            onArmDevice={() => setRoute("device")}
+            onSignOut={() => setRoute("logout")}
+          />
+        ) : null}
+        {route === "pin" ? (
+          <PinChange
+            vault={vault}
+            digits={vault.status.digits ?? 4}
+            onBack={backToSecurity}
+            onChanged={(status) => {
+              vault.adopt(status);
+              backToSecurity();
+            }}
+          />
+        ) : null}
+        {route === "device" ? (
+          <PinConfirm
+            vault={vault}
+            digits={vault.status.digits ?? 4}
+            onBack={backToSecurity}
+            onArmed={(status) => {
+              vault.adopt(status);
+              backToSecurity();
+            }}
+          />
+        ) : null}
+        {route === "logout" ? (
+          <LogoutScreen onBack={backToSecurity} onConfirmed={() => void signOut()} />
+        ) : null}
+        {route === "link" && deepLink.url ? (
+          <LinkScreen url={deepLink.url} onBack={leaveLink} />
+        ) : null}
+        {route === "approve" && request ? (
+          <ApprovalScreen link={request} onBack={leaveRequest} />
+        ) : null}
+      </main>
+
+      {/* The menu steps aside while the camera preview is live. */}
+      {cameraPreview || barless ? null : (
+        <LiquidTabBar
+          label={t.nav.label}
+          tabs={tabs}
+          active={route === "link" || route === "approve" ? "home" : route}
+          onSelect={(next) => {
+            void forgetSignIn();
+            setRequest(null);
+            deepLink.clear();
+            setSettingsSection(null);
+            setRoute(next);
+          }}
         />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+      )}
+    </div>
   );
 }
-
-export default App;

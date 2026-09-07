@@ -1,5 +1,45 @@
 version: '3'
 
+# Almena ID wallet — development entry points.
+#
+#   Desktop   task dev             Windows, macOS and Linux, from this machine
+#   Android   task init:android    once per checkout, then task deploy:android
+#   iOS       task init:ios         once per checkout, then task deploy:ios
+#
+# The deploy tasks list the reachable devices, emulators and simulators, ask
+# which one to use, and then build and install the whole app there — frontend
+# packaged inside, not served from this computer.
+#
+# **They install it and stop.** Opening it is left to whoever is holding the
+# device: a deploy that also starts the app takes the screen away from them, and
+# it skips past the one thing a wallet has to be watched doing — the cold start
+# that reads what is on the device and asks for a PIN.
+# Devices attached over Wi-Fi are listed next to cabled ones. Pass DEVICE to
+# skip the question:
+#
+#   task deploy:android DEVICE=Pixel
+#   task deploy:ios DEVICE="Miguel's iPhone"
+
+# Machine-local configuration, not committed:
+#
+#   APPLE_DEVELOPMENT_TEAM  the development team this machine signs with. It is
+#                           somebody's own identity as a developer, and a
+#                           checkout on another machine carries its own.
+#                           Missing file, missing variable — the iOS tasks say so.
+#
+# The platform the wallet answers to is not one of these. It is pinned in
+# src-tauri/build.rs, which is the only place that survives every way cargo gets
+# started: it used to be a cargo config file, and cargo looks for those by
+# walking up from the directory it was invoked in rather than from the manifest,
+# so the iOS build — which runs cargo from here, above src-tauri — never read it
+# and the phone silently answered a development address. Exporting
+# ALMENA_PLATFORM_URL still overrides it, on every platform.
+dotenv: ['.env.local']
+
+vars:
+  PM: pnpm
+  TAURI: pnpm tauri
+
 tasks:
   default:
     desc: List the available tasks
@@ -8,51 +48,56 @@ tasks:
     silent: true
 
   install:
-    desc: Install Node dependencies
+    desc: Install the Node dependencies
+    sources:
+      - package.json
+      - pnpm-lock.yaml
+    generates:
+      - node_modules/.modules.yaml
     cmds:
-      - npm install
+      - '{{.PM}} install'
 
   dev:
-    desc: Run the Tauri desktop app in development mode
+    desc: Run the desktop app in development mode
     deps: [install]
     interactive: true
     cmds:
-      - npm run tauri dev
+      - '{{.TAURI}} dev'
 
   dev:web:
-    desc: Run only the Vite web layer, without the Tauri shell
+    desc: Run only the Vite layer in a browser, without the Tauri shell
     deps: [install]
     interactive: true
     cmds:
-      - npm run dev
+      - '{{.PM}} run dev'
 
   build:
-    desc: Build the Tauri desktop bundle
+    desc: Build the desktop bundle for this host platform
     deps: [install]
     cmds:
-      - npm run tauri build
+      - '{{.TAURI}} build'
 
   build:web:
     desc: Build only the web assets
     deps: [install]
     cmds:
-      - npm run build
+      - '{{.PM}} run build'
 
   preview:
-    desc: Preview the built web assets
+    desc: Preview the built web assets in a browser
     deps: [build:web]
     interactive: true
     cmds:
-      - npm run preview
+      - '{{.PM}} run preview'
 
   typecheck:
     desc: Type-check the frontend without emitting output
     deps: [install]
     cmds:
-      - npx tsc --noEmit
+      - '{{.PM}} exec tsc --noEmit'
 
   rust:check:
-    desc: Type-check the Rust side of the Tauri app
+    desc: Type-check the Rust side of the app
     dir: src-tauri
     cmds:
       - cargo check
@@ -63,14 +108,406 @@ tasks:
     cmds:
       - cargo fmt
 
+  rust:check:mobile:
+    desc: Type-check the Rust the mobile builds compile, which the host check skips
+    dir: src-tauri
+    cmds:
+      # Everything behind `#[cfg(mobile)]` — the scanner, the biometrics — is
+      # invisible to a check for this computer. A mobile target is the only way
+      # to find out whether it compiles without waiting for a deploy.
+      - cargo check --target aarch64-apple-ios-sim
+
+  rust:test:
+    desc: Run the Rust test suite
+    dir: src-tauri
+    cmds:
+      # The interop test is ignored by default: it needs a platform running and
+      # a sign-in link to answer. Run it with
+      # `ALMENA_TEST_LINK='almena://signin?…' cargo test -- --ignored`.
+      - cargo test {{.CLI_ARGS}}
+
   check:
-    desc: Run every static check (TypeScript + Rust)
+    desc: Run every check (TypeScript, Rust, tests)
     cmds:
       - task: typecheck
       - task: rust:check
+      - task: rust:check:mobile
+      - task: rust:test
 
   clean:
     desc: Remove build output and installed dependencies
     cmds:
-      - rm -rf dist node_modules
+      - rm -rf dist node_modules .task
       - cargo clean --manifest-path src-tauri/Cargo.toml
+
+  # ----- Branding ------------------------------------------------------------
+
+  icons:
+    desc: Regenerate the icon set from assets/branding and sync it into the native projects
+    deps: [install]
+    cmds:
+      - |
+        rm -rf .task/icons && mkdir -p .task/icons/shared .task/icons/macos
+
+        # Desktop and iOS come straight from the branding manifest, which carries
+        # the background colour the iOS icons have to be flattened onto — iOS
+        # refuses transparency. Generated into a scratch directory so the run
+        # cannot touch src-tauri/icons/android, see below.
+        {{.TAURI}} icon assets/branding/icon-manifest.json -o .task/icons/shared
+        cp .task/icons/shared/*.png .task/icons/shared/icon.icns .task/icons/shared/icon.ico src-tauri/icons/
+        cp .task/icons/shared/ios/*.png src-tauri/icons/ios/
+
+        # macOS asks the mark to sit larger in its canvas than every other
+        # platform does, so the .icns is built from the macOS variant of the mark.
+        {{.TAURI}} icon assets/branding/app-icon-macos.png -o .task/icons/macos
+        cp .task/icons/macos/icon.icns src-tauri/icons/icon.icns
+
+        # The tray glyphs. Monochrome, and two of them: macOS fills the black one
+        # as a template image to suit its bar, while Windows and Linux draw what
+        # they are given onto a bar that is dark by default. Resized here rather
+        # than by `tauri icon`, which knows nothing about trays — and only where
+        # sips exists, which is macOS; elsewhere the committed glyphs stand.
+        if command -v sips >/dev/null 2>&1; then
+          sips -z 32 32 assets/branding/tray/tray-icon.png --out src-tauri/icons/tray.png >/dev/null
+          sips -z 32 32 assets/branding/tray/tray-icon-light.png --out src-tauri/icons/tray-light.png >/dev/null
+        else
+          echo "Keeping the committed tray glyphs: sips is macOS only."
+        fi
+
+        # The web layer shows the mark in the dashboard header and uses it as the
+        # favicon, so it is served from public/ as well.
+        cp assets/branding/app-icon.png public/brand/app-icon.png
+
+        rm -rf .task/icons
+
+        # **Android is not regenerated here.** Its launcher icon is three layers —
+        # background, foreground and monochrome — and the foreground has to stay
+        # inside the 66/108 safe zone the launcher masks down to. A single square
+        # source cannot be turned into that, and `tauri icon` flattens it into one
+        # oversized layer that the mask then crops. The artwork under
+        # src-tauri/icons/android is drawn by hand and committed; this task only
+        # carries it into the generated project.
+      - task: icons:sync
+
+  icons:sync:
+    internal: true
+    desc: Copy the committed icon artwork into the generated native projects
+    cmds:
+      - |
+        # `tauri android init` and `tauri ios init` write their own icons over the
+        # generated projects, so the committed artwork is put back afterwards.
+        # These directories are what the built app actually reads.
+        if [ -d src-tauri/gen/android/app/src/main/res ]; then
+          cp -R src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
+          echo "Android icons synced into src-tauri/gen/android"
+        fi
+        if [ -d src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset ]; then
+          cp src-tauri/icons/ios/*.png src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/
+          echo "iOS icons synced into src-tauri/gen/apple"
+        fi
+
+  # --------------------------------------------------------------------------
+  # Mobile
+  #
+  # The Android SDK and NDK locations are resolved here, because the Tauri CLI
+  # requires both as environment variables and a machine that has Android
+  # Studio installed does not necessarily export them.
+  # --------------------------------------------------------------------------
+
+  init:android:
+    desc: Initialise the Android project under src-tauri/gen/android
+    deps: [install]
+    interactive: true
+    vars: &android-toolchain
+      # **Resolved into variables, not into `env:`.** A Taskfile's `env` loses to
+      # whatever the shell already exports, so on a machine where something like
+      # jenv sets JAVA_HOME the answer worked out here was computed and thrown
+      # away — and Gradle ran on a JDK it cannot parse. The commands below export
+      # these themselves, which nothing overrides.
+      ANDROID_SDK:
+        sh: |
+          for dir in "$ANDROID_HOME" "$ANDROID_SDK_ROOT" "$HOME/Library/Android/sdk" "$HOME/Android/Sdk"; do
+            if [ -n "$dir" ] && [ -d "$dir" ]; then echo "$dir"; exit 0; fi
+          done
+      ANDROID_NDK:
+        sh: |
+          if [ -n "$NDK_HOME" ]; then echo "$NDK_HOME"; exit 0; fi
+          if [ -n "$ANDROID_NDK_HOME" ]; then echo "$ANDROID_NDK_HOME"; exit 0; fi
+          for dir in "$ANDROID_HOME" "$ANDROID_SDK_ROOT" "$HOME/Library/Android/sdk" "$HOME/Android/Sdk"; do
+            if [ -n "$dir" ] && [ -d "$dir/ndk" ]; then
+              ls -d "$dir"/ndk/*/ 2>/dev/null | sort -V | tail -1 | sed 's|/$||'
+              exit 0
+            fi
+          done
+      # Gradle 8.14, the version the generated project pins, refuses class files
+      # newer than JDK 24 — and Homebrew's `java`, the JDK inside Android Studio
+      # and whatever jenv is pointing at are all past that now. The newest one the
+      # build actually supports is picked here.
+      ANDROID_JDK:
+        sh: |
+          for dir in "$JAVA_HOME" \
+                     "/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
+                     /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
+                     /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home \
+                     /usr/lib/jvm/java-21-openjdk* /usr/lib/jvm/java-17-openjdk* \
+                     /Library/Java/JavaVirtualMachines/*/Contents/Home; do
+            [ -n "$dir" ] && [ -x "$dir/bin/java" ] || continue
+            major=$("$dir/bin/java" -version 2>&1 | sed -n 's/.*version "\([0-9][0-9]*\).*/\1/p' | head -n 1)
+            [ -n "$major" ] || continue
+            if [ "$major" -ge 17 ] && [ "$major" -le 24 ]; then echo "$dir"; exit 0; fi
+          done
+    preconditions:
+      - sh: test -n '{{.ANDROID_SDK}}'
+        msg: 'No Android SDK found. Install it with Android Studio, or set ANDROID_HOME.'
+      - sh: test -n '{{.ANDROID_JDK}}'
+        msg: |
+          No JDK between 17 and 24 was found, and Gradle will not build without one.
+          Install it, for example `brew install openjdk@17`.
+    cmds:
+      - |
+        export ANDROID_HOME='{{.ANDROID_SDK}}'
+        export NDK_HOME='{{.ANDROID_NDK}}'
+        export JAVA_HOME='{{.ANDROID_JDK}}'
+        export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
+        {{.TAURI}} android init
+      - task: icons:sync
+
+  init:ios:
+    desc: Initialise the iOS project under src-tauri/gen/apple
+    deps: [install]
+    interactive: true
+    env:
+      # `TEAM=<id>` on the command line wins; otherwise whatever .env.local or
+      # the shell already says.
+      APPLE_DEVELOPMENT_TEAM: '{{.TEAM | default .APPLE_DEVELOPMENT_TEAM}}'
+    preconditions:
+      - sh: test -n "$APPLE_DEVELOPMENT_TEAM"
+        msg: |
+          No Apple development team. Xcode refuses to sign for a device without one.
+          Write it once into wallet/.env.local, which is not committed:
+
+            APPLE_DEVELOPMENT_TEAM=XXXXXXXXXX
+
+          It is the Team ID in developer.apple.com > Membership, or run:
+            task init:ios TEAM=XXXXXXXXXX
+    cmds:
+      - '{{.TAURI}} ios init'
+      - task: icons:sync
+
+  deploy:android:
+    desc: Build the whole app and install it on an Android device or emulator
+    silent: true
+    deps: [install]
+    interactive: true
+    vars: *android-toolchain
+    preconditions:
+      - sh: test -d src-tauri/gen/android
+        msg: 'The Android project is not initialised yet. Run: task init:android'
+      - sh: test -n '{{.ANDROID_JDK}}'
+        msg: |
+          No JDK between 17 and 24 was found, and Gradle will not build without one.
+          Install it, for example `brew install openjdk@17`.
+    cmds:
+      - |
+        set -e
+        export ANDROID_HOME='{{.ANDROID_SDK}}'
+        export NDK_HOME='{{.ANDROID_NDK}}'
+        export JAVA_HOME='{{.ANDROID_JDK}}'
+        export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
+        mkdir -p .task
+        targets=.task/android-targets
+        : > "$targets"
+
+        # Everything adb can reach: cabled, over Wi-Fi and running emulators.
+        adb start-server >/dev/null 2>&1 || true
+        adb devices | sed '1d' | while read -r serial state _rest; do
+          [ "$state" = "device" ] || continue
+          case "$serial" in
+            emulator-*)
+              name=$(adb -s "$serial" emu avd name 2>/dev/null | head -n 1 | tr -d '\r')
+              printf '%s|%s (emulator)\n' "$serial" "${name:-$serial}" ;;
+            *)
+              name=$(adb -s "$serial" shell getprop ro.product.model 2>/dev/null | tr -d '\r')
+              printf '%s|%s (%s)\n' "$serial" "${name:-$serial}" "$serial" ;;
+          esac
+        done >> "$targets"
+
+        count=$(wc -l < "$targets" | tr -d ' ')
+        [ "$count" -gt 0 ] || { echo "No Android device or emulator is connected." >&2; exit 1; }
+
+        if [ -n "$DEVICE_FILTER" ]; then
+          choice=$(grep -n -i -e "$DEVICE_FILTER" "$targets" | head -n 1 | cut -d: -f1)
+          [ -n "$choice" ] || { echo "No Android target matches \"$DEVICE_FILTER\"." >&2; exit 1; }
+        elif [ "$count" -eq 1 ]; then
+          choice=1
+        else
+          echo ""
+          echo "Android targets:"
+          i=0
+          while IFS='|' read -r serial label; do
+            i=$((i + 1))
+            printf '  %d) %s\n' "$i" "$label"
+          done < "$targets"
+          echo ""
+          printf 'Deploy to [1-%s]: ' "$count"
+          read -r choice
+        fi
+
+        case "$choice" in
+          ''|*[!0-9]*) echo "That is not one of the targets." >&2; exit 1 ;;
+        esac
+        [ "$choice" -ge 1 ] && [ "$choice" -le "$count" ] || \
+          { echo "That is not one of the targets." >&2; exit 1; }
+        line=$(sed -n "${choice}p" "$targets")
+        serial=${line%%|*}
+        label=${line#*|}
+
+        # Build for the ABI of the chosen target only, so a deploy stays quick.
+        case "$(adb -s "$serial" shell getprop ro.product.cpu.abi 2>/dev/null | tr -d '\r')" in
+          armeabi-v7a) target=armv7 ;;
+          x86_64) target=x86_64 ;;
+          x86) target=i686 ;;
+          *) target=aarch64 ;;
+        esac
+
+        # Clear the previous APKs, so what gets installed can only be what this
+        # run produced.
+        rm -rf src-tauri/gen/android/app/build/outputs/apk
+
+        echo "Building the app for $label..."
+        {{.TAURI}} android build --debug --apk -t "$target"
+
+        apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*-debug.apk' 2>/dev/null | head -n 1)
+        [ -n "$apk" ] || { echo "No debug APK was produced." >&2; exit 1; }
+
+        # Installed and left alone. A deploy that also starts the app takes the
+        # screen away from whoever was looking at it, and it hides the one thing
+        # a wallet has to be watched doing: what it looks like on a cold start,
+        # which is the launch that reads the record and asks for a PIN.
+        adb -s "$serial" install -r "$apk"
+        echo "Installed on $label. Open it from the launcher."
+
+  deploy:ios:
+    desc: Build the whole app and install it on an iOS device or simulator
+    silent: true
+    deps: [install]
+    interactive: true
+    env:
+      DEVICE_FILTER: '{{.DEVICE}}'
+      # A simulator build signs nothing; a device build cannot go a step without
+      # this. It is read here so the deploy carries it to xcodebuild.
+      APPLE_DEVELOPMENT_TEAM: '{{.TEAM | default .APPLE_DEVELOPMENT_TEAM}}'
+    preconditions:
+      - sh: test -d src-tauri/gen/apple
+        msg: 'The iOS project is not initialised yet. Run: task init:ios'
+    cmds:
+      - |
+        set -e
+        mkdir -p .task
+        targets=.task/ios-targets
+
+        # **Paired devices come from devicectl**, the tool that installs on them,
+        # and not from `xctrace list devices`: xctrace only lists what is awake
+        # at that second, so a device paired over Wi-Fi disappears whenever its
+        # tunnel is asleep — which is most of the time, and is not the same
+        # thing as being gone. devicectl lists it, says how it is attached, and
+        # wakes the tunnel when it installs.
+        xcrun devicectl list devices --json-output .task/ios-devices.json >/dev/null 2>&1 || true
+        python3 - .task/ios-devices.json > "$targets" <<'PY'
+        import json, sys
+
+        try:
+            payload = json.load(open(sys.argv[1]))
+        except (OSError, ValueError):
+            sys.exit(0)
+
+        for device in payload.get("result", {}).get("devices", []):
+            hardware = device.get("hardwareProperties") or {}
+            properties = device.get("deviceProperties") or {}
+            connection = device.get("connectionProperties") or {}
+            if hardware.get("platform") not in ("iOS", "iPadOS"):
+                continue
+            link = {"wired": "cable", "localNetwork": "Wi-Fi"}.get(
+                connection.get("transportType"), "unknown link"
+            )
+            asleep = connection.get("tunnelState") == "unavailable"
+            label = "{name} — {model}, iOS {os}, {link}{state}".format(
+                name=properties.get("name") or "unknown device",
+                model=hardware.get("marketingName") or hardware.get("deviceType") or "device",
+                os=properties.get("osVersionNumber") or "?",
+                link=link,
+                state=", not reachable right now" if asleep else "",
+            )
+            identifier = device.get("identifier") or hardware.get("udid") or ""
+            print("|".join(("device", identifier, label)))
+        PY
+
+        # Simulators, from the tool that owns them.
+        xcrun xctrace list devices 2>/dev/null | sed -n '/^== Simulators ==/,$p' \
+          | sed -n 's/^\(.*\) Simulator (\([0-9.]*\)) (\([0-9A-F][0-9A-F-]*\))$/simulator|\3|\1 — iOS \2 simulator/p' >> "$targets"
+
+        count=$(wc -l < "$targets" | tr -d ' ')
+        [ "$count" -gt 0 ] || { echo "No iOS device or simulator was found." >&2; exit 1; }
+
+        if [ -n "$DEVICE_FILTER" ]; then
+          choice=$(grep -n -i -e "$DEVICE_FILTER" "$targets" | head -n 1 | cut -d: -f1)
+          [ -n "$choice" ] || { echo "No iOS target matches \"$DEVICE_FILTER\"." >&2; exit 1; }
+        else
+          echo ""
+          echo "iOS targets:"
+          i=0
+          while IFS='|' read -r kind udid label; do
+            i=$((i + 1))
+            printf '  %d) %s\n' "$i" "$label"
+          done < "$targets"
+          echo ""
+          printf 'Deploy to [1-%s]: ' "$count"
+          read -r choice
+        fi
+
+        case "$choice" in
+          ''|*[!0-9]*) echo "That is not one of the targets." >&2; exit 1 ;;
+        esac
+        [ "$choice" -ge 1 ] && [ "$choice" -le "$count" ] || \
+          { echo "That is not one of the targets." >&2; exit 1; }
+        line=$(sed -n "${choice}p" "$targets")
+        kind=$(printf '%s' "$line" | cut -d'|' -f1)
+        udid=$(printf '%s' "$line" | cut -d'|' -f2)
+        label=$(printf '%s' "$line" | cut -d'|' -f3)
+
+        # A build reuses the previous output directory and refuses to overwrite
+        # an app bundle left there by a build for the other kind of target.
+        rm -rf src-tauri/gen/apple/build
+
+        echo "Building the app for $label..."
+        if [ "$kind" = "simulator" ]; then
+          {{.TAURI}} ios build --debug -t aarch64-sim
+          app=$(find src-tauri/gen/apple/build -maxdepth 2 -name '*.app' 2>/dev/null | head -n 1)
+          [ -n "$app" ] || { echo "No simulator build was produced." >&2; exit 1; }
+          xcrun simctl boot "$udid" >/dev/null 2>&1 || true
+          open -a Simulator >/dev/null 2>&1 || true
+          xcrun simctl install "$udid" "$app"
+        else
+          if [ -z "$APPLE_DEVELOPMENT_TEAM" ]; then
+            echo "Signing for a device needs an Apple development team. Write it into wallet/.env.local as APPLE_DEVELOPMENT_TEAM=XXXXXXXXXX, or pass TEAM=XXXXXXXXXX." >&2
+            exit 1
+          fi
+
+          # `debugging` is the export a development install needs.
+          {{.TAURI}} ios build --debug -t aarch64 --export-method debugging
+          # The .ipa lands in an architecture subdirectory, or in the build
+          # directory itself, depending on how the target was named.
+          ipa=$(find src-tauri/gen/apple/build -maxdepth 2 -name '*.ipa' 2>/dev/null | head -n 1)
+          [ -n "$ipa" ] || { echo "No .ipa was produced." >&2; exit 1; }
+
+          # devicectl installs an app bundle, not the archive around it, so the
+          # export is unpacked first.
+          rm -rf .task/ios-payload
+          mkdir -p .task/ios-payload
+          unzip -q "$ipa" -d .task/ios-payload
+          app=$(find .task/ios-payload/Payload -maxdepth 1 -name '*.app' 2>/dev/null | head -n 1)
+          [ -n "$app" ] || { echo "The export carried no app bundle." >&2; exit 1; }
+
+          xcrun devicectl device install app --device "$udid" "$app"
+        fi
+        echo "Installed on $label. Open it from the home screen."

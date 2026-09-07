@@ -1,10 +1,17 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
-  "windows": ["main"],
+  "description": "Capabilities available on every platform the wallet runs on. The filesystem plugin is registered and deliberately absent from this list: it is a dependency for its Rust side only — the one call that writes both to a path and to an Android content:// URI — and the webview is granted none of its commands.",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
-    "opener:default"
+    "opener:default",
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission",
+    "notification:allow-notify",
+    "deep-link:default",
+    "dialog:allow-save"
   ]
 }

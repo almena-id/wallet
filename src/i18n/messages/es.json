@@ -1,0 +1,344 @@
+{
+  "app": {
+    "name": "Almena ID Wallet",
+    "shortName": "Almena ID"
+  },
+  "nav": {
+    "label": "Secciones principales",
+    "home": "Inicio",
+    "scan": "Escanear QR",
+    "settings": "Ajustes",
+    "back": "Volver",
+    "backToHome": "Volver al inicio"
+  },
+  "onboarding": {
+    "welcome": {
+      "tagline": "Tu identidad, en tu poder y presentada cuando tú decides.",
+      "create": "Crear una identidad",
+      "createHint": "Doce palabras y una identidad que solo tú puedes usar",
+      "signIn": "Ya tengo una frase",
+      "signInHint": "Recupera una identidad con las palabras que anotaste"
+    },
+    "phrase": {
+      "title": "Tus doce palabras",
+      "intro": "Estas doce palabras son la identidad. Anótalas en este orden y guárdalas donde solo llegues tú.",
+      "warning": "Nadie puede devolvértelas. Quien las tenga tiene la identidad, y perderlas es perderla.",
+      "copy": "Copiar la frase",
+      "copied": "Copiada",
+      "acknowledge": "He anotado las doce palabras y las tengo conmigo",
+      "continue": "Continuar",
+      "restarted": "Esa no era la palabra que se pedía. Estas son palabras nuevas: las anteriores ya no valen, anótalas antes de seguir."
+    },
+    "confirm": {
+      "title": "Comprueba lo que has anotado",
+      "intro": "Elige la palabra que va en cada posición, leyendo de la copia que guardas.",
+      "progress": "{current} de {total}",
+      "question": "¿Cuál es la palabra número {position}?",
+      "warning": "Un fallo empieza todo otra vez, con doce palabras nuevas que anotar."
+    },
+    "restore": {
+      "title": "Tu frase",
+      "intro": "Escribe las doce palabras en el orden en que las anotaste.",
+      "placeholder": "palabra uno, palabra dos, …",
+      "submit": "Recuperar la identidad"
+    },
+    "creating": {
+      "title": "Creando la identidad"
+    },
+    "errors": {
+      "identity_entropy_unavailable": "Este dispositivo no ha proporcionado la aleatoriedad con la que se crea una frase. No se ha creado nada.",
+      "identity_word_count": "Una frase tiene doce palabras.",
+      "identity_checksum": "Esas doce palabras no son una frase que esta cartera haya producido. Revisa la ortografía y el orden.",
+      "identity_no_draft": "No había ninguna frase que confirmar. Empieza de nuevo.",
+      "identity_unknown": "No se ha podido crear la identidad. Inténtalo otra vez."
+    },
+    "protect": {
+      "title": "Elige un PIN",
+      "intro": "La identidad queda escrita en este dispositivo, cifrada, y estos dígitos son los que la abren. No hay nada que los restablezca: olvidar el PIN es empezar de nuevo desde tus doce palabras.",
+      "saving": "Protegiendo tu identidad"
+    }
+  },
+  "tray": {
+    "quit": "Salir"
+  },
+  "home": {
+    "greeting": "Tu cartera",
+    "credentials": {
+      "title": "Credenciales",
+      "empty": "Todavía no hay credenciales",
+      "emptyHint": "Las credenciales que te emitan aparecerán aquí."
+    },
+    "identity": {
+      "title": "Identidad",
+      "didLabel": "Identificador"
+    }
+  },
+  "platform": {
+    "desktop": "Ordenador",
+    "mobile": "Móvil",
+    "unknown": "Desconocida",
+    "os": {
+      "macos": "macOS",
+      "windows": "Windows",
+      "linux": "Linux",
+      "android": "Android",
+      "ios": "iOS"
+    }
+  },
+  "scan": {
+    "title": "Escanear QR",
+    "instruction": "Encuadra el código QR dentro del marco",
+    "hint": "Mantén el dispositivo quieto hasta que se lea el código",
+    "starting": "Activando la cámara",
+    "cancel": "Cancelar",
+    "permission": {
+      "title": "La cámara necesita tu permiso",
+      "body": "La cartera lee códigos QR con la cámara. No se graba nada y nada sale del dispositivo.",
+      "action": "Permitir la cámara",
+      "deniedTitle": "El acceso a la cámara está desactivado",
+      "deniedBody": "Vuelve a activar la cámara para la cartera en los ajustes del sistema y regresa a esta pantalla.",
+      "openSettings": "Abrir los ajustes del sistema"
+    },
+    "unsupported": {
+      "title": "Para escanear necesitas un móvil o una tableta",
+      "body": "El escáner de cámara lo proporcionan iOS y Android. En un ordenador, usa la cartera del móvil para leer el código."
+    },
+    "error": {
+      "title": "No se ha podido activar la cámara",
+      "retry": "Volver a intentarlo"
+    },
+    "result": {
+      "title": "Código leído",
+      "again": "Escanear otro código"
+    }
+  },
+  "link": {
+    "title": "Enlace",
+    "received": "Ha llegado una solicitud",
+    "body": "Un enlace almena:// ha abierto la cartera. Se muestra aquí y no se ha hecho nada más con él.",
+    "urlLabel": "Lo que ha llegado"
+  },
+  "signin": {
+    "title": "Petición de acceso",
+    "reading": "Comprobando quién pregunta",
+    "asks": "quiere que inicies sesión",
+    "proves": "Demostrarás que tienes esta identidad, y nada más.",
+    "separate": "Este sitio recibe un identificador propio. En ningún otro sitio se le reconoce.",
+    "verifiedBy": "Petición firmada por Almena ID",
+    "expiresIn": "Caduca en {time}",
+    "accept": "Aceptar",
+    "accepting": "Respondiendo…",
+    "decline": "Cancelar",
+    "declined": "Petición rechazada",
+    "declinedBody": "No se ha compartido nada.",
+    "errors": {
+      "signin_unreadable": "Esto no es una petición que la cartera pueda leer.",
+      "signin_not_ours": "Esta petición apunta a un sitio que no es Almena ID.",
+      "signin_unverified": "La petición no está firmada por Almena ID.",
+      "signin_expired": "La petición ha caducado. Pide un código nuevo.",
+      "signin_unreachable": "No se ha podido contactar con Almena ID.",
+      "signin_no_identity": "Crea o restaura una identidad antes de iniciar sesión.",
+      "signin_nothing": "No hay ninguna petición que responder.",
+      "signin_refused": "Almena ID no ha aceptado la respuesta.",
+      "signin_unknown": "Algo ha ido mal."
+    }
+  },
+  "settings": {
+    "title": "Ajustes",
+    "sections": {
+      "appearance": {
+        "title": "Apariencia",
+        "hint": "El color que viste la cartera"
+      },
+      "permissions": {
+        "title": "Permisos",
+        "hint": "Lo que este dispositivo deja hacer a la cartera"
+      },
+      "security": {
+        "title": "Seguridad",
+        "hint": "La identidad de este dispositivo"
+      },
+      "development": {
+        "title": "Desarrollo",
+        "hint": "Qué es esta compilación y qué puede hacer aquí"
+      }
+    },
+    "appearance": {
+      "title": "Apariencia",
+      "colour": {
+        "title": "Color de identidad"
+      },
+      "colours": {
+        "orange": "Naranja",
+        "blue": "Azul",
+        "red": "Rojo",
+        "yellow": "Amarillo",
+        "green": "Verde"
+      },
+      "default": "Por defecto",
+      "theme": {
+        "title": "Modo",
+        "system": "Sistema",
+        "dark": "Oscuro",
+        "light": "Claro"
+      }
+    },
+    "permissions": {
+      "title": "Permisos",
+      "statusLabel": "Permiso",
+      "granted": "Concedido",
+      "denied": "Denegado",
+      "prompt": "Aún no solicitado",
+      "unenrolled": "Nada configurado en este dispositivo",
+      "unsupported": "No disponible en esta plataforma",
+      "request": "Solicitarlo",
+      "openSettings": "Abrir los ajustes del sistema",
+      "deniedHint": "Se le retiró a la cartera. Solo los ajustes del sistema pueden devolverlo.",
+      "notifications": {
+        "title": "Notificaciones"
+      },
+      "camera": {
+        "title": "Cámara"
+      },
+      "biometrics": {
+        "title": "Cara y huella"
+      }
+    },
+    "security": {
+      "title": "Seguridad",
+      "lockTitle": "Bloqueo de la cartera",
+      "pinLabel": "PIN",
+      "pinDigits": "{digits} dígitos",
+      "pinChange": "Cambiarlo",
+      "pinLength": "¿De cuántos dígitos?",
+      "pinLengthFour": "4 dígitos",
+      "pinLengthSix": "6 dígitos",
+      "biometricsLabel": "Biometría",
+      "biometricsUnavailable": "No disponible en este dispositivo",
+      "biometricsDesktop": "No disponible en un ordenador",
+      "autoLockLabel": "Bloquear tras no hacer nada durante",
+      "autoLockMinutes": {
+        "one": "{count} minuto",
+        "other": "{count} minutos"
+      },
+      "autoLockHint": "Solo mientras la cartera está abierta y sin tocar. Si te vas a otra aplicación se bloquea al momento.",
+      "signOutTitle": "Cerrar la sesión",
+      "signOut": "Cerrar la sesión",
+      "keptLabel": "Guardada en",
+      "keptInStore": "El almacén de secretos del propio dispositivo",
+      "keptInFile": "El almacenamiento privado de esta aplicación"
+    },
+    "development": {
+      "device": {
+        "title": "Este dispositivo",
+        "featuresLabel": "Funciones de plataforma activas",
+        "featureScanner": "Escáner de cámara",
+        "featureNotifications": "Notificaciones del sistema",
+        "featureWindowState": "Estado de la ventana recordado",
+        "featureSingleInstance": "Instancia única",
+        "featureTray": "Bandeja del sistema",
+        "featureDeepLink": "Enlaces almena://",
+        "featureOn": "activa",
+        "featureOff": "inactiva"
+      },
+      "about": {
+        "title": "Acerca de",
+        "versionLabel": "Versión",
+        "platformLabel": "Plataforma"
+      },
+      "logs": {
+        "title": "Registro",
+        "locationLabel": "Dónde",
+        "sizeLabel": "Tamaño",
+        "filesLabel": "Ficheros",
+        "empty": "Todavía no se ha escrito nada.",
+        "show": "Ver las últimas líneas",
+        "hide": "Ocultar",
+        "export": "Reunirlo en un fichero",
+        "exported": "Escrito en {path}",
+        "share": "Compartir el registro",
+        "shareTitle": "Registro de la cartera Almena ID",
+        "save": "Guardar una copia…",
+        "saved": "Se ha guardado una copia.",
+        "fileKind": "Fichero de texto",
+        "copy": "Copiar",
+        "copied": "Copiado",
+        "reveal": "Ver en la carpeta",
+        "handOver": "Antes de enviarlo: el registro dice cuándo has usado la cartera, en qué sitios has iniciado sesión y qué dispositivo y versión es este. Nunca contiene tu frase de recuperación, tu PIN ni ninguna clave.",
+        "notBrowsable": "En Android el registro se queda en el almacenamiento privado de esta aplicación, donde no llega ningún explorador de ficheros. Compártelo o guarda una copia para sacarlo de aquí.",
+        "exportHeader": {
+          "what": "Registro de la cartera Almena ID, exportado el {when}.",
+          "safe": "No contiene la frase de recuperación, ni la semilla, ni el PIN, ni ninguna clave. La cartera nunca las escribe.",
+          "cost": "Sí contiene cuándo se ha usado esta cartera, con qué sitios se ha usado y qué dispositivo y versión es este.",
+          "care": "Envíalo solo a alguien a quien quieras contarle eso."
+        },
+        "errors": {
+          "develop_no_logs": "En este dispositivo no hay dónde escribir un registro.",
+          "develop_unreadable": "No se ha podido leer el registro.",
+          "develop_storage": "No se ha podido escribir el registro donde puedas recogerlo.",
+          "develop_no_share": "En este dispositivo no hay a qué entregar un fichero.",
+          "develop_empty": "Todavía no hay nada en el registro que entregar.",
+          "develop_cancelled": "No se ha enviado nada.",
+          "develop_unknown": "Eso no ha funcionado. Inténtalo otra vez."
+        }
+      }
+    }
+  },
+  "pin": {
+    "chooseTitle": "Elige un PIN",
+    "chooseSubtitle": "{digits} dígitos, y este dispositivo es el único que los va a comprobar.",
+    "repeatTitle": "Escríbelo otra vez",
+    "repeatSubtitle": "Para que un desliz no se convierta en un candado que nadie abre.",
+    "unlockTitle": "Tu PIN",
+    "unlockSubtitle": "La cartera está bloqueada.",
+    "mismatch": "Esos dos no coinciden. Empieza de nuevo.",
+    "wrong": "Ese no es el PIN.",
+    "delete": "Borrar",
+    "useBiometrics": "Usar biometría",
+    "currentTitle": "Tu PIN actual",
+    "currentSubtitle": "Se pide primero, para que nadie que encuentre la cartera abierta pueda cambiarlo.",
+    "replaceIntro": "La identidad no se toca. Solo cambian los dígitos que la abren.",
+    "armSubtitle": "Tu PIN, una vez, y este dispositivo recibe una llave propia.",
+    "attemptsLeft": {
+      "one": "Queda {count} intento. Cuando se acabe, la identidad se retira de este dispositivo y tus doce palabras son la vuelta atrás.",
+      "other": "Quedan {count} intentos. Cuando se acaben, la identidad se retira de este dispositivo y tus doce palabras son la vuelta atrás."
+    },
+    "checking": "Comprobando tu PIN"
+  },
+  "vault": {
+    "errors": {
+      "vault_wrong_pin": "Ese no es el PIN.",
+      "vault_destroyed": "Ese era el último intento. La identidad se ha retirado de este dispositivo, y tus doce palabras son la vuelta atrás.",
+      "vault_nothing": "En este dispositivo no hay ninguna identidad.",
+      "vault_exists": "Este dispositivo ya tiene una identidad.",
+      "vault_pin_length": "Un PIN son cuatro o seis dígitos.",
+      "vault_pin_not_digits": "Un PIN son dígitos y nada más.",
+      "vault_no_identity": "No hay ninguna identidad abierta que escribir.",
+      "vault_no_device_key": "Este dispositivo no guarda ninguna llave. Usa tu PIN.",
+      "vault_device_unproven": "Este dispositivo no te ha reconocido, así que no se ha activado nada. Inténtalo otra vez o sigue con tu PIN.",
+      "vault_no_device_store": "Este dispositivo no puede guardar una llave propia, así que el PIN es la manera de entrar.",
+      "vault_unreadable": "Lo que hay en este dispositivo no es algo que esta cartera sepa leer.",
+      "vault_too_new": "Esto lo escribió una versión más nueva de la cartera. Actualízala y la identidad seguirá aquí.",
+      "vault_storage": "No se ha podido leer la identidad de este dispositivo. No se ha cambiado nada.",
+      "vault_entropy": "Este dispositivo no ha dado la aleatoriedad que necesita el cifrado. No se ha escrito nada.",
+      "vault_unknown": "Eso no ha funcionado. Inténtalo otra vez."
+    },
+    "problem": {
+      "title": "Este dispositivo tiene una identidad que no puede abrir",
+      "body": "No se ha perdido nada y no se ha cambiado nada. Hasta que esto se resuelva, la cartera no va a ofrecerte crear una segunda identidad encima de la que ya hay.",
+      "retry": "Reintentar"
+    }
+  },
+  "logout": {
+    "title": "Cerrar la sesión",
+    "intro": "Léelo antes de hacerlo. No hay ningún soporte que pueda deshacerlo.",
+    "identity": "La identidad se va. La tiene este dispositivo y nadie más: ni quien hace la cartera, ni la plataforma, ni una copia guardada en ningún sitio.",
+    "credentials": "Lo que te hayan emitido se va con ella. Una credencial pertenece a la identidad, y una identidad que nadie puede demostrar es una credencial que nadie va a aceptar.",
+    "phrase": "Tus doce palabras son la única vuelta atrás. Con ellas la identidad vuelve tal cual, en este dispositivo o en otro. Sin ellas se ha perdido, y perdida es para siempre.",
+    "question": "¿Tienes tus doce palabras delante?",
+    "waiting": "Podrás cerrar la sesión en {seconds} s",
+    "slide": "Desliza para cerrar la sesión",
+    "slideDone": "Cerrando la sesión",
+    "cancel": "Seguir con la sesión abierta"
+  }
+}
