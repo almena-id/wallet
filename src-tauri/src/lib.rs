@@ -34,11 +34,20 @@
 //!
 //! [`develop`] is the log, and how it leaves the device it was written on.
 //!
+//! [`platform`] is the one server this wallet talks to, and everything true of
+//! every conversation with it: what may be fetched, whose signature is
+//! believed, and the shape of the answer this wallet signs. [`signin`] and
+//! [`invitation`] are the two conversations — proving an identifier to a site,
+//! and taking a place in an organization — and both are the same checking with
+//! different claims in the middle.
+//!
 //! [`backdrop`] is the colour behind the page, which the window has to be told.
 
 mod backdrop;
 mod develop;
 mod identity;
+mod invitation;
+mod platform;
 mod signin;
 mod tray;
 mod vault;
@@ -161,6 +170,7 @@ pub fn run() {
             identity::manage(app.handle());
             vault::manage(app.handle());
             signin::manage(app.handle());
+            invitation::manage(app.handle());
 
             // The log, written where the person holding the device can reach it
             // — see [`develop`]. Registered here rather than on the builder
@@ -307,6 +317,9 @@ pub fn run() {
             signin::signin_accept,
             signin::signin_decline,
             signin::signin_forget,
+            invitation::invitation_read,
+            invitation::invitation_accept,
+            invitation::invitation_forget,
         ])
         .build(tauri::generate_context!())
         .expect("error while building the Almena ID wallet")

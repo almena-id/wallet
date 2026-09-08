@@ -545,6 +545,20 @@ body {
   box-shadow: 0 10px 22px -12px var(--brand-shadow);
 }
 
+/* A button that carries its icon: the glyph is not the control, so it sits with
+   the words rather than replacing them. */
+.button--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.button--icon svg {
+  width: 18px;
+  height: 18px;
+}
+
 /* Not filled in: what it opens is a screen, and the weight belongs to the
    confirmation at the end of that screen rather than to the way in. */
 .button--danger {
@@ -1247,12 +1261,23 @@ html[data-camera-preview="true"] .app::before {
 }
 
 /* The two that are not digits: they do the work of the row without asking for
-   the weight of a number. */
+   the weight of a number. Both are drawings, and `.pin__key svg` below is what
+   makes them the same size as each other — the same key in two jobs, not two
+   keys that happen to sit on one row. */
 .pin__key--quiet {
   border-color: transparent;
   background: transparent;
   color: var(--text-muted);
-  font-size: clamp(15px, calc(var(--pin-key) * 0.23), 22px);
+}
+
+/* One size for every drawing on the pad, taken as a share of the key the way
+   the digits are — a drawing carries no font size of its own, so left alone it
+   sat at 24px in a key twice that across, small enough that nobody could tell
+   what it was. The share is larger than a numeral's: a picture has to be read
+   as a picture, and a numeral only has to be read as itself. */
+.pin__key svg {
+  width: clamp(24px, calc(var(--pin-key) * 0.42), 40px);
+  height: auto;
 }
 
 .pin__key--empty {
@@ -1804,4 +1829,73 @@ html[data-camera-preview="true"] .app::before {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   font-size: 12px;
   line-height: 1.5;
+}
+
+/* ------------------------------------------------------------------- code */
+
+/*
+ * The plate the QR code sits on. White in either theme, and squared off from
+ * the card's own radius, because what is under it is not decoration: a camera
+ * reads contrast, and the quiet zone the code carries only works against the
+ * colour it was drawn against. See `components/QrCode`.
+ *
+ * It takes the width it is given up to a point and then stops: a code the width
+ * of a desktop window is not more readable, only larger.
+ */
+.qr-plate {
+  width: 100%;
+  max-width: 280px;
+  padding: 14px;
+  border-radius: var(--radius-control);
+  background: #ffffff;
+  box-shadow: 0 12px 30px -22px var(--glass-shadow);
+}
+
+.qr {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* The identifier, which is also the button that copies it. */
+.copy-field {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-strong);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.16s var(--ease-spring);
+}
+
+.copy-field:active {
+  transform: scale(0.99);
+}
+
+.copy-field__value {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.copy-field__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.copy-field__action svg {
+  width: 16px;
+  height: 16px;
 }

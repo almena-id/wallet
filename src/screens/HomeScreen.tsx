@@ -1,13 +1,15 @@
-import { CredentialIcon } from "../components/icons";
+import { CredentialIcon, QrIcon } from "../components/icons";
 import { useTranslations } from "../i18n";
 import type { Identity } from "../identity";
 
 type HomeScreenProps = {
   /** The identity this session is running as. */
   identity: Identity;
+  /** Opens the identifier as a code somebody else's camera can read. */
+  onShowCode: () => void;
 };
 
-export function HomeScreen({ identity }: HomeScreenProps) {
+export function HomeScreen({ identity, onShowCode }: HomeScreenProps) {
   const t = useTranslations();
 
   return (
@@ -39,6 +41,10 @@ export function HomeScreen({ identity }: HomeScreenProps) {
         </h2>
         <p className="card__subtitle">{t.home.identity.didLabel}</p>
         <p className="scan-result">{identity.did}</p>
+        <button type="button" className="button button--primary button--icon" onClick={onShowCode}>
+          <QrIcon />
+          {t.home.identity.showCode}
+        </button>
       </section>
 
     </div>

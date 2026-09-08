@@ -82,8 +82,16 @@
     },
     "identity": {
       "title": "Identidad",
-      "didLabel": "Identificador"
+      "didLabel": "Identificador",
+      "showCode": "Mostrar QR"
     }
+  },
+  "identity": {
+    "title": "Identidad",
+    "codeLabel": "Tu identificador como código QR",
+    "didLabel": "Identificador",
+    "copy": "Copiar",
+    "copied": "Copiado"
   },
   "platform": {
     "desktop": "Ordenador",
@@ -153,6 +161,38 @@
       "signin_nothing": "No hay ninguna petición que responder.",
       "signin_refused": "Almena ID no ha aceptado la respuesta.",
       "signin_unknown": "Algo ha ido mal."
+    }
+  },
+  "invitation": {
+    "title": "Invitación",
+    "reading": "Comprobando quién te invita",
+    "invites": "{entity} te ha invitado",
+    "roles": {
+      "owner": "Como propietario",
+      "member": "Como miembro"
+    },
+    "listedAs": "Con el nombre {name}",
+    "separate": "Esta organización recibe un identificador propio. No lo reconoce nadie más.",
+    "thenConfirmed": "Un propietario tiene que confirmarte para que entres.",
+    "verifiedBy": "Invitación firmada por Almena ID",
+    "expiresInHours": "Caduca en {hours} h",
+    "expiresInDays": "Caduca en {days} días",
+    "accept": "Aceptar",
+    "accepting": "Respondiendo…",
+    "cancel": "Cancelar",
+    "sent": "Enviado",
+    "sentBody": "{entity} tiene que confirmarlo.",
+    "errors": {
+      "invitation_unreadable": "Esto no es una invitación que la cartera pueda leer.",
+      "invitation_not_ours": "Esta invitación apunta a un sitio que no es Almena ID.",
+      "invitation_unverified": "La invitación no está firmada por Almena ID.",
+      "invitation_expired": "Esta invitación ya no vale. Pide una nueva.",
+      "invitation_unreachable": "No se ha podido contactar con Almena ID.",
+      "invitation_no_identity": "Crea o recupera una identidad antes de aceptar.",
+      "invitation_nothing": "No hay ninguna invitación que responder.",
+      "invitation_already_joined": "Ya estás en esta organización.",
+      "invitation_refused": "Almena ID no ha aceptado la respuesta.",
+      "invitation_unknown": "Algo ha ido mal."
     }
   },
   "settings": {

@@ -12,6 +12,7 @@ import { ChevronLeftIcon, QrIcon } from "../components/icons";
 import { ScanFramingGuide } from "../components/ScanFramingGuide";
 import { useTranslations } from "../i18n";
 import type { PlatformInfo } from "../platform";
+import { isInvitationLink } from "../invitation";
 import { isSignInLink } from "../signin";
 
 type ScanState =
@@ -34,17 +35,19 @@ type ScanScreenProps = {
    */
   onPreviewChange: (previewing: boolean) => void;
   /**
-   * A scanned sign-in request. It is handed on rather than shown here: what it
-   * asks for has to be read and checked before anybody is asked to decide.
+   * A scanned `almena://` link the wallet knows what to do with. It is handed
+   * on rather than shown here: what it asks for has to be read and checked
+   * before anybody is asked to decide, and which screen reads it is decided in
+   * one place, beside the links that arrive without a camera.
    */
-  onSignIn: (link: string) => void;
+  onRequest: (link: string) => void;
 };
 
 export function ScanScreen({
   platform,
   onBack,
   onPreviewChange,
-  onSignIn,
+  onRequest,
 }: ScanScreenProps) {
   const t = useTranslations();
   const [state, setState] = useState<ScanState>(
@@ -88,8 +91,8 @@ export function ScanScreen({
         return;
       }
 
-      if (isSignInLink(scanned.content)) {
-        onSignIn(scanned.content);
+      if (isSignInLink(scanned.content) || isInvitationLink(scanned.content)) {
+        onRequest(scanned.content);
       } else {
         setState({ status: "result", content: scanned.content });
       }

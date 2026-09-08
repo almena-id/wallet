@@ -114,3 +114,27 @@ export function BiometricIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+export function CopyIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <rect x="9" y="9" width="11" height="11" rx="2.4" />
+      <path d="M15 6.2V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h.2" />
+    </svg>
+  );
+}
+
+/**
+ * Deleting the last digit. A drawing and not the `⌫` character it replaces: the
+ * other key on that row is a drawing, the two have to read at the same size,
+ * and a glyph's ink is whatever the platform's font decides it is — which is
+ * not something a size can be matched against.
+ */
+export function BackspaceIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M10.2 6.2h7.6a1.6 1.6 0 0 1 1.6 1.6v8.4a1.6 1.6 0 0 1-1.6 1.6h-7.6L4.6 12Z" />
+      <path d="M12.6 10.2 16.2 13.8M16.2 10.2l-3.6 3.6" />
+    </svg>
+  );
+}

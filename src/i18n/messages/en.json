@@ -82,8 +82,16 @@
     },
     "identity": {
       "title": "Identity",
-      "didLabel": "Identifier"
+      "didLabel": "Identifier",
+      "showCode": "Show QR"
     }
+  },
+  "identity": {
+    "title": "Identity",
+    "codeLabel": "Your identifier as a QR code",
+    "didLabel": "Identifier",
+    "copy": "Copy",
+    "copied": "Copied"
   },
   "platform": {
     "desktop": "Desktop",
@@ -153,6 +161,38 @@
       "signin_nothing": "There is no request to answer.",
       "signin_refused": "Almena ID would not accept the answer.",
       "signin_unknown": "Something went wrong."
+    }
+  },
+  "invitation": {
+    "title": "Invitation",
+    "reading": "Checking who is inviting you",
+    "invites": "{entity} has invited you",
+    "roles": {
+      "owner": "As an owner",
+      "member": "As a member"
+    },
+    "listedAs": "Listed as {name}",
+    "separate": "This organization is given an identifier of its own. Nowhere else can recognise it.",
+    "thenConfirmed": "An owner has to confirm you before you are in.",
+    "verifiedBy": "Invitation signed by Almena ID",
+    "expiresInHours": "Expires in {hours} h",
+    "expiresInDays": "Expires in {days} days",
+    "accept": "Accept",
+    "accepting": "Answering…",
+    "cancel": "Cancel",
+    "sent": "Sent",
+    "sentBody": "{entity} has to confirm it.",
+    "errors": {
+      "invitation_unreadable": "This is not an invitation the wallet can read.",
+      "invitation_not_ours": "This invitation points somewhere that is not Almena ID.",
+      "invitation_unverified": "The invitation is not signed by Almena ID.",
+      "invitation_expired": "This invitation is no longer valid. Ask for a new one.",
+      "invitation_unreachable": "Almena ID could not be reached.",
+      "invitation_no_identity": "Create or restore an identity before accepting.",
+      "invitation_nothing": "There is no invitation to answer.",
+      "invitation_already_joined": "You are already in this organization.",
+      "invitation_refused": "Almena ID would not accept the answer.",
+      "invitation_unknown": "Something went wrong."
     }
   },
   "settings": {

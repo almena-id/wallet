@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { BrandSpinner } from "../components/BrandSpinner";
-import { BiometricIcon, ChevronLeftIcon } from "../components/icons";
+import { BackspaceIcon, BiometricIcon, ChevronLeftIcon } from "../components/icons";
 import { useTranslations } from "../i18n";
 
 type PinScreenProps = {
@@ -176,7 +176,7 @@ export function PinScreen({
           onClick={() => setCode((current) => current.slice(0, -1))}
           aria-label={t.pin.delete}
         >
-          ⌫
+          <BackspaceIcon />
         </button>
       </div>
 

@@ -9,6 +9,7 @@ import { useAutoLock, useIdle } from "./autolock";
 import { useBackdrop } from "./backdrop";
 import { useDeepLink } from "./deepLink";
 import { useBackInSight } from "./lock";
+import { forgetInvitation, isInvitationLink } from "./invitation";
 import { forgetSignIn, isSignInLink } from "./signin";
 import { usePlatform } from "./platform";
 import { useTheme } from "./theme";
@@ -22,23 +23,38 @@ import {
   useVault,
 } from "./vault";
 import { HomeScreen } from "./screens/HomeScreen";
+import { IdentityScreen } from "./screens/IdentityScreen";
 import { PinChange } from "./screens/PinChange";
 import { PinConfirm } from "./screens/PinConfirm";
 import { PinScreen } from "./screens/PinScreen";
 import { LogoutScreen } from "./screens/LogoutScreen";
 import { ApprovalScreen } from "./screens/ApprovalScreen";
+import { InvitationScreen } from "./screens/InvitationScreen";
 import { LinkScreen } from "./screens/LinkScreen";
 import { ScanScreen } from "./screens/ScanScreen";
 import { Onboarding } from "./screens/onboarding/Onboarding";
 import { SettingsScreen } from "./screens/settings/SettingsScreen";
 
 /**
- * `link` and `logout` are not tabs: one is where an `almena://` link puts the
- * wallet, the other is what Settings opens to ask whether somebody means it.
+ * `link`, `approve`, `invite` and `logout` are not tabs: the first three are
+ * where an `almena://` link puts the wallet, and the last is what Settings
+ * opens to ask whether somebody means it.
+ * `identity` is where the home screen's own card leads, to show the identifier
+ * as a code.
  * `pin` and `device` are the two things Security sends somebody to. All of them
  * are left through their own back button.
  */
-type Route = "home" | "scan" | "settings" | "link" | "approve" | "logout" | "pin" | "device";
+type Route =
+  | "home"
+  | "scan"
+  | "settings"
+  | "identity"
+  | "link"
+  | "approve"
+  | "invite"
+  | "logout"
+  | "pin"
+  | "device";
 
 export default function App() {
   const { t, locale } = useI18n();
@@ -62,7 +78,8 @@ export default function App() {
   // the device does not flash the native white through — see `backdrop`. Read
   // after `useTheme` above, because it reads the palette that hook just applied.
   useBackdrop(theme, cameraPreview);
-  // A sign-in request, whether it arrived by link or through the camera.
+  // The request being answered, whether it arrived by link or through the
+  // camera. Which screen reads it is the route beside it.
   const [request, setRequest] = useState<string | null>(null);
   const [unlockError, setUnlockError] = useState<string | null>(null);
   // Signing out is reachable from behind the lock and from a record that cannot
@@ -70,36 +87,53 @@ export default function App() {
   const [signOutAsked, setSignOutAsked] = useState(false);
   const [unlockBusy, setUnlockBusy] = useState(false);
 
-  // A link that arrives takes the screen, whatever was on it. It is the only
-  // thing here that can come from outside while somebody is looking elsewhere.
-  useEffect(() => {
-    if (!deepLink.url) {
-      return;
-    }
-
-    // A sign-in request is the one kind of link the wallet knows what to do
-    // with. Everything else is still only shown.
-    if (isSignInLink(deepLink.url)) {
-      setRequest(deepLink.url);
+  // **What an `almena://` link means is decided here and nowhere else.** Links
+  // reach the wallet two ways — the system opens it with one, or the camera
+  // reads one — and both end at this function, so a kind of link the wallet
+  // learns to answer is learned once rather than in each doorway.
+  //
+  // Everything the wallet has no answer for is still only shown. Nothing
+  // outside gets to tell the wallet what to do with the identity it holds.
+  const openLink = useCallback((url: string) => {
+    if (isSignInLink(url)) {
+      setRequest(url);
       setRoute("approve");
+    } else if (isInvitationLink(url)) {
+      setRequest(url);
+      setRoute("invite");
     } else {
       setRoute("link");
     }
-  }, [deepLink.url]);
+  }, []);
+
+  // A link that arrives takes the screen, whatever was on it. It is the only
+  // thing here that can come from outside while somebody is looking elsewhere.
+  useEffect(() => {
+    if (deepLink.url) {
+      openLink(deepLink.url);
+    }
+  }, [deepLink.url, openLink]);
 
   const leaveLink = useCallback(() => {
     deepLink.clear();
     setRoute("home");
   }, [deepLink]);
 
-  const leaveRequest = useCallback(() => {
-    // Whatever was not answered is dropped on this side too, so nothing is
-    // left waiting behind a screen nobody is looking at.
+  // Whatever was not answered is dropped on the Rust side too, so nothing is
+  // left waiting behind a screen nobody is looking at. Both are forgotten
+  // without asking which was being held: only one ever is, and the other call
+  // finds nothing and says so quietly.
+  const forgetRequests = useCallback(() => {
     void forgetSignIn();
+    void forgetInvitation();
+  }, []);
+
+  const leaveRequest = useCallback(() => {
+    forgetRequests();
     setRequest(null);
     deepLink.clear();
     setRoute("home");
-  }, [deepLink]);
+  }, [deepLink, forgetRequests]);
 
   // **Locking is letting go, not hiding.** There is no flag that says the wallet
   // is closed while the seed sits behind it in memory: the lock drops the
@@ -111,7 +145,7 @@ export default function App() {
   // A request nobody answered goes with it, on both sides, rather than waiting
   // behind a lock for somebody who has walked away.
   const lockNow = useCallback(() => {
-    void forgetSignIn();
+    forgetRequests();
     setRequest(null);
     deepLink.clear();
     setIdentity((open) => {
@@ -121,7 +155,7 @@ export default function App() {
       return null;
     });
     setRoute("home");
-  }, [deepLink]);
+  }, [deepLink, forgetRequests]);
 
   // **One clock, for every way of not using the wallet.** Left open on a desk,
   // left behind for another app, left on the tray, left under the system's own
@@ -326,16 +360,16 @@ export default function App() {
         className={barless && !cameraPreview ? "app__view app__view--plain" : "app__view"}
         key={route}
       >
-        {route === "home" ? <HomeScreen identity={identity} /> : null}
+        {route === "home" ? (
+          <HomeScreen identity={identity} onShowCode={() => setRoute("identity")} />
+        ) : null}
+        {route === "identity" ? <IdentityScreen identity={identity} onBack={goHome} /> : null}
         {route === "scan" ? (
           <ScanScreen
             platform={platform}
             onBack={goHome}
             onPreviewChange={setCameraPreview}
-            onSignIn={(link) => {
-              setRequest(link);
-              setRoute("approve");
-            }}
+            onRequest={openLink}
           />
         ) : null}
         {route === "settings" ? (
@@ -385,6 +419,9 @@ export default function App() {
         {route === "approve" && request ? (
           <ApprovalScreen link={request} onBack={leaveRequest} />
         ) : null}
+        {route === "invite" && request ? (
+          <InvitationScreen link={request} onBack={leaveRequest} />
+        ) : null}
       </main>
 
       {/* The menu steps aside while the camera preview is live. */}
@@ -392,9 +429,16 @@ export default function App() {
         <LiquidTabBar
           label={t.nav.label}
           tabs={tabs}
-          active={route === "link" || route === "approve" ? "home" : route}
+          active={
+            route === "link" ||
+            route === "approve" ||
+            route === "invite" ||
+            route === "identity"
+              ? "home"
+              : route
+          }
           onSelect={(next) => {
-            void forgetSignIn();
+            forgetRequests();
             setRequest(null);
             deepLink.clear();
             setSettingsSection(null);
