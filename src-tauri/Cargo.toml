@@ -108,9 +108,24 @@ tauri-plugin-sharekit = "=0.3.1"
 apple-native-keyring-store = { version = "1", features = ["protected"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# The file keychain, because a desktop build is not signed with a provisioning
-# profile and the data protection keychain requires one.
-apple-native-keyring-store = { version = "1", features = ["keychain"] }
+# **Both keychains, and each one for what only it can do.**
+#
+# The record lives in the file keychain, which every build can reach — signed,
+# ad-hoc signed or not signed at all — so an identity is never held hostage by
+# how the copy of the wallet in front of somebody was built.
+#
+# The device key lives in the data protection keychain, because it is the only
+# one on macOS whose items can be held behind Touch ID by the system itself.
+# That store answers only to a build signed with an App ID a provisioning
+# profile authorises; where it does not answer, `store::device_home` says so and
+# the wallet offers the PIN alone rather than a switch that would fail.
+apple-native-keyring-store = { version = "1", features = ["keychain", "protected"] }
+# Asking whether this Mac can recognise its owner at all. A Mac mini with an
+# ordinary keyboard has no sensor, and `require-user-presence` would fall back
+# to the login password there — which is a lock, but it is not the one the
+# switch offering it says it is.
+objc2 = "0.6"
+objc2-local-authentication = { version = "0.3", features = ["LAContext"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-native-keyring-store = "1"

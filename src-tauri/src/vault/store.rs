@@ -19,6 +19,24 @@
 //! Keystore needs a Kotlin bridge and a JNI symbol the wallet does not have yet;
 //! until it does, this is said out loud rather than implied.
 //!
+//! **macOS has two keychains, and this module uses both.** They are not
+//! alternatives; each one is here for the thing the other cannot do.
+//!
+//! - The **file keychain** holds the record. Every build can reach it — signed,
+//!   ad-hoc signed, or not signed at all — so an identity is never held hostage
+//!   by how the copy of the wallet in front of somebody happened to be built.
+//! - The **data protection keychain** holds the device key, because it is the
+//!   only one on macOS whose items can carry `kSecAccessControlUserPresence`.
+//!   In the file keychain there is no such thing: it hands its items to whoever
+//!   is logged in, with no prompt, which is why opening without the PIN was not
+//!   offered on a computer before this.
+//!
+//!   That store answers only to a build signed with an App ID a provisioning
+//!   profile authorises; anything else gets `errSecMissingEntitlement` back. So
+//!   it is asked once at startup, by putting an item in and taking it straight
+//!   out again — see [`PROBE`] — and a build it will not answer for reports no
+//!   device store rather than offering a switch that would fail on being used.
+//!
 //! Two things this is bound to on Apple platforms, and neither is obvious:
 //!
 //! - **A Keychain item belongs to the team and the bundle identifier together.**
@@ -45,6 +63,7 @@
 //! there is no identity. Writing goes to one place and clears the other, so
 //! there is never a second, older copy to find.
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -80,10 +99,45 @@ const SERVICE: &str = "id.almena.wallet";
 const RECORD: &str = "vault";
 const DEVICE_KEY: &str = "device-key";
 
+/// The account the macOS probe writes to and takes straight back out.
+///
+/// **It has to be a write.** Asking for an item that is not there answers "no
+/// such item" on any build, entitled or not: the store looks for the item
+/// before it looks at who is asking, so a read tells you nothing. Adding one is
+/// where `errSecMissingEntitlement` comes back, so adding one is the question.
+///
+/// It carries no access policy, so there is no presence check to evaluate and
+/// the probe cannot put a prompt on the screen at startup. It holds a byte that
+/// means nothing, under an account nothing else uses, and it is deleted in the
+/// same breath.
+#[cfg(target_os = "macos")]
+const PROBE: &str = "entitlement-probe";
+
+/// What the device key is written behind: the system will not hand the item
+/// back until it has recognised somebody.
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+fn presence() -> HashMap<&'static str, &'static str> {
+    HashMap::from([("access-policy", "require-user-presence")])
+}
+
+/// The macOS data protection keychain, once it has been asked whether it will
+/// answer this build at all. `None` where it will not.
+#[cfg(target_os = "macos")]
+static PROTECTED: std::sync::OnceLock<Option<std::sync::Arc<keyring_core::CredentialStore>>> =
+    std::sync::OnceLock::new();
+
 /// Registers the one store this platform has, if it has one.
 ///
 /// Called once at startup. A platform with nothing to register is left with
 /// nothing, and every call below answers accordingly rather than pretending.
+///
+/// **macOS registers one and keeps a second.** The default store — the one
+/// every `Entry::new` below reaches — is the file keychain, where the record
+/// lives. The data protection keychain is not a default anything: it is held
+/// aside for the single item that needs what only it has, and it is probed
+/// before being kept, because a build without the entitlement would otherwise
+/// look like a Mac that can open the wallet with a fingerprint right up to the
+/// moment somebody tried it.
 pub fn init() {
     #[cfg(target_os = "ios")]
     if let Ok(store) = apple_native_keyring_store::protected::Store::new() {
@@ -91,8 +145,26 @@ pub fn init() {
     }
 
     #[cfg(target_os = "macos")]
-    if let Ok(store) = apple_native_keyring_store::keychain::Store::new() {
-        keyring_core::set_default_store(store);
+    {
+        if let Ok(store) = apple_native_keyring_store::keychain::Store::new() {
+            keyring_core::set_default_store(store);
+        }
+
+        let protected = apple_native_keyring_store::protected::Store::new()
+            .ok()
+            .map(|store| store as std::sync::Arc<keyring_core::CredentialStore>)
+            .filter(|store| {
+                // Whether this build is one the store will take an item from at
+                // all — see `PROBE`. Put in and taken out again; what is left
+                // behind is the answer and not the byte.
+                store.build(SERVICE, PROBE, None).is_ok_and(|entry| {
+                    let entitled = entry.set_secret(b"\0").is_ok();
+                    let _ = entry.delete_credential();
+                    entitled
+                })
+            });
+
+        let _ = PROTECTED.set(protected);
     }
 
     #[cfg(windows)]
@@ -109,10 +181,30 @@ pub fn init() {
     }
 }
 
-/// Whether this platform has a secret store at all, for a wallet that has to say
-/// why it cannot offer to unlock with a face.
-pub fn has_store() -> bool {
-    keyring_core::get_default_store().is_some()
+/// Whether there is somewhere to keep a device key **behind the system's own
+/// presence check**.
+///
+/// Every platform here has somewhere to put thirty-two bytes; that is not what
+/// is being asked. What is being asked is whether putting them there means the
+/// operating system will stand in front of them, and the answer is no on a
+/// store that hands its items to whoever is logged in.
+pub fn has_device_store() -> bool {
+    #[cfg(target_os = "ios")]
+    {
+        // The default store is the protected one, so having a store and having
+        // somewhere to put this are the same question.
+        keyring_core::get_default_store().is_some()
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        PROTECTED.get().is_some_and(Option::is_some)
+    }
+
+    #[cfg(not(any(target_os = "ios", target_os = "macos")))]
+    {
+        false
+    }
 }
 
 /// Reads the record, from wherever it is.
@@ -268,20 +360,31 @@ fn record_entry() -> keyring_core::Result<keyring_core::Entry> {
     keyring_core::Entry::new(SERVICE, RECORD)
 }
 
-/// The device key's entry, which on iOS the system will not hand over until it
-/// has seen who is asking.
+/// The device key's entry, which the system will not hand over until it has seen
+/// who is asking.
+///
+/// On iOS that is the default store, which is already the protected one. On
+/// macOS it is the store held aside in [`init`], because the default there is
+/// the file keychain and an item in it would be handed over to anybody. Where
+/// neither applies there is no such entry, and saying so is
+/// `NoDefaultStore` — the same answer a platform with no store at all gives.
 fn device_entry() -> keyring_core::Result<keyring_core::Entry> {
     #[cfg(target_os = "ios")]
     {
-        keyring_core::Entry::new_with_modifiers(
-            SERVICE,
-            DEVICE_KEY,
-            &std::collections::HashMap::from([("access-policy", "require-user-presence")]),
-        )
+        keyring_core::Entry::new_with_modifiers(SERVICE, DEVICE_KEY, &presence())
     }
 
-    #[cfg(not(target_os = "ios"))]
-    keyring_core::Entry::new(SERVICE, DEVICE_KEY)
+    #[cfg(target_os = "macos")]
+    {
+        PROTECTED
+            .get()
+            .and_then(Option::as_ref)
+            .ok_or(keyring_core::Error::NoDefaultStore)?
+            .build(SERVICE, DEVICE_KEY, Some(&presence()))
+    }
+
+    #[cfg(not(any(target_os = "ios", target_os = "macos")))]
+    Err(keyring_core::Error::NoDefaultStore)
 }
 
 fn file<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, VaultError> {

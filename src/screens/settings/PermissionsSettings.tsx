@@ -23,6 +23,11 @@ type Status = "unknown" | "granted" | "denied" | "prompt" | "unenrolled" | "unsu
 
 type PermissionsSettingsProps = {
   platform: PlatformInfo;
+  /**
+   * Whether the wallet may offer to open with the device, which the vault
+   * answers after asking both halves of the question — see `vault::device_unlock`.
+   */
+  deviceUnlock: boolean;
 };
 
 /**
@@ -32,7 +37,7 @@ type PermissionsSettingsProps = {
  * the system settings has to read as taken away here, and nothing the wallet
  * stored would have known.
  */
-export function PermissionsSettings({ platform }: PermissionsSettingsProps) {
+export function PermissionsSettings({ platform, deviceUnlock }: PermissionsSettingsProps) {
   const t = useTranslations();
   const [notifications, setNotifications] = useState<Status>("unknown");
   const [camera, setCamera] = useState<Status>("unknown");
@@ -60,8 +65,14 @@ export function PermissionsSettings({ platform }: PermissionsSettingsProps) {
    * the switch in Security is greyed out has come here to find out.
    */
   const readBiometrics = useCallback(async () => {
+    // **A computer answers with the switch's own answer.** There is no plugin
+    // to ask on a desktop, and the two things that decide it there are asked on
+    // the Rust side already: whether this Mac has a sensor, and whether this
+    // build is one the system will trust with a protected keychain item. A row
+    // that reported the sensor alone would say "yes" beside a switch that is
+    // greyed out, which is the confusion this row exists to end.
     if (platform.kind !== "mobile") {
-      setBiometrics("unsupported");
+      setBiometrics(deviceUnlock ? "granted" : "unsupported");
       return;
     }
     try {
@@ -79,7 +90,7 @@ export function PermissionsSettings({ platform }: PermissionsSettingsProps) {
     } catch {
       setBiometrics("unsupported");
     }
-  }, [platform.kind]);
+  }, [platform.kind, deviceUnlock]);
 
   useEffect(() => {
     let active = true;

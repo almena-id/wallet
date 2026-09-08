@@ -2,8 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   errorCode,
-  exportLogs,
-  readLogTail,
   readLogs,
   saveLogsTo,
   shareLogs,
@@ -19,11 +17,10 @@ type DevelopmentSettingsProps = {
 };
 
 /**
- * The name the export carries wherever it goes.
+ * The name the save dialog offers, which is the name the copy then carries.
  *
  * Not a catalogue string: a file name is an identifier, and this codebase
- * writes identifiers in English on every platform and in every language. It
- * matches `EXPORT` in `develop.rs`.
+ * writes identifiers in English on every platform and in every language.
  */
 const FILE_NAME = "almena-wallet-log.txt";
 
@@ -70,15 +67,11 @@ function logSize(bytes: number, locale: string): string {
 export function DevelopmentSettings({ platform }: DevelopmentSettingsProps) {
   const { locale, t } = useI18n();
   const [logs, setLogs] = useState<Logs | null>(null);
-  /** The end of the log while it is on screen, and null while it is not. */
-  const [tail, setTail] = useState<string | null>(null);
-  const [exported, setExported] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [trouble, setTrouble] = useState<DevelopErrorCode | null>(null);
 
   /**
-   * What the export says about itself before it says anything else.
+   * What the log says about itself before it says anything else.
    *
    * Four sentences and not one string, because a translator should see
    * sentences. The date goes through `Intl`: a log exported "on 4/9/2026" means
@@ -115,34 +108,6 @@ export function DevelopmentSettings({ platform }: DevelopmentSettingsProps) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
-
-  async function toggleTail() {
-    if (tail !== null) {
-      setTail(null);
-      setCopied(false);
-      return;
-    }
-    try {
-      setTail(await readLogTail());
-      setCopied(false);
-      setTrouble(null);
-    } catch (error: unknown) {
-      setTrouble(errorCode(error));
-    }
-  }
-
-  async function exportLog() {
-    try {
-      setExported(await exportLogs(header()));
-      setTrouble(null);
-    } catch (error: unknown) {
-      setTrouble(errorCode(error));
-      return;
-    }
-    // Asked again rather than worked out from here: an export changes what is
-    // in the directory, and the device is the one that knows what by.
-    await refresh();
-  }
 
   async function shareLog() {
     try {
@@ -182,18 +147,6 @@ export function DevelopmentSettings({ platform }: DevelopmentSettingsProps) {
       setTrouble(null);
     } catch (error: unknown) {
       setTrouble(errorCode(error));
-    }
-  }
-
-  async function copyTail(text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-    } catch {
-      // A webview that refuses the clipboard leaves the text on screen to be
-      // selected by hand, which is worse but not nothing. Saying it was copied
-      // when it was not is what would actually cost somebody the log.
-      setCopied(false);
     }
   }
 
@@ -282,42 +235,25 @@ export function DevelopmentSettings({ platform }: DevelopmentSettingsProps) {
               <p className="card__note">{t.settings.development.logs.empty}</p>
             ) : (
               <>
-                {/* Standing, not a modal. Somebody about to hand this file to a
-                    stranger should read this without having had to dismiss
-                    anything first. */}
-                <p className="card__note card__note--warning">
-                  {t.settings.development.logs.handOver}
-                </p>
                 <div className="button-row">
-                  <button
-                    type="button"
-                    className="button button--primary"
-                    onClick={() => {
-                      void toggleTail();
-                    }}
-                  >
-                    {tail === null
-                      ? t.settings.development.logs.show
-                      : t.settings.development.logs.hide}
-                  </button>
-                  {/* An export nobody can then look at is a button that appears
-                      to do nothing, so Android is offered the copy and the sheet
-                      instead. */}
-                  {logs.reach.browsable ? (
+                  {/* A folder to open is a thing only a computer has, and
+                      `browsable` is true on iOS as well — where Files reaches
+                      the directory but no plugin call opens it. Both, then. */}
+                  {platform.kind === "desktop" && logs.reach.browsable ? (
                     <button
                       type="button"
                       className="button"
                       onClick={() => {
-                        void exportLog();
+                        void reveal(logs.directory);
                       }}
                     >
-                      {t.settings.development.logs.export}
+                      {t.settings.development.logs.reveal}
                     </button>
                   ) : null}
                   {logs.reach.shareable ? (
                     <button
                       type="button"
-                      className="button"
+                      className="button button--primary"
                       onClick={() => {
                         void shareLog();
                       }}
@@ -328,25 +264,12 @@ export function DevelopmentSettings({ platform }: DevelopmentSettingsProps) {
                   {logs.reach.savable ? (
                     <button
                       type="button"
-                      className="button"
+                      className={logs.reach.shareable ? "button" : "button button--primary"}
                       onClick={() => {
                         void saveCopy();
                       }}
                     >
                       {t.settings.development.logs.save}
-                    </button>
-                  ) : null}
-                  {tail !== null ? (
-                    <button
-                      type="button"
-                      className="button"
-                      onClick={() => {
-                        void copyTail(tail);
-                      }}
-                    >
-                      {copied
-                        ? t.settings.development.logs.copied
-                        : t.settings.development.logs.copy}
                     </button>
                   ) : null}
                 </div>
@@ -356,38 +279,6 @@ export function DevelopmentSettings({ platform }: DevelopmentSettingsProps) {
               </>
             )}
           </>
-        ) : null}
-
-        {tail !== null ? (
-          /* The monospaced block this codebase already has, which scrolls
-             sideways for the long lines. The height it is held to is inline
-             rather than in the class, because it belongs to this one block: a
-             DID document is a screenful and four hundred lines of log are not. */
-          <pre className="document" style={{ maxHeight: "50vh", overflowY: "auto" }}>
-            {tail}
-          </pre>
-        ) : null}
-
-        {exported !== null ? (
-          <p className="card__note">
-            {fill(t.settings.development.logs.exported, { path: exported })}
-          </p>
-        ) : null}
-
-        {/* Revealing the export is offered where there is a file manager to
-            reveal it in; a phone answers this with the note above instead. */}
-        {exported !== null && platform.kind === "desktop" && logs?.reach.browsable ? (
-          <div className="button-row">
-            <button
-              type="button"
-              className="button"
-              onClick={() => {
-                void reveal(exported);
-              }}
-            >
-              {t.settings.development.logs.reveal}
-            </button>
-          </div>
         ) : null}
 
         {trouble !== null ? (

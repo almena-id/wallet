@@ -11,8 +11,6 @@ type SecuritySettingsProps = {
   /** How long the wallet stays open with nobody using it. */
   autoLock: AutoLock;
   onAutoLockChange: (minutes: AutoLock) => void;
-  /** Whether this build runs where a fingerprint or face reader can be reached. */
-  mobile: boolean;
   /** Opens the screen where the PIN is replaced. */
   onChangePin: () => void;
   /** Opens the screen that asks for the PIN before the device is given a key. */
@@ -25,7 +23,6 @@ export function SecuritySettings({
   vault,
   autoLock,
   onAutoLockChange,
-  mobile,
   onChangePin,
   onArmDevice,
   onSignOut,
@@ -69,11 +66,12 @@ export function SecuritySettings({
           icon={<BiometricIcon />}
           label={t.settings.security.biometricsLabel}
           hint={
-            status.deviceUnlock
-              ? undefined
-              : mobile
-                ? t.settings.security.biometricsUnavailable
-                : t.settings.security.biometricsDesktop
+            // One answer for every way this can be off — no sensor on this Mac,
+            // a build the system will not give a protected keychain to, a
+            // platform whose store would hand the key to anybody. They are the
+            // same fact to the person reading the row: this device will not do
+            // it. Which of the three it is belongs in the log, not here.
+            status.deviceUnlock ? undefined : t.settings.security.biometricsUnavailable
           }
           on={status.deviceKey}
           disabled={!status.deviceUnlock}
@@ -88,10 +86,9 @@ export function SecuritySettings({
           }}
         />
 
-        {/* The wallet already lets go the moment it leaves the screen. This is
-            the case that leaves no trace of itself: still on screen, and nobody
-            there. The hint says so, because a setting about time that does not
-            say what starts the clock is a setting nobody can predict. */}
+        {/* The one length there is: the wallet lets go this long after the last
+            thing somebody did with it, on the screen or off it — see `useIdle`.
+            The label says what it is; nothing here explains it. */}
         <p className="card__subtitle" id="security-autolock">
           {t.settings.security.autoLockLabel}
         </p>
@@ -111,7 +108,6 @@ export function SecuritySettings({
             </button>
           ))}
         </div>
-        <p className="card__note">{t.settings.security.autoLockHint}</p>
 
         <dl className="detail-list">
           <div className="detail-list__row">

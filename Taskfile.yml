@@ -3,6 +3,7 @@ version: '3'
 # Almena ID wallet — development entry points.
 #
 #   Desktop   task dev             Windows, macOS and Linux, from this machine
+#   macOS     task build:macos     a signed bundle, the only kind Touch ID works in
 #   Android   task init:android    once per checkout, then task deploy:android
 #   iOS       task init:ios         once per checkout, then task deploy:ios
 #
@@ -26,6 +27,16 @@ version: '3'
 #                           somebody's own identity as a developer, and a
 #                           checkout on another machine carries its own.
 #                           Missing file, missing variable — the iOS tasks say so.
+#   APPLE_SIGNING_IDENTITY  the certificate `task build:macos` signs with, spelt
+#                           exactly as `security find-identity -v -p codesigning`
+#                           prints it.
+#   APPLE_PROVISION_PROFILE the macOS profile that authorises the entitlement
+#                           that build needs. **Only that build needs any of
+#                           these three.** `task dev` and `task build` sign
+#                           nothing and need no Apple account; what they lose is
+#                           opening the wallet with a fingerprint, which the
+#                           Security screen then says is unavailable rather than
+#                           offering and failing.
 #
 # The platform the wallet answers to is not one of these. It is pinned in
 # src-tauri/build.rs, which is the only place that survives every way cargo gets
@@ -76,6 +87,94 @@ tasks:
     deps: [install]
     cmds:
       - '{{.TAURI}} build'
+
+  build:macos:
+    desc: Build the macOS bundle signed so the system will hold the device key behind Touch ID
+    deps: [install]
+    env:
+      APPLE_DEVELOPMENT_TEAM: '{{.TEAM | default .APPLE_DEVELOPMENT_TEAM}}'
+    preconditions:
+      - sh: test "$(uname)" = Darwin
+        msg: 'This builds a macOS bundle, and only macOS can sign one.'
+      - sh: test -n "$APPLE_DEVELOPMENT_TEAM"
+        msg: |
+          No Apple development team. Write it once into wallet/.env.local:
+
+            APPLE_DEVELOPMENT_TEAM=XXXXXXXXXX
+
+          It is the Team ID in developer.apple.com > Membership.
+      - sh: test -n "$APPLE_SIGNING_IDENTITY"
+        msg: |
+          No signing identity. Write it into wallet/.env.local, exactly as
+          `security find-identity -v -p codesigning` prints it:
+
+            APPLE_SIGNING_IDENTITY="Apple Development: Your Name (XXXXXXXXXX)"
+      - sh: test -f "$APPLE_PROVISION_PROFILE"
+        msg: |
+          No provisioning profile. macOS will not let an application into the
+          data protection keychain without one, and that keychain is the only
+          place a device key can be held behind Touch ID.
+
+          Make a macOS App ID for id.almena.wallet at developer.apple.com,
+          download its profile, and name the file in wallet/.env.local:
+
+            APPLE_PROVISION_PROFILE=/absolute/path/to/wallet.provisionprofile
+    cmds:
+      - |
+        set -e
+
+        # Written rather than committed: both of these carry the team, and the
+        # team belongs to whoever is building. Everything here is scratch — see
+        # .gitignore — and it is rewritten on every run so a changed .env.local
+        # cannot leave a stale identity behind in a bundle.
+        signing=src-tauri/.signing
+        rm -rf "$signing" && mkdir -p "$signing"
+
+        cp "$APPLE_PROVISION_PROFILE" "$signing/embedded.provisionprofile"
+
+        # **This is the whole reason the build is signed.** The data protection
+        # keychain gives an application only what its entitlements name, and
+        # answers errSecMissingEntitlement to everything else. Without this file
+        # the wallet still runs, still keeps the record, still asks for the PIN —
+        # and reports that this device cannot open without one, which is true of
+        # a build the system will not trust with a protected item.
+        cat > "$signing/entitlements.plist" <<PLIST
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>com.apple.application-identifier</key>
+          <string>$APPLE_DEVELOPMENT_TEAM.id.almena.wallet</string>
+          <key>com.apple.developer.team-identifier</key>
+          <string>$APPLE_DEVELOPMENT_TEAM</string>
+          <key>keychain-access-groups</key>
+          <array>
+            <string>$APPLE_DEVELOPMENT_TEAM.id.almena.wallet</string>
+          </array>
+        </dict>
+        </plist>
+        PLIST
+
+        # Merged over tauri.conf.json for this build only. The committed config
+        # says nothing about signing on purpose: `task dev` and `task build` are
+        # what everybody runs, they need no Apple account, and a config that
+        # named an identity would fail on every machine that does not have it.
+        # Paths inside are resolved against src-tauri, which is where the config
+        # they are merged into lives.
+        cat > "$signing/tauri.signed.conf.json" <<CONF
+        {
+          "bundle": {
+            "macOS": {
+              "signingIdentity": "$APPLE_SIGNING_IDENTITY",
+              "entitlements": ".signing/entitlements.plist",
+              "files": {
+                "embedded.provisionprofile": ".signing/embedded.provisionprofile"
+              }
+            }
+          }
+        }
+        CONF
+      - '{{.TAURI}} build --config .signing/tauri.signed.conf.json'
 
   build:web:
     desc: Build only the web assets

@@ -77,13 +77,14 @@ export function SettingsScreen({
             onThemeChange={onThemeChange}
           />
         ) : null}
-        {section === "permissions" ? <PermissionsSettings platform={platform} /> : null}
+        {section === "permissions" ? (
+          <PermissionsSettings platform={platform} deviceUnlock={vault.status.deviceUnlock} />
+        ) : null}
         {section === "security" ? (
           <SecuritySettings
             vault={vault}
             autoLock={autoLock}
             onAutoLockChange={onAutoLockChange}
-            mobile={platform.kind === "mobile"}
             onChangePin={onChangePin}
             onArmDevice={onArmDevice}
             onSignOut={onSignOut}

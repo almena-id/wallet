@@ -30,6 +30,7 @@
 //! whichever screen forgot to count. All of it happens under one lock, so two
 //! answers arriving at once cannot both start from nine attempts left.
 
+mod presence;
 mod record;
 mod store;
 
@@ -415,14 +416,24 @@ pub fn manage<R: Runtime>(app: &tauri::AppHandle<R>) {
 
 /// Whether the wallet may offer to open without the PIN on this platform.
 ///
-/// **Only where the system enforces it.** On iOS the device key is stored so
-/// that it is not handed back until somebody has been recognised, so the prompt
-/// is the lock. On a computer the same keychain hands its items to whoever is
-/// logged in, with no prompt at all — offering it there would be a second way in
-/// that asks for nothing, which is not a convenience but the absence of a lock.
-/// Android has no store to put the key in yet.
+/// **Only where the system enforces it.** The device key is stored so that it is
+/// not handed back until somebody has been recognised: the prompt is the lock,
+/// not a screen this wallet drew in front of one. Two things have to be true
+/// before that sentence is, and both are asked here rather than assumed:
+///
+/// - there is a store that will hold the key behind its own presence check —
+///   on macOS that is the data protection keychain and only a signed build
+///   reaches it, which is why [`store::has_device_store`] is a probe and not a
+///   `cfg!`;
+/// - and the machine can actually recognise a person. A Mac with no sensor
+///   would fall back to the login password, which is a lock but not the one the
+///   switch says it is.
+///
+/// Where either is false the PIN is the only way in, and the interface says so.
+/// Windows and Linux have stores that hand their items to whoever is logged in,
+/// with no prompt at all; Android has no store this side can reach yet.
 fn device_unlock() -> bool {
-    cfg!(target_os = "ios") && store::has_store()
+    store::has_device_store() && presence::available()
 }
 
 /// Whether the digits are ones this wallet takes, and how many there are.

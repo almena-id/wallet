@@ -167,6 +167,12 @@ pub fn run() {
             // because the directory is one only a running application can
             // resolve; the few milliseconds before this are not logged.
             if let Some(directory) = develop::directory(app.handle()) {
+                // Before the log is opened, because this is the one moment at
+                // which the file about to be written to can still be thrown
+                // away — and because a phone hands out no other moment. See
+                // [`develop::sweep`].
+                develop::sweep(&directory);
+
                 app.handle().plugin(
                     tauri_plugin_log::Builder::new()
                         .clear_targets()
@@ -205,9 +211,13 @@ pub fn run() {
                         // Two megabytes each, and three of them kept. Not
                         // `KeepOne`, which does not keep one: at rotation it
                         // deletes the file outright, so somebody asked to
-                        // reproduce a fault and then export the log would hand
+                        // reproduce a fault and then send the log would hand
                         // over everything that happened after the fault and
                         // nothing before it.
+                        //
+                        // This bounds what the log costs and not how old it
+                        // gets: six megabytes is years of a wallet somebody
+                        // opens once a month. Age is the sweep above.
                         .max_file_size(2 * 1024 * 1024)
                         .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(3))
                         .build(),
@@ -234,9 +244,13 @@ pub fn run() {
             #[cfg(desktop)]
             window::settle(app.handle());
 
-            // The camera scanner and the fingerprint or face reader, which only
-            // the mobile platforms provide. Windows Hello and Touch ID have no
-            // Tauri plugin: on a computer the lock is the PIN alone.
+            // The camera scanner and the plugin that answers whether this phone
+            // can recognise its owner, both of which only the mobile platforms
+            // have. **Touch ID needs no plugin**: on macOS the device key is
+            // held in the data protection keychain and the system itself asks
+            // for the finger before handing it back — see `vault::store`. On
+            // Windows and Linux the stores hand their items to whoever is
+            // logged in, so there the lock is the PIN alone.
             #[cfg(mobile)]
             {
                 app.handle().plugin(tauri_plugin_barcode_scanner::init())?;
@@ -287,8 +301,6 @@ pub fn run() {
             vault::vault_set_device,
             vault::vault_destroy,
             develop::develop_logs,
-            develop::develop_logs_tail,
-            develop::develop_logs_export,
             develop::develop_logs_share,
             develop::develop_logs_save_to,
             signin::signin_read,

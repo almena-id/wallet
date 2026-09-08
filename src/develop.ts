@@ -3,12 +3,12 @@ import { invoke } from "@tauri-apps/api/core";
 /**
  * The log, and getting it off the device it was written on.
  *
- * The interface never opens a file: it asks where the log is, asks for the end
- * of it to put on screen, asks for an export to be gathered, and — when
- * somebody wants a copy somewhere else — names the place the system's own
- * dialog answered with. It never reads or writes a byte itself. Which directory
- * the log is in, and what can be done with it on this device, are answers from
- * the Rust side rather than a guess made from the user agent.
+ * The interface never opens a file: it asks where the log is, asks for it to be
+ * handed to the system's share sheet, and — when somebody wants a copy
+ * somewhere else — names the place the system's own dialog answered with. It
+ * never reads or writes a byte itself. Which directory the log is in, and what
+ * can be done with it on this device, are answers from the Rust side rather
+ * than a guess made from the user agent.
  */
 
 /** One of the files the log is spread across. */
@@ -41,25 +41,14 @@ export function readLogs(): Promise<Logs> {
   return invoke<Logs>("develop_logs");
 }
 
-/** The end of the log, for reading on the device rather than off it. */
-export function readLogTail(lines?: number): Promise<string> {
-  return invoke<string>("develop_logs_tail", { lines: lines ?? null });
-}
-
 /**
- * Gathers every log file into one, behind the header it is handed, and answers
- * with the path it wrote.
+ * Gathers the log and hands it to whatever this device shares files with.
  *
  * The header is prose and so it comes from here: the Rust side answers in codes
  * and never in sentences, and this file is one somebody hands to somebody else,
  * so the first thing it should say is what is in it — in the language the
  * person reading it chose.
  */
-export function exportLogs(header: string): Promise<string> {
-  return invoke<string>("develop_logs_export", { header });
-}
-
-/** Gathers the log and hands it to whatever this device shares files with. */
 export function shareLogs(header: string, title: string): Promise<void> {
   return invoke<void>("develop_logs_share", { header, title });
 }

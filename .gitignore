@@ -25,3 +25,8 @@ dist-ssr
 
 # Task fingerprint cache
 .task/
+
+# What `task build:macos` writes to sign with: the entitlements, the merged
+# Tauri config and a copy of the provisioning profile. All three carry the team
+# of whoever is building, and all three are rewritten on every run.
+src-tauri/.signing/

@@ -45,6 +45,11 @@
   --glass-highlight: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.5));
   --glass-highlight-edge: rgba(255, 255, 255, 0.95);
 
+  /* What a control wears while a pointer rests on it. Laid over the control's
+     own background rather than replacing it, so one value covers a white row,
+     a transparent key and a coloured swatch alike. */
+  --hover-tint: rgba(23, 24, 28, 0.05);
+
   --radius-card: 20px;
   --radius-control: 14px;
 
@@ -128,6 +133,7 @@
     --border: rgba(255, 255, 255, 0.1);
 
     --switch-off: rgba(255, 255, 255, 0.24);
+    --hover-tint: rgba(255, 255, 255, 0.07);
 
     --text: #f4f4f6;
     --text-muted: rgba(244, 244, 246, 0.6);
@@ -156,6 +162,7 @@
   --border: rgba(255, 255, 255, 0.1);
 
   --switch-off: rgba(255, 255, 255, 0.24);
+  --hover-tint: rgba(255, 255, 255, 0.07);
 
   --text: #f4f4f6;
   --text-muted: rgba(244, 244, 246, 0.6);
@@ -255,7 +262,10 @@ body {
   }
 }
 
-@media (min-width: 900px) {
+/* A wide window gets more air above the content — but only when it is tall
+   enough to give it away. A desktop window opened at 16:9 is wide and short,
+   and the sixteen pixels this adds are sixteen the keypad below needs. */
+@media (min-width: 900px) and (min-height: 800px) {
   .app__view {
     padding-top: calc(env(safe-area-inset-top) + 40px);
   }
@@ -656,6 +666,31 @@ body {
   }
 }
 
+/* ----------------------------------------------------------------- hover */
+
+/*
+ * A pointer asks before it commits: it rests on a control, and the control has
+ * to answer that it is one. A finger never asks — it arrives already pressing —
+ * so every control here answers a press and nothing answered a hover, which on
+ * a desktop reads as a screen of pictures rather than of things to click.
+ *
+ * Guarded on the input rather than on the width: a touchscreen that reports a
+ * hover it cannot really do leaves the tint stuck under the last thing tapped.
+ */
+@media (hover: hover) and (pointer: fine) {
+  .pin__key:not(.pin__key--empty):hover,
+  .icon-button:hover,
+  .action:hover,
+  .menu__item:hover,
+  .row:not([aria-disabled="true"]):hover,
+  .choices__option:hover,
+  .segmented__option:not(.is-active):hover,
+  .swatch:hover,
+  .tab-bar__tab:not([aria-current="page"]):hover {
+    background-image: linear-gradient(var(--hover-tint), var(--hover-tint));
+  }
+}
+
 /* --------------------------------------------------- floating menu (iOS) */
 
 .tab-bar {
@@ -941,6 +976,19 @@ html[data-camera-preview="true"] .app::before {
   gap: 10px;
 }
 
+/* The same reason the keypad stops hugging the bottom on a computer: with no
+   thumb to reach them, the mark and the two ways in read as one group centred
+   in the window rather than as two things pushed apart by the height. */
+@media (min-width: 720px) and (pointer: fine) {
+  .screen--welcome {
+    justify-content: center;
+  }
+
+  .welcome {
+    flex: 0 0 auto;
+  }
+}
+
 .welcome__mark {
   width: 92px;
   height: 92px;
@@ -1067,10 +1115,38 @@ html[data-camera-preview="true"] .app::before {
 /* ------------------------------------------------------------------- pin */
 
 /* The keypad fills the view it is given and sits at the bottom of it, where a
-   thumb is: the dots and the reason for them stay above. */
+   thumb is: the dots and the reason for them stay above. One number drives the
+   whole pad, and the three declarations below are how it is arrived at. */
 .screen--pin {
+  --pin-gap: clamp(7px, 1.5vh, 14px);
+
+  /*
+   * Everything on this screen that is not the keypad: the title, the line under
+   * it, the dots, the room kept for an error, the footer at its longest, the
+   * gaps between them and the view's own padding. Measured rather than derived,
+   * and deliberately the worst case — a keypad that resized when a warning
+   * appeared under it would move the keys somebody is in the middle of typing.
+   */
+  --pin-chrome: 400px;
+
+  /* A key is the smaller of what the width allows — the pad is 320px across,
+     which is what a thumb has always found — and what the height has left once
+     everything else on the screen has been laid out. A phone is taller than it
+     is wide, so width is what limits the pad there and the keys keep the size
+     they have always been. A desktop window is wider than it is tall, so the
+     height limits it instead: without that second term the pad kept its phone
+     size in a window half a phone's height, and pushed its own footer off the
+     bottom of it. */
+  --pin-key: max(
+    44px,
+    min(
+      calc((320px - var(--pin-gap) * 2) / 3),
+      calc((100dvh - var(--pin-chrome) - var(--pin-gap) * 3) / 4)
+    )
+  );
+
   align-items: center;
-  gap: 12px;
+  gap: clamp(6px, 1.4vh, 12px);
   text-align: center;
 }
 
@@ -1090,7 +1166,7 @@ html[data-camera-preview="true"] .app::before {
 }
 
 .screen__title--centred {
-  margin-top: 8px;
+  margin-top: clamp(0px, 1vh, 8px);
 }
 
 .pin__subtitle {
@@ -1102,7 +1178,7 @@ html[data-camera-preview="true"] .app::before {
 .pin__dots {
   display: flex;
   gap: 14px;
-  margin-top: 8px;
+  margin-top: clamp(0px, 1vh, 8px);
 }
 
 .pin__dot {
@@ -1136,11 +1212,11 @@ html[data-camera-preview="true"] .app::before {
    is. */
 .pin__keys {
   display: grid;
-  width: min(100%, 320px);
+  width: min(100%, calc(var(--pin-key) * 3 + var(--pin-gap) * 2));
   grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
+  gap: var(--pin-gap);
   margin-top: auto;
-  padding-top: 8px;
+  padding-top: clamp(2px, 1vh, 8px);
 }
 
 .pin__key {
@@ -1153,7 +1229,9 @@ html[data-camera-preview="true"] .app::before {
   background: var(--surface-strong);
   color: inherit;
   font: inherit;
-  font-size: 28px;
+  /* The digit is a share of the key rather than a size of its own, so a pad
+     shrunk to fit a short window carries digits that shrank with it. */
+  font-size: clamp(18px, calc(var(--pin-key) * 0.29), 28px);
   font-weight: 500;
   cursor: pointer;
   transition: transform 0.12s var(--ease-spring);
@@ -1174,7 +1252,7 @@ html[data-camera-preview="true"] .app::before {
   border-color: transparent;
   background: transparent;
   color: var(--text-muted);
-  font-size: 22px;
+  font-size: clamp(15px, calc(var(--pin-key) * 0.23), 22px);
 }
 
 .pin__key--empty {
@@ -1183,12 +1261,28 @@ html[data-camera-preview="true"] .app::before {
   cursor: default;
 }
 
+/*
+ * A window driven by a mouse is not a phone held in a hand: there is no thumb
+ * that has to reach the bottom of it, and a keypad pushed down there leaves a
+ * band of nothing between the dots and the keys. The whole group centres in the
+ * window instead, which is what a lock screen on a computer looks like.
+ */
+@media (min-width: 720px) and (pointer: fine) {
+  .screen--pin {
+    justify-content: center;
+  }
+
+  .pin__keys {
+    margin-top: 0;
+  }
+}
+
 .pin__footer {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  margin-top: 18px;
+  gap: clamp(6px, 1.2vh, 10px);
+  margin-top: clamp(10px, 2vh, 18px);
   max-width: 36ch;
 }
 
@@ -1608,6 +1702,16 @@ html[data-camera-preview="true"] .app::before {
 @media (min-width: 460px) {
   .phrase {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* A window wide enough for a fourth column is a window that is usually short,
+   and the row a fourth column saves is the row that was pushing the way forward
+   off the bottom of it. A quarter of the column is still wide enough for the
+   words a wordlist holds, which are short by construction. */
+@media (min-width: 700px) {
+  .phrase {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 

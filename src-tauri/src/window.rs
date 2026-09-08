@@ -8,16 +8,18 @@ use tauri::{AppHandle, Emitter, Manager, Window};
 /// Label of the main window, as declared under `app.windows` in `tauri.conf.json`.
 const MAIN_WINDOW: &str = "main";
 
-/// What the interface is told when the window goes away, so the lock can close
-/// behind it.
+/// What the interface is told when the window comes back, so the lock can be
+/// asked whether the time ran out while it was away.
 ///
 /// **The webview has no other way of knowing.** On a phone it watches
 /// `visibilitychange`, which the system fires when the app stops being what
-/// somebody is looking at. A desktop webview is *visible* the whole time its
-/// window exists — hiding the window is not something the page inside is told —
-/// so without this the tray would be a way to leave the wallet and come back to
-/// it already open.
-pub const HIDDEN: &str = "window-hidden";
+/// somebody is looking at and again when it goes back to being it. A desktop
+/// webview is *visible* the whole time its window exists — a window put away on
+/// the tray and brought back is not something the page inside is told — so
+/// without this the tray would be a way to leave a wallet past its auto-lock and
+/// find it open, its timer having been run late or not at all by a browser that
+/// throttles what nobody can see.
+pub const SHOWN: &str = "window-shown";
 
 /// The main window, or nothing when there is none.
 pub fn main<R: tauri::Runtime>(app: &AppHandle<R>) -> Option<Window<R>> {
@@ -40,6 +42,10 @@ pub fn show_main<R: tauri::Runtime>(app: &AppHandle<R>) {
     let _ = window.show();
     let _ = window.unminimize();
     let _ = window.set_focus();
+    // Announced last, once there is something on the screen to have come back
+    // to: what the interface does with it is check a clock, and a wallet whose
+    // time ran out is one somebody must not be shown before it lets go.
+    let _ = app.emit(SHOWN, ());
 }
 
 /// Takes the window off the screen without ending the wallet.
@@ -49,10 +55,10 @@ pub fn show_main<R: tauri::Runtime>(app: &AppHandle<R>) {
 /// bar — see [`crate::tray::installed`].
 pub fn hide_main<R: tauri::Runtime>(app: &AppHandle<R>) {
     if let Some(window) = main(app) {
-        // Announced first, and whether or not the window actually goes: a lock
-        // that closes a moment early costs one PIN somebody was going to type
-        // anyway, while one that never closes is the whole point, missing.
-        let _ = app.emit(HIDDEN, ());
+        // Nothing is announced. Putting the wallet on the tray is not using it,
+        // which is what the lock's own clock counts — it goes on running while
+        // the window is away, and [`show_main`] is where the interface finds out
+        // whether it ran out.
         let _ = window.hide();
     }
 }

@@ -1,33 +1,41 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 
-/** The event the Rust side sends when the window is put away on the tray. */
-const WINDOW_HIDDEN = "window-hidden";
+/** The event the Rust side sends when the window comes back from the tray. */
+const WINDOW_SHOWN = "window-shown";
 
 /**
- * The moment the wallet leaves the screen.
+ * The moment the wallet is on the screen again.
  *
- * **Locking is letting go, not hiding.** There is no flag that says the wallet
- * is closed while the seed sits behind it in memory: going out of sight drops
- * the identity, and coming back opens the record again with a PIN or a face.
- * A wallet backgrounded on a phone is a wallet whose secret is no longer in this
- * process at all, which is a stronger thing to say than that a screen is over
- * it — and it costs one derivation to come back, which is the point.
+ * **Leaving is not locking.** The wallet used to let go the instant it went out
+ * of sight, which made switching to another app for a moment — or answering a
+ * system prompt, or clicking a window in front — cost a PIN. What decides now is
+ * the length somebody chose, counted across the absence like any other stretch
+ * of nobody using the wallet: see [`useIdle`].
  *
- * Two ways it happens: the system taking the wallet off the screen, and the
- * window being put away on the tray, which the webview is never told about.
+ * Coming back is still worth knowing about, for one reason: the timer may not
+ * have run. A webview the system froze ran nothing at all while the wallet was
+ * away, and a hidden one is throttled by the browser. So the return asks the
+ * clock the time, and a wallet whose time ran out while it was gone lets go
+ * here, at the first moment anybody could have seen it open.
+ *
+ * Two ways it happens: the system putting the wallet back on the screen, and the
+ * window coming back from the tray, which the webview is never told about.
  */
-export function useOutOfSight(away: () => void) {
+export function useBackInSight(back: () => void) {
+  const latest = useRef(back);
+  latest.current = back;
+
   useEffect(() => {
     const onVisibility = () => {
-      if (document.hidden) {
-        away();
+      if (!document.hidden) {
+        latest.current();
       }
     };
 
     document.addEventListener("visibilitychange", onVisibility);
     let stop: (() => void) | undefined;
-    listen(WINDOW_HIDDEN, away)
+    listen(WINDOW_SHOWN, () => latest.current())
       .then((unlisten) => {
         stop = unlisten;
       })
@@ -39,5 +47,5 @@ export function useOutOfSight(away: () => void) {
       document.removeEventListener("visibilitychange", onVisibility);
       stop?.();
     };
-  }, [away]);
+  }, []);
 }

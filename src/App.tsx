@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { LiquidTabBar, type TabDefinition } from "./components/LiquidTabBar";
 import { BrandSpinner } from "./components/BrandSpinner";
@@ -8,7 +8,7 @@ import { useAccent } from "./appearance";
 import { useAutoLock, useIdle } from "./autolock";
 import { useBackdrop } from "./backdrop";
 import { useDeepLink } from "./deepLink";
-import { useOutOfSight } from "./lock";
+import { useBackInSight } from "./lock";
 import { forgetSignIn, isSignInLink } from "./signin";
 import { usePlatform } from "./platform";
 import { useTheme } from "./theme";
@@ -101,10 +101,12 @@ export default function App() {
     setRoute("home");
   }, [deepLink]);
 
-  // The wallet leaving the screen lets go of the identity rather than covering
-  // it: what is written on the device stays written, and the seed the wallet was
-  // signing with is no longer in this process at all. Coming back opens the
-  // record again, which costs one derivation and is the whole point of the lock.
+  // **Locking is letting go, not hiding.** There is no flag that says the wallet
+  // is closed while the seed sits behind it in memory: the lock drops the
+  // identity, and coming back opens the record again with a PIN or a face. What
+  // is written on the device stays written, and the seed the wallet was signing
+  // with is no longer in this process at all — which is a stronger thing to say
+  // than that a screen is over it, and it costs one derivation to undo.
   //
   // A request nobody answered goes with it, on both sides, rather than waiting
   // behind a lock for somebody who has walked away.
@@ -121,31 +123,19 @@ export default function App() {
     setRoute("home");
   }, [deepLink]);
 
-  // Raised while an unlock is in flight, and the reason it exists is Face ID:
-  // the system's own prompt comes up over the wallet, which the webview may well
-  // report as the wallet leaving the screen. Without it, being recognised would
-  // open the wallet and then immediately close it again.
-  const unlocking = useRef(false);
-  // **Deferred, not ignored.** Suppressing the lock while a prompt is up would
-  // mean a wallet backgrounded mid-unlock came back already open — the one thing
-  // the lock exists to prevent. What happened during the unlock is answered
-  // after it instead.
-  const hiddenMidUnlock = useRef(false);
+  // **One clock, for every way of not using the wallet.** Left open on a desk,
+  // left behind for another app, left on the tray, left under the system's own
+  // Face ID prompt — none of them is somebody using a wallet, and none of them
+  // is somebody who is not coming back. What decides is the length they chose,
+  // and it goes on counting while the wallet is off the screen.
+  //
+  // Armed only while a wallet is open: there is nothing to let go of behind the
+  // lock, and a clock running there would be counting nothing.
+  const catchUp = useIdle(autoLock, identity !== null, lockNow);
 
-  useOutOfSight(
-    useCallback(() => {
-      if (unlocking.current) {
-        hiddenMidUnlock.current = true;
-        return;
-      }
-      lockNow();
-    }, [lockNow]),
-  );
-
-  // The other way a wallet is no longer being used: still on screen, and
-  // nobody there. Only while one is open — there is nothing to let go of
-  // behind the lock, and a timer running there would be counting nothing.
-  useIdle(autoLock, identity !== null, lockNow);
+  // Coming back is not what locks; it is when the clock is asked the time, for a
+  // webview whose timer the system throttled or froze while nobody could see it.
+  useBackInSight(catchUp);
 
   // Signing out is the other thing entirely: the record itself goes, and the
   // the phrase is what is left.
@@ -162,7 +152,6 @@ export default function App() {
     async (open: () => Promise<Identity>) => {
       setUnlockError(null);
       setUnlockBusy(true);
-      unlocking.current = true;
       try {
         setIdentity(await open());
       } catch (failure) {
@@ -172,14 +161,9 @@ export default function App() {
         void vault.refresh();
       } finally {
         setUnlockBusy(false);
-        unlocking.current = false;
-        if (hiddenMidUnlock.current || document.hidden) {
-          hiddenMidUnlock.current = false;
-          lockNow();
-        }
       }
     },
-    [lockNow, t, vault],
+    [t, vault],
   );
 
   const goHome = useCallback(() => setRoute("home"), []);

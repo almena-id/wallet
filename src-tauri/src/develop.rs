@@ -19,6 +19,12 @@
 //! only the last two**, because its private storage is not a folder anything
 //! outside this application can open.
 //!
+//! **Nothing is kept for longer than a week.** The log is bounded twice and the
+//! two bounds answer different questions: rotation caps what it costs in disk,
+//! and [`sweep`] caps how far back it reaches. A wallet opened once a month
+//! would otherwise still be carrying its first run around years later, well
+//! under any size limit — a size limit says nothing about age.
+//!
 //! **Nothing secret is ever logged.** Not the phrase, not the seed, not a PIN,
 //! not a key, not a nonce. The rule is structural rather than a matter of care
 //! at each call site: this log is a file the person can hand to somebody else,
@@ -26,6 +32,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use serde::{Serialize, Serializer};
 use tauri::{Manager, Runtime};
@@ -33,12 +40,8 @@ use tauri::{Manager, Runtime};
 /// What the log file is called. The plugin adds the extension.
 pub const STEM: &str = "almena-wallet";
 
-/// The single file an export gathers everything into. One name, overwritten each
-/// time, so somebody looking in Files finds one log and not a pile of them.
-const EXPORT: &str = "almena-wallet-log.txt";
-
-/// How many lines the Development section shows without being asked for more.
-const TAIL: usize = 400;
+/// How long a log file is kept. Swept at the start of a run — see [`sweep`].
+const RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 /// What can go wrong, as codes rather than prose.
 #[derive(Debug, Clone, Copy)]
@@ -141,15 +144,50 @@ pub fn directory<R: Runtime>(app: &tauri::AppHandle<R>) -> Option<PathBuf> {
     Some(path)
 }
 
-/// Where an export is put, which is the same place: on iOS that is already the
-/// directory Files shows, and elsewhere it is beside the log it was made from.
-fn export_directory<R: Runtime>(app: &tauri::AppHandle<R>) -> Option<PathBuf> {
-    if cfg!(target_os = "ios") {
-        let documents = app.path().document_dir().ok()?;
-        fs::create_dir_all(&documents).ok()?;
-        Some(documents)
-    } else {
-        directory(app)
+/// Throws away every log file older than [`RETENTION`].
+///
+/// **The rule is exact and not an approximation, because of what the
+/// modification time of a log file is.** It is the moment the last line in it
+/// was written, so a file untouched for a week is a file whose *newest* line is
+/// a week old and whose every other line is older still. Deleting it throws
+/// away nothing that is not already past the limit, and no guess is made about
+/// what a file holds.
+///
+/// The converse is not true and is not claimed. A file written to an hour ago
+/// may well open with a line from a month back, and it stays; rotation is what
+/// eventually carries those away. A week is a floor under how far the log
+/// reaches, not a ceiling.
+///
+/// Called once, as a run starts, and deliberately not on a timer. **A phone
+/// gives an application no time it did not ask for** — iOS may not wake this
+/// one for a fortnight, Android will kill it — so a sweep that waited to be
+/// woken is a sweep that does not happen. This one costs a `read_dir`, and
+/// running it before the log is opened is also the only moment at which the
+/// file the plugin is about to write to can be removed without taking the
+/// current run's own lines with it.
+///
+/// Every failure is ignored. A file that would not be deleted is swept on the
+/// next run, and refusing to start a wallet over a log file is a worse answer
+/// than keeping it a day longer.
+pub fn sweep(path: &Path) {
+    let now = SystemTime::now();
+
+    for entry in fs::read_dir(path).into_iter().flatten().flatten() {
+        if !entry.file_name().to_string_lossy().starts_with(STEM) {
+            continue;
+        }
+        let Ok(modified) = entry.metadata().and_then(|metadata| metadata.modified()) else {
+            continue;
+        };
+        // `duration_since` refuses a file stamped in the future, which a clock
+        // put back is enough to produce. That is not older than the retention,
+        // so it stays.
+        let Ok(age) = now.duration_since(modified) else {
+            continue;
+        };
+        if age > RETENTION {
+            let _ = fs::remove_file(entry.path());
+        }
     }
 }
 
@@ -186,10 +224,7 @@ pub fn develop_logs<R: Runtime>(app: tauri::AppHandle<R>) -> Result<Logs, Develo
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
-        // The export is written beside the log everywhere but iOS, and it is a
-        // copy of what is already being counted — listing it would report the
-        // log as twice its size, growing every time somebody pressed export.
-        if !name.starts_with(STEM) || name == EXPORT {
+        if !name.starts_with(STEM) {
             continue;
         }
 
@@ -208,22 +243,6 @@ pub fn develop_logs<R: Runtime>(app: tauri::AppHandle<R>) -> Result<Logs, Develo
         total_bytes,
         reach: reach(),
     })
-}
-
-/// The end of the log, for reading on the device rather than off it.
-#[tauri::command(async)]
-pub fn develop_logs_tail<R: Runtime>(
-    app: tauri::AppHandle<R>,
-    lines: Option<usize>,
-) -> Result<String, DevelopError> {
-    let path = directory(&app)
-        .ok_or(DevelopError::NoLogs)?
-        .join(format!("{STEM}.log"));
-    let text = fs::read_to_string(&path).map_err(|_| DevelopError::Unreadable)?;
-    let wanted = lines.unwrap_or(TAIL);
-
-    let kept: Vec<&str> = text.lines().rev().take(wanted).collect();
-    Ok(kept.into_iter().rev().collect::<Vec<_>>().join("\n"))
 }
 
 /// The moment the export was made, in the one written form that means the same
@@ -256,7 +275,7 @@ fn gather_from(path: &Path, header: Option<&str>) -> Result<String, DevelopError
         .map_err(|_| DevelopError::Unreadable)?
         .flatten()
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .filter(|name| name.starts_with(STEM) && name != EXPORT)
+        .filter(|name| name.starts_with(STEM))
         .collect();
     names.sort();
     if let Some(index) = names.iter().position(|name| name == &format!("{STEM}.log")) {
@@ -306,24 +325,6 @@ fn gather<R: Runtime>(
 ) -> Result<String, DevelopError> {
     let path = directory(app).ok_or(DevelopError::NoLogs)?;
     gather_from(&path, header)
-}
-
-/// Gathers every log file into one, where the person can pick it up.
-///
-/// Returns the path, because on a phone that is the answer: the Files app shows
-/// the wallet's own folder, and this says which file in it to look for.
-#[tauri::command(async)]
-pub fn develop_logs_export<R: Runtime>(
-    app: tauri::AppHandle<R>,
-    header: Option<String>,
-) -> Result<String, DevelopError> {
-    let gathered = gather(&app, header.as_deref())?;
-    let target = export_directory(&app)
-        .ok_or(DevelopError::NoLogs)?
-        .join(EXPORT);
-
-    fs::write(&target, gathered).map_err(|_| DevelopError::Storage)?;
-    Ok(target.to_string_lossy().into_owned())
 }
 
 /// Where the copy the share sheet is holding is put.
@@ -642,6 +643,56 @@ mod tests {
              line somebody would be content to hand to a stranger, and the list above says which \
              ones were read"
         );
+    }
+
+    /// Stamps a fixture as though nothing had been written to it since.
+    fn aged(path: &Path, age: Duration) {
+        fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .expect("the fixture would not be opened")
+            .set_modified(SystemTime::now() - age)
+            .expect("the fixture would not be stamped")
+    }
+
+    /// A week is as far back as the log reaches, and a start is what enforces it.
+    ///
+    /// The three fixtures are the three answers the sweep has to give: the file
+    /// still being written to survives, the rotated one nothing has touched in
+    /// over a week does not, and a file that is not this wallet's is not this
+    /// wallet's to delete — the log directory is a folder somebody browses on
+    /// iOS, and a sweep that took whatever it found there would eventually take
+    /// something of theirs.
+    #[test]
+    fn a_week_is_all_the_log_reaches_back() {
+        let directory = scratch("sweep");
+        let current = directory.join(format!("{STEM}.log"));
+        let rotated = directory.join(format!("{STEM}_2026-01-01.log"));
+        let stranger = directory.join("notes.txt");
+
+        for file in [&current, &rotated, &stranger] {
+            fs::write(file, "a line\n").expect("the fixture would not be written");
+        }
+        aged(&current, Duration::from_secs(60 * 60));
+        aged(&rotated, RETENTION + Duration::from_secs(60 * 60));
+        aged(&stranger, RETENTION * 4);
+
+        sweep(&directory);
+
+        assert!(
+            current.exists(),
+            "the sweep took the file this run is writing to"
+        );
+        assert!(
+            !rotated.exists(),
+            "the log still reaches further back than a week"
+        );
+        assert!(
+            stranger.exists(),
+            "the sweep took a file that is not the wallet's"
+        );
+
+        let _ = fs::remove_dir_all(&directory);
     }
 
     /// The log is an allowlist. A dependency that starts calling `log::info!`
