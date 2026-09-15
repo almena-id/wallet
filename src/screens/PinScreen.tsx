@@ -114,7 +114,7 @@ export function PinScreen({
   return (
     <div className="screen screen--pin">
       {onBack ? (
-        <header className="screen__header screen__header--scan">
+        <header className="screen__header screen__header--compact">
           <button type="button" className="icon-button" onClick={onBack} aria-label={t.nav.back}>
             <ChevronLeftIcon />
           </button>

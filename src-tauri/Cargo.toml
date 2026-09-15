@@ -26,7 +26,6 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-notification = "2.4.0"
-tauri-plugin-deep-link = "2.4.10"
 # Every wordlist BIP-39 has: the phrase is written in the language the wallet
 # is being read in whenever the standard has words for it, and a phrase
 # written in any of them is one this wallet can read back.
@@ -37,14 +36,6 @@ ed25519-dalek = "2"
 hmac = "0.12"
 sha2 = "0.10"
 getrandom = "0.2"
-# Answering a sign-in request: fetching it, checking who signed it, and posting
-# the answer back. `rustls` rather than the system stack, so the wallet behaves
-# the same on every platform it runs on.
-reqwest = { version = "0.12", default-features = false, features = [
-  "json",
-  "rustls-tls",
-] }
-p256 = { version = "0.13", features = ["ecdsa"] }
 base64 = "0.22"
 url = "2"
 # Keeping the identity between launches. XChaCha20-Poly1305 rather than AES-GCM:
@@ -81,16 +72,11 @@ tauri-plugin-fs = "2"
 # was registered rather than quietly pretending. See `vault::store`.
 keyring-core = "1"
 
-[dev-dependencies]
-# For the one test that talks to a running platform.
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
-tauri-plugin-single-instance = { version = "2.4.4", features = ["deep-link"] }
+tauri-plugin-single-instance = "2.4.4"
 tauri-plugin-window-state = "2.4.1"
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
-tauri-plugin-barcode-scanner = "2.4.6"
 tauri-plugin-biometric = "2.3.3"
 # The system share sheet: `UIActivityViewController` on iOS, `ACTION_SEND`
 # through the FileProvider on Android. **Tauri has no first-party plugin for

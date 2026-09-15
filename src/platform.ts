@@ -11,11 +11,9 @@ export type PlatformKind = "desktop" | "mobile" | "unknown";
 export type PlatformInfo = {
   kind: PlatformKind;
   os: string;
-  barcodeScanner: boolean;
   windowState: boolean;
   singleInstance: boolean;
   tray: boolean;
-  deepLink: boolean;
   version: string;
 };
 
@@ -27,11 +25,9 @@ export type PlatformInfo = {
 export const unknownPlatform: PlatformInfo = {
   kind: "unknown",
   os: "",
-  barcodeScanner: false,
   windowState: false,
   singleInstance: false,
   tray: false,
-  deepLink: false,
   version: "",
 };
 

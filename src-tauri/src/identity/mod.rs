@@ -16,7 +16,6 @@ mod phrase;
 use std::sync::Mutex;
 
 use bip39::Mnemonic;
-use ed25519_dalek::SigningKey;
 use serde::{Serialize, Serializer};
 use tauri::{Manager, State};
 use zeroize::Zeroizing;
@@ -69,16 +68,6 @@ pub struct Draft(Mutex<Option<Mnemonic>>);
 pub struct Held(Mutex<Option<Zeroizing<[u8; 64]>>>);
 
 impl Held {
-    /// The key this identity uses at one verifier, if an identity is open.
-    pub fn site_key(&self, verifier: &str) -> Option<SigningKey> {
-        let held = self
-            .0
-            .lock()
-            .expect("the seed lock is never held across a panic");
-
-        held.as_ref().map(|seed| keys::site_key(seed, verifier))
-    }
-
     /// The seed itself, for the one caller that has business with it.
     ///
     /// [`crate::vault`] is what writes an identity down, and writing it down
@@ -206,14 +195,6 @@ pub fn identity_forget(draft: State<'_, Draft>, held: State<'_, Held>) {
         .lock()
         .expect("the draft lock is never held across a panic") = None;
     held.forget();
-}
-
-/// The `did:key` that names a public key.
-///
-/// Shared with [`crate::signin`], which needs the identifier of the key it is
-/// about to sign with — a different one for every verifier.
-pub fn did_for(public_key: &[u8; 32]) -> String {
-    format!("did:key:{}", keys::written(public_key))
 }
 
 /// Registers the state the creation flow and the open identity need.

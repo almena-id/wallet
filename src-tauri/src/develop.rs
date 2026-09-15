@@ -510,9 +510,7 @@ mod tests {
         "482915",
         // The key the device holds instead of those digits.
         "ed25519:7Kd2Rm",
-        // A verifier and the identifier answered to it, which are only a secret
-        // together.
-        "verifier.example",
+        // The identifier itself, which the log has no business naming.
         "did:key:z6MkfTestIdentifier",
     ];
 
@@ -523,39 +521,10 @@ mod tests {
     /// what the line says is something the person holding the device would be
     /// content to hand to a stranger, and this is what makes somebody decide it
     /// rather than assume it.
-    /// `src/signin.rs` was added deliberately, and this is the reasoning the
-    /// comment above asks for. Answering a code is the one thing that reaches
-    /// the network from somebody else's phone, and it was the one thing the log
-    /// said nothing about: an export taken after a failed sign-in held only the
-    /// line saying the wallet had started. What it writes now is where it tried
-    /// to go, which platform this build answers to, who was asking, and why it
-    /// stopped — all of which is on the screen the person was looking at, or in
-    /// the code they photographed. **The identifier derived for the verifier is
-    /// not among them**, and must never be: it is the one value that, written
-    /// beside the verifier, rebuilds the map `sign-in.md` gives up.
     ///
-    /// `src/platform.rs` is where most of what `src/signin.rs` used to write
-    /// now lives, and it was read under the same rule: addresses this wallet
-    /// tried to reach, the platform it is pinned to, and which check refused a
-    /// token. Nothing it can see is a person — it is handed a URL and a
-    /// signature and never an identity.
-    ///
-    /// `src/invitation.rs` writes the organization that invited somebody, its
-    /// `did:web`, the role it offered, and where the answer was posted. All of
-    /// it is on the screen the person was looking at before they accepted, and
-    /// the entity is a public subject with a document anybody can fetch.
-    /// **Neither identifier the wallet derives is among them.** That flow
-    /// derives two at once, so the rule is stricter there than anywhere else:
-    /// written beside the organization, either one undoes the separation; and
-    /// written beside each other, the two say that one person holds both,
-    /// which is the single fact this design exists to keep off paper.
-    const CALL_SITES: &[&str] = &[
-        "src/develop.rs",
-        "src/invitation.rs",
-        "src/lib.rs",
-        "src/platform.rs",
-        "src/signin.rs",
-    ];
+    /// Two today: this module, which writes that the wallet started and on
+    /// what, and `src/lib.rs`, which writes a panic. Neither can see a person.
+    const CALL_SITES: &[&str] = &["src/develop.rs", "src/lib.rs"];
 
     /// A directory of this test's own, since the crate carries no temporary
     /// file helper and one test does not earn a dependency.

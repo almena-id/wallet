@@ -1,10 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
-import {
-  checkPermissions,
-  openAppSettings,
-  requestPermissions,
-} from "@tauri-apps/plugin-barcode-scanner";
 import { checkStatus } from "@tauri-apps/plugin-biometric";
 
 import { useTranslations } from "../../i18n";
@@ -40,21 +35,7 @@ type PermissionsSettingsProps = {
 export function PermissionsSettings({ platform, deviceUnlock }: PermissionsSettingsProps) {
   const t = useTranslations();
   const [notifications, setNotifications] = useState<Status>("unknown");
-  const [camera, setCamera] = useState<Status>("unknown");
   const [biometrics, setBiometrics] = useState<Status>("unknown");
-
-  const readCamera = useCallback(async () => {
-    if (!platform.barcodeScanner) {
-      setCamera("unsupported");
-      return;
-    }
-    try {
-      const state = await checkPermissions();
-      setCamera(state === "granted" ? "granted" : state === "denied" ? "denied" : "prompt");
-    } catch {
-      setCamera("unsupported");
-    }
-  }, [platform.barcodeScanner]);
 
   /**
    * Whether this device can recognise the person holding it.
@@ -106,12 +87,11 @@ export function PermissionsSettings({ platform, deviceUnlock }: PermissionsSetti
           setNotifications("unsupported");
         }
       });
-    void readCamera();
     void readBiometrics();
     return () => {
       active = false;
     };
-  }, [readCamera, readBiometrics]);
+  }, [readBiometrics]);
 
   async function askForNotifications() {
     try {
@@ -119,15 +99,6 @@ export function PermissionsSettings({ platform, deviceUnlock }: PermissionsSetti
       setNotifications(permission === "granted" ? "granted" : "denied");
     } catch {
       setNotifications("unsupported");
-    }
-  }
-
-  async function askForCamera() {
-    try {
-      const state = await requestPermissions();
-      setCamera(state === "granted" ? "granted" : "denied");
-    } catch {
-      setCamera("unsupported");
     }
   }
 
@@ -147,7 +118,6 @@ export function PermissionsSettings({ platform, deviceUnlock }: PermissionsSetti
     // Absent where there is nothing to ask for: biometrics is offered by the
     // system when it is needed, never requested in advance.
     ask: (() => void) | null,
-    canOpenSettings: boolean,
   ) {
     return (
       <section className="card" aria-labelledby={id}>
@@ -170,19 +140,6 @@ export function PermissionsSettings({ platform, deviceUnlock }: PermissionsSetti
             </button>
           </div>
         ) : null}
-        {status === "denied" && canOpenSettings ? (
-          <div className="button-row">
-            <button
-              type="button"
-              className="button"
-              onClick={() => {
-                openAppSettings().catch(() => {});
-              }}
-            >
-              {t.settings.permissions.openSettings}
-            </button>
-          </div>
-        ) : null}
       </section>
     );
   }
@@ -196,25 +153,8 @@ export function PermissionsSettings({ platform, deviceUnlock }: PermissionsSetti
         () => {
           void askForNotifications();
         },
-        false,
       )}
-      {row(
-        "permission-camera",
-        t.settings.permissions.camera.title,
-        camera,
-        () => {
-          void askForCamera();
-        },
-        // Only the mobile plugin can open the page that holds the switch.
-        platform.barcodeScanner,
-      )}
-      {row(
-        "permission-biometrics",
-        t.settings.permissions.biometrics.title,
-        biometrics,
-        null,
-        platform.barcodeScanner,
-      )}
+      {row("permission-biometrics", t.settings.permissions.biometrics.title, biometrics, null)}
     </>
   );
 }

@@ -18,7 +18,7 @@ export function RestoreScreen({ error, busy, onBack, onSubmit }: RestoreScreenPr
 
   return (
     <div className="screen">
-      <header className="screen__header screen__header--scan">
+      <header className="screen__header screen__header--compact">
         <button type="button" className="icon-button" onClick={onBack} aria-label={t.nav.back}>
           <ChevronLeftIcon />
         </button>

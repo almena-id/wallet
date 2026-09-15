@@ -4,8 +4,8 @@
 //!
 //! - `single-instance` and `window-state` only exist on desktop. A phone runs
 //!   one instance of an app and manages its window itself.
-//! - `barcode-scanner` only exists on mobile, where there is a camera the OS
-//!   lets an app drive for scanning.
+//! - `biometric` only exists on mobile, where it is what answers whether this
+//!   phone can recognise its owner.
 //! - `sharekit` is registered on mobile alone, and it is the one plugin here
 //!   that is not Tauri's: there is no first-party share sheet. A computer needs
 //!   none — the log already has a path, a folder to open it in and a save
@@ -18,9 +18,6 @@
 //!   grant the webview none of its commands, deliberately.
 //! - `notification` exists everywhere and always goes through the notification
 //!   mechanism of the host system.
-//! - `deep-link` exists everywhere too, and is what makes `almena://` links open
-//!   the wallet. What a link carries is shown, never acted on: it arrives from
-//!   outside and nothing outside gets to tell the wallet what to do.
 //!
 //! The tray is the other thing only a computer has, and it changes what closing
 //! the window means — see [`tray`].
@@ -34,21 +31,11 @@
 //!
 //! [`develop`] is the log, and how it leaves the device it was written on.
 //!
-//! [`platform`] is the one server this wallet talks to, and everything true of
-//! every conversation with it: what may be fetched, whose signature is
-//! believed, and the shape of the answer this wallet signs. [`signin`] and
-//! [`invitation`] are the two conversations — proving an identifier to a site,
-//! and taking a place in an organization — and both are the same checking with
-//! different claims in the middle.
-//!
 //! [`backdrop`] is the colour behind the page, which the window has to be told.
 
 mod backdrop;
 mod develop;
 mod identity;
-mod invitation;
-mod platform;
-mod signin;
 mod tray;
 mod vault;
 #[cfg(desktop)]
@@ -67,16 +54,12 @@ struct PlatformInfo {
     kind: &'static str,
     /// The operating system, as reported by the Rust standard library.
     os: &'static str,
-    /// Whether the barcode scanner plugin is available on this build.
-    barcode_scanner: bool,
     /// Whether this build keeps window geometry across restarts.
     window_state: bool,
     /// Whether this build refuses to run twice at once.
     single_instance: bool,
     /// Whether this build can put an icon on the system tray.
     tray: bool,
-    /// Whether this build answers `almena://` links.
-    deep_link: bool,
     /// The wallet version, so the frontend does not hardcode it.
     version: &'static str,
 }
@@ -86,11 +69,9 @@ fn platform_info() -> PlatformInfo {
     PlatformInfo {
         kind: if cfg!(mobile) { "mobile" } else { "desktop" },
         os: std::env::consts::OS,
-        barcode_scanner: cfg!(mobile),
         window_state: cfg!(desktop),
         single_instance: cfg!(desktop),
         tray: cfg!(desktop),
-        deep_link: true,
         version: env!("CARGO_PKG_VERSION"),
     }
 }
@@ -134,11 +115,6 @@ pub fn run() {
             // With a tray on the bar, a second launch is somebody looking for a
             // wallet that is running with no window on screen. macOS asks the
             // same thing through `RunEvent::Reopen`, answered with the same call.
-            //
-            // It is also how a deep link reaches a wallet that is already
-            // running on Windows and Linux, where the link starts a second
-            // process: the plugin's `deep-link` feature hands the URL to the
-            // instance that was already there, which then only has to be found.
             window::show_main(app);
         }));
 
@@ -158,7 +134,6 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_deep_link::init())
         // The save dialog, and the filesystem call behind it. `fs` is registered
         // for its Rust API and for nothing else: the capability files grant the
         // webview none of its commands.
@@ -169,8 +144,6 @@ pub fn run() {
             // lives here, and only until they confirm it.
             identity::manage(app.handle());
             vault::manage(app.handle());
-            signin::manage(app.handle());
-            invitation::manage(app.handle());
 
             // The log, written where the person holding the device can reach it
             // — see [`develop`]. Registered here rather than on the builder
@@ -213,9 +186,9 @@ pub fn run() {
                         // person hands to somebody else, so what may write into
                         // it is decided here and not by whichever dependency
                         // happens to call `log::info!`. A bare `Info` would let
-                        // reqwest, hyper, rustls or the keyring store put a URL,
-                        // a host or a store error into a file that leaves the
-                        // device. Only this crate writes to the log.
+                        // the keyring store, or anything else in the tree, put
+                        // a store error into a file that leaves the device.
+                        // Only this crate writes to the log.
                         .level(log::LevelFilter::Off)
                         .level_for(develop::TARGET, log::LevelFilter::Info)
                         // Two megabytes each, and three of them kept. Not
@@ -254,42 +227,20 @@ pub fn run() {
             #[cfg(desktop)]
             window::settle(app.handle());
 
-            // The camera scanner and the plugin that answers whether this phone
-            // can recognise its owner, both of which only the mobile platforms
-            // have. **Touch ID needs no plugin**: on macOS the device key is
-            // held in the data protection keychain and the system itself asks
-            // for the finger before handing it back — see `vault::store`. On
-            // Windows and Linux the stores hand their items to whoever is
-            // logged in, so there the lock is the PIN alone.
+            // The plugin that answers whether this phone can recognise its
+            // owner, which only the mobile platforms have. **Touch ID needs no
+            // plugin**: on macOS the device key is held in the data protection
+            // keychain and the system itself asks for the finger before handing
+            // it back — see `vault::store`. On Windows and Linux the stores
+            // hand their items to whoever is logged in, so there the lock is
+            // the PIN alone.
             #[cfg(mobile)]
             {
-                app.handle().plugin(tauri_plugin_barcode_scanner::init())?;
                 app.handle().plugin(tauri_plugin_biometric::init())?;
                 // The share sheet, which only a phone has. On a computer the
                 // log already has a path, a folder to reveal it in and a save
                 // dialog, and a third button would do less than either.
                 app.handle().plugin(tauri_plugin_sharekit::init())?;
-            }
-
-            // A link arriving is also a request to be looked at, so the window
-            // comes back from the tray. What the link says is the frontend's to
-            // show — it listens for the same event.
-            #[cfg(desktop)]
-            {
-                use tauri_plugin_deep_link::DeepLinkExt;
-
-                let handle = app.handle().clone();
-                app.deep_link().on_open_url(move |_event| {
-                    window::show_main(&handle);
-                });
-
-                // Windows and Linux register the scheme when the wallet is
-                // installed, which a development build never is. Registering it
-                // for the running executable is what lets `almena://` links be
-                // tried before there is an installer. macOS reads the scheme
-                // from the app bundle and has nothing to register.
-                #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
-                let _ = app.deep_link().register_all();
             }
 
             Ok(())
@@ -313,13 +264,6 @@ pub fn run() {
             develop::develop_logs,
             develop::develop_logs_share,
             develop::develop_logs_save_to,
-            signin::signin_read,
-            signin::signin_accept,
-            signin::signin_decline,
-            signin::signin_forget,
-            invitation::invitation_read,
-            invitation::invitation_accept,
-            invitation::invitation_forget,
         ])
         .build(tauri::generate_context!())
         .expect("error while building the Almena ID wallet")

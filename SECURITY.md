@@ -73,23 +73,6 @@ change makes the same words open a different, empty identity with no error
 anywhere to explain it, so a way to make the wallet derive off that path is a
 finding.
 
-**Per-verifier keys.** Every verifier is shown a different public key, derived
-from the digest of that verifier's identifier, and the only thing that knows
-they belong together is the device. Anything that lets two verifiers recognise
-the same person, or that gets a key derived from a name somebody merely
-asserted rather than from the DID in a signed request, is a finding.
-
-**Sign-in.** The platform is pinned at build time and is not taken from the
-link. A request has to carry that platform's signature and has to be in time,
-the answer is good for two minutes, and nothing a link carries is acted on. A
-way to get the wallet to fetch from, believe or post to somewhere else is a
-finding — and so is a way to get an answer signed for a request nobody
-approved.
-
-**Deep links.** `almena://` arrives from outside — a page, a message, anything
-that can put a URL in front of somebody. It is untrusted input, and anything it
-manages to do beyond being shown is a finding.
-
 **The lock.** It closes when the wallet leaves the screen and opens with the
 keypad or the reader. A way past it that does not open the record is a finding.
 

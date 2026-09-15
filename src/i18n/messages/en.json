@@ -6,7 +6,6 @@
   "nav": {
     "label": "Main sections",
     "home": "Home",
-    "scan": "Scan QR",
     "settings": "Settings",
     "back": "Back",
     "backToHome": "Back to home"
@@ -105,96 +104,6 @@
       "ios": "iOS"
     }
   },
-  "scan": {
-    "title": "Scan QR",
-    "instruction": "Line the QR code up inside the frame",
-    "hint": "Hold the device steady until the code is read",
-    "starting": "Starting the camera",
-    "cancel": "Cancel",
-    "permission": {
-      "title": "The camera needs your permission",
-      "body": "The wallet reads QR codes with the camera. Nothing is recorded and nothing leaves the device.",
-      "action": "Allow the camera",
-      "deniedTitle": "Camera access is turned off",
-      "deniedBody": "Turn the camera back on for the wallet in the system settings, then come back to this screen.",
-      "openSettings": "Open system settings"
-    },
-    "unsupported": {
-      "title": "Scanning needs a phone or a tablet",
-      "body": "The camera scanner is provided by iOS and Android. On a computer, use the wallet on your phone to read the code."
-    },
-    "error": {
-      "title": "The camera could not be started",
-      "retry": "Try again"
-    },
-    "result": {
-      "title": "Code read",
-      "again": "Scan another code"
-    }
-  },
-  "link": {
-    "title": "Link",
-    "received": "A request arrived",
-    "body": "The wallet was opened by an almena:// link. It is shown here and nothing more has been done with it.",
-    "urlLabel": "What arrived"
-  },
-  "signin": {
-    "title": "Sign-in request",
-    "reading": "Checking who is asking",
-    "asks": "wants you to sign in",
-    "proves": "You will prove that you hold this identity, and nothing else.",
-    "separate": "This site is given an identifier of its own. Nowhere else can recognise it.",
-    "verifiedBy": "Request signed by Almena ID",
-    "expiresIn": "Expires in {time}",
-    "accept": "Accept",
-    "accepting": "Answering…",
-    "decline": "Cancel",
-    "declined": "Request refused",
-    "declinedBody": "Nothing was shared.",
-    "errors": {
-      "signin_unreadable": "This is not a request the wallet can read.",
-      "signin_not_ours": "This request points somewhere that is not Almena ID.",
-      "signin_unverified": "The request is not signed by Almena ID.",
-      "signin_expired": "The request has expired. Ask for a new code.",
-      "signin_unreachable": "Almena ID could not be reached.",
-      "signin_no_identity": "Create or restore an identity before signing in.",
-      "signin_nothing": "There is no request to answer.",
-      "signin_refused": "Almena ID would not accept the answer.",
-      "signin_unknown": "Something went wrong."
-    }
-  },
-  "invitation": {
-    "title": "Invitation",
-    "reading": "Checking who is inviting you",
-    "invites": "{entity} has invited you",
-    "roles": {
-      "owner": "As an owner",
-      "member": "As a member"
-    },
-    "listedAs": "Listed as {name}",
-    "separate": "This organization is given an identifier of its own. Nowhere else can recognise it.",
-    "thenConfirmed": "An owner has to confirm you before you are in.",
-    "verifiedBy": "Invitation signed by Almena ID",
-    "expiresInHours": "Expires in {hours} h",
-    "expiresInDays": "Expires in {days} days",
-    "accept": "Accept",
-    "accepting": "Answering…",
-    "cancel": "Cancel",
-    "sent": "Sent",
-    "sentBody": "{entity} has to confirm it.",
-    "errors": {
-      "invitation_unreadable": "This is not an invitation the wallet can read.",
-      "invitation_not_ours": "This invitation points somewhere that is not Almena ID.",
-      "invitation_unverified": "The invitation is not signed by Almena ID.",
-      "invitation_expired": "This invitation is no longer valid. Ask for a new one.",
-      "invitation_unreachable": "Almena ID could not be reached.",
-      "invitation_no_identity": "Create or restore an identity before accepting.",
-      "invitation_nothing": "There is no invitation to answer.",
-      "invitation_already_joined": "You are already in this organization.",
-      "invitation_refused": "Almena ID would not accept the answer.",
-      "invitation_unknown": "Something went wrong."
-    }
-  },
   "settings": {
     "title": "Settings",
     "sections": {
@@ -244,13 +153,9 @@
       "unenrolled": "Nothing set up on this device",
       "unsupported": "Not available on this platform",
       "request": "Ask for it",
-      "openSettings": "Open system settings",
       "deniedHint": "It was turned off for the wallet. Only the system settings can turn it back on.",
       "notifications": {
         "title": "Notifications"
-      },
-      "camera": {
-        "title": "Camera"
       },
       "biometrics": {
         "title": "Face and fingerprint"
@@ -282,12 +187,10 @@
       "device": {
         "title": "This device",
         "featuresLabel": "Active platform features",
-        "featureScanner": "Camera scanner",
         "featureNotifications": "System notifications",
         "featureWindowState": "Window state remembered",
         "featureSingleInstance": "Single instance",
         "featureTray": "System tray",
-        "featureDeepLink": "almena:// links",
         "featureOn": "on",
         "featureOff": "off"
       },

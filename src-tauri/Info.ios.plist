@@ -2,15 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Both of these are shown by iOS in its own language, except that they are
-	     not: localising them means adding InfoPlist.strings catalogues to the
-	     generated Xcode project under src-tauri/gen/apple. -->
+	<!-- Shown by iOS in its own language, except that it is not: localising it
+	     means adding InfoPlist.strings catalogues to the generated Xcode
+	     project under src-tauri/gen/apple. -->
 	<!-- Shown when the wallet asks to unlock with Face ID. -->
 	<key>NSFaceIDUsageDescription</key>
 	<string>The Almena ID wallet unlocks with Face ID.</string>
-	<!-- Shown when the wallet asks for the camera to read a QR code. -->
-	<key>NSCameraUsageDescription</key>
-	<string>The Almena ID wallet uses the camera to read QR codes.</string>
 	<!-- What turns the wallet's own Documents directory into a folder in the
 	     Files app, under "On My iPhone". The Files app walks the whole tree, so
 	     `Documents/logs` shows as a folder inside it and the gathered export sits

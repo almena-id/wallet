@@ -8,7 +8,7 @@
 
 use ed25519_dalek::SigningKey;
 use hmac::{Hmac, Mac};
-use sha2::{Digest, Sha256, Sha512};
+use sha2::Sha512;
 use zeroize::{Zeroize, Zeroizing};
 
 /// SLIP-0010's key for the master step, fixed by that specification.
@@ -26,15 +26,6 @@ const CONTROL: u32 = 0;
 /// `0xed`, as an unsigned varint — the same two bytes `did:key` uses.
 const ED25519_PUB: [u8; 2] = [0xed, 0x01];
 
-/// How many steps a verifier's own key hangs below the control key.
-///
-/// Eight, because that is what it takes to spend the digest of a verifier's
-/// identifier: SLIP-0010 indices carry 31 bits each, and eight of them consume
-/// 248 of the 256. Fewer steps would leave the rest of the digest unused, and
-/// two verifiers whose keys collided would be handed the same identifier —
-/// which is the one thing deriving per verifier exists to prevent.
-const SITE_STEPS: usize = 8;
-
 /// The key the identity is, from the seed the words produce.
 pub fn signing_key(seed: &[u8; 64]) -> SigningKey {
     // Wrapped on the way in, so the scalar the key is built from is wiped rather
@@ -42,40 +33,6 @@ pub fn signing_key(seed: &[u8; 64]) -> SigningKey {
     // from is what would otherwise linger.
     let secret = Zeroizing::new(walk(seed, &[CONTROL]));
     SigningKey::from_bytes(&secret)
-}
-
-/// The key this identity uses at one verifier, and nowhere else.
-///
-/// **This is what keeps two sites from recognising the same person.** Every
-/// verifier is shown a different public key, and the only thing that knows they
-/// belong together is this device. Nothing is stored to make that work: the
-/// path is the digest of the verifier's identifier, so the same phrase on a new
-/// phone derives exactly the same keys again, having saved nothing.
-///
-/// The identifier the path is taken from is the verifier's DID, which the wallet
-/// reads from a signed request and can resolve for itself — not a label anybody
-/// asserted in passing.
-pub fn site_key(seed: &[u8; 64], verifier: &str) -> SigningKey {
-    let mut path = Vec::with_capacity(1 + SITE_STEPS);
-    path.push(CONTROL);
-    path.extend_from_slice(&site_path(verifier));
-
-    let secret = Zeroizing::new(walk(seed, &path));
-    SigningKey::from_bytes(&secret)
-}
-
-/// The steps below the control key that one verifier's identifier names.
-fn site_path(verifier: &str) -> [u32; SITE_STEPS] {
-    let digest = Sha256::digest(verifier.as_bytes());
-    let mut path = [0u32; SITE_STEPS];
-
-    for (step, chunk) in digest.chunks_exact(4).take(SITE_STEPS).enumerate() {
-        let bytes: [u8; 4] = chunk.try_into().expect("four bytes at a time");
-        // The top bit is what hardens a step, so an index only has 31 to give.
-        path[step] = u32::from_be_bytes(bytes) & 0x7fff_ffff;
-    }
-
-    path
 }
 
 /// A public key as text: multibase base58btc over the multicodec-prefixed bytes.
@@ -141,13 +98,6 @@ fn split(bytes: [u8; 64]) -> ([u8; 32], [u8; 32]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// A seed of no significance: what matters is that the same one keeps
-    /// producing the same keys.
-    const SEED: [u8; 64] = [7u8; 64];
-
-    const ONE: &str = "did:web:almena.id:v0000000000000001";
-    const ANOTHER: &str = "did:web:almena.id:v0000000000000002";
 
     /// **The vectors SLIP-0010 publishes for ed25519, both of them, every node.**
     ///
@@ -253,34 +203,6 @@ mod tests {
 9f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542";
 
     #[test]
-    fn a_verifier_always_gets_the_same_key() {
-        // A phrase restored on a new device has to arrive at the same
-        // identifiers, having stored nothing to remember them by.
-        assert_eq!(
-            site_key(&SEED, ONE).verifying_key().to_bytes(),
-            site_key(&SEED, ONE).verifying_key().to_bytes()
-        );
-    }
-
-    #[test]
-    fn two_verifiers_are_shown_different_keys() {
-        // The whole point: neither site can tell it is the same person, and
-        // neither can the platform.
-        assert_ne!(
-            site_key(&SEED, ONE).verifying_key().to_bytes(),
-            site_key(&SEED, ANOTHER).verifying_key().to_bytes()
-        );
-    }
-
-    #[test]
-    fn a_verifiers_key_is_not_the_identity_itself() {
-        assert_ne!(
-            site_key(&SEED, ONE).verifying_key().to_bytes(),
-            signing_key(&SEED).verifying_key().to_bytes()
-        );
-    }
-
-    #[test]
     fn the_walk_is_the_one_the_standard_publishes() {
         for (seed, path, private, public) in PUBLISHED {
             let derived = walk(&decode(seed), path);
@@ -296,16 +218,6 @@ mod tests {
                 named(path)
             );
         }
-    }
-
-    #[test]
-    fn the_path_spends_the_whole_digest() {
-        // Anything less and two verifiers could land on one key, which would
-        // hand them both the same person.
-        let path = site_path(ONE);
-        assert_eq!(path.len(), SITE_STEPS);
-        assert!(path.iter().all(|index| *index < 0x8000_0000));
-        assert_ne!(path, site_path(ANOTHER));
     }
 
     /// A path as SLIP-0010 writes it, for a failure that says which node broke.

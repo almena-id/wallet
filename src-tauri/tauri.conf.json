@@ -27,18 +27,7 @@
       "csp": null
     }
   },
-  "plugins": {
-    "deep-link": {
-      "mobile": [
-        {
-          "scheme": ["almena"]
-        }
-      ],
-      "desktop": {
-        "schemes": ["almena"]
-      }
-    }
-  },
+  "plugins": {},
   "bundle": {
     "active": true,
     "targets": "all",

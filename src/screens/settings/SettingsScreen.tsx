@@ -55,7 +55,7 @@ export function SettingsScreen({
   if (section) {
     return (
       <div className="screen">
-        <header className="screen__header screen__header--scan">
+        <header className="screen__header screen__header--compact">
           <button
             type="button"
             className="icon-button"

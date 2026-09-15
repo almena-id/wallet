@@ -40,7 +40,7 @@ export function HomeScreen({ identity, onShowCode }: HomeScreenProps) {
           {t.home.identity.title}
         </h2>
         <p className="card__subtitle">{t.home.identity.didLabel}</p>
-        <p className="scan-result">{identity.did}</p>
+        <p className="identifier">{identity.did}</p>
         <button type="button" className="button button--primary button--icon" onClick={onShowCode}>
           <QrIcon />
           {t.home.identity.showCode}

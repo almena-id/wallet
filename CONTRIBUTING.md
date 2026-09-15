@@ -52,11 +52,6 @@ older one has to read what that one wrote, so nothing is implied by the code
 that reads it, and a record from a newer wallet is refused by name rather than
 misread. Changing the format means bumping the version and reading the old one.
 
-**Nothing from outside is acted on.** A deep link, a QR code, an answer from the
-network: it says where to look, and nothing it says is taken on trust. The
-platform this wallet answers to is pinned at build time and is never read from
-a link.
-
 **Failures are codes, not prose.** The Rust side names what went wrong; the
 catalogues say it in the language somebody is reading.
 

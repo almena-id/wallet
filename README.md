@@ -7,9 +7,8 @@ on Windows, macOS and Linux.
 ## What is in it
 
 The first screen is a dashboard with a floating menu in the iOS liquid glass
-idiom: **Home**, **Scan QR** and **Settings**. Scanning opens the camera with a
-framing assistant and a back button that returns to the dashboard home. Every
-string comes from a catalogue in `src/i18n/messages/`; English is the fallback
+idiom: **Home** and **Settings**. Home shows the identity and leads to its
+identifier as a QR code somebody else can read. Every string comes from a catalogue in `src/i18n/messages/`; English is the fallback
 and Spanish ships with it. Adding a language is adding a JSON file there —
 no code changes.
 
@@ -163,51 +162,7 @@ asks the Rust side what it got rather than sniffing the user agent:
 | `single-instance` | yes | no | A second launch brings back the window already open |
 | tray icon | yes | no | Keeps the wallet running with no window on screen |
 | `notification` | yes | yes | Notifies through the host system's own mechanism |
-| `barcode-scanner` | no | yes | Reads QR codes with the camera |
-| `deep-link` | yes | yes | Opens the wallet on an `almena://` link |
-
-On a computer the Scan QR section says so plainly instead of failing: the
-camera scanner is provided by iOS and Android.
-
-### almena:// links
-
-The wallet answers the `almena://` scheme on all five platforms. A link opens
-it, brings the window back if it was on the tray, and lands on a screen that
-shows what arrived.
-
-**Nothing a link carries is acted on.** A link comes from outside — a page, a
-message, anything that can put a URL in front of somebody — and nothing outside
-gets to tell a wallet what to do with the identity it holds. A link that is not
-a sign-in request is shown and no more.
-
-`almena://signin?…` is the one thing the wallet knows how to answer, and it
-still decides nothing on its own. **The platform is pinned at build time**, not
-taken from the link: a wallet that followed whichever address a QR code named
-could be pointed at a stranger's server, and the person scanning would have no
-way to see the difference. The request has to sit under that platform, carry
-that platform's signature and still be in time; then who is asking is shown, and
-the answer goes out only when somebody says so. A scanned code takes the same
-road as a link — the camera is a way of typing a URL, not a second kind of
-trust.
-
-**The answer is signed with a key that belongs to that verifier alone**, derived
-from the digest of the verifier's own identifier. Every verifier is shown a
-different public key, and the only thing that knows they belong together is this
-device — nothing is stored to make that work, so the same phrase on a new phone
-derives exactly the same keys again. The identifier the key hangs off is the DID
-in the signed request, not a label anybody asserted in passing.
-
-Where each platform gets the scheme from, all of it generated from
-`plugins.deep-link` in `tauri.conf.json` at build time:
-
-| Platform | Registered through |
-| --- | --- |
-| macOS, iOS | `CFBundleURLTypes` in the bundle's `Info.plist` |
-| Android | An intent filter in `AndroidManifest.xml` |
-| Windows, Linux | The installer — and, in a debug build, `register_all()` at startup, so links can be tried before there is one |
-
-macOS only knows about the scheme once the app bundle has been installed and
-launched at least once: `task dev` runs a bare executable, which is not one.
+| `biometric` | no | yes | Answers whether this phone can recognise its owner |
 
 ### Closing the window is not quitting
 

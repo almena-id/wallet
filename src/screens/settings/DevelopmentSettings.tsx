@@ -58,7 +58,7 @@ function logSize(bytes: number, locale: string): string {
  *
  * It answers from the Rust side rather than from the user agent, which is why
  * it is worth having: the same list of features is what decides whether the
- * scanner, the tray or the window state exist at all on this platform.
+ * tray or the window state exist at all on this platform.
  *
  * The log is here for the same reason. **Somebody holding a phone cannot attach
  * a debugger to it**, so the only account of something going wrong is what the
@@ -87,12 +87,10 @@ export function DevelopmentSettings({ platform }: DevelopmentSettingsProps) {
   }
 
   const features = [
-    { label: t.settings.development.device.featureScanner, on: platform.barcodeScanner },
     { label: t.settings.development.device.featureNotifications, on: platform.kind !== "unknown" },
     { label: t.settings.development.device.featureWindowState, on: platform.windowState },
     { label: t.settings.development.device.featureSingleInstance, on: platform.singleInstance },
     { label: t.settings.development.device.featureTray, on: platform.tray },
-    { label: t.settings.development.device.featureDeepLink, on: platform.deepLink },
   ];
 
   const refresh = useCallback(async () => {

@@ -37,14 +37,6 @@ version: '3'
 #                           opening the wallet with a fingerprint, which the
 #                           Security screen then says is unavailable rather than
 #                           offering and failing.
-#
-# The platform the wallet answers to is not one of these. It is pinned in
-# src-tauri/build.rs, which is the only place that survives every way cargo gets
-# started: it used to be a cargo config file, and cargo looks for those by
-# walking up from the directory it was invoked in rather than from the manifest,
-# so the iOS build — which runs cargo from here, above src-tauri — never read it
-# and the phone silently answered a development address. Exporting
-# ALMENA_PLATFORM_URL still overrides it, on every platform.
 dotenv: ['.env.local']
 
 vars:
@@ -211,7 +203,7 @@ tasks:
     desc: Type-check the Rust the mobile builds compile, which the host check skips
     dir: src-tauri
     cmds:
-      # Everything behind `#[cfg(mobile)]` — the scanner, the biometrics — is
+      # Everything behind `#[cfg(mobile)]` — the biometrics, the share sheet — is
       # invisible to a check for this computer. A mobile target is the only way
       # to find out whether it compiles without waiting for a deploy.
       - cargo check --target aarch64-apple-ios-sim
@@ -220,9 +212,6 @@ tasks:
     desc: Run the Rust test suite
     dir: src-tauri
     cmds:
-      # The interop test is ignored by default: it needs a platform running and
-      # a sign-in link to answer. Run it with
-      # `ALMENA_TEST_LINK='almena://signin?…' cargo test -- --ignored`.
       - cargo test {{.CLI_ARGS}}
 
   check:

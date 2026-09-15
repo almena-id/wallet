@@ -6,7 +6,6 @@
   "nav": {
     "label": "Secciones principales",
     "home": "Inicio",
-    "scan": "Escanear QR",
     "settings": "Ajustes",
     "back": "Volver",
     "backToHome": "Volver al inicio"
@@ -105,96 +104,6 @@
       "ios": "iOS"
     }
   },
-  "scan": {
-    "title": "Escanear QR",
-    "instruction": "Encuadra el código QR dentro del marco",
-    "hint": "Mantén el dispositivo quieto hasta que se lea el código",
-    "starting": "Activando la cámara",
-    "cancel": "Cancelar",
-    "permission": {
-      "title": "La cámara necesita tu permiso",
-      "body": "La cartera lee códigos QR con la cámara. No se graba nada y nada sale del dispositivo.",
-      "action": "Permitir la cámara",
-      "deniedTitle": "El acceso a la cámara está desactivado",
-      "deniedBody": "Vuelve a activar la cámara para la cartera en los ajustes del sistema y regresa a esta pantalla.",
-      "openSettings": "Abrir los ajustes del sistema"
-    },
-    "unsupported": {
-      "title": "Para escanear necesitas un móvil o una tableta",
-      "body": "El escáner de cámara lo proporcionan iOS y Android. En un ordenador, usa la cartera del móvil para leer el código."
-    },
-    "error": {
-      "title": "No se ha podido activar la cámara",
-      "retry": "Volver a intentarlo"
-    },
-    "result": {
-      "title": "Código leído",
-      "again": "Escanear otro código"
-    }
-  },
-  "link": {
-    "title": "Enlace",
-    "received": "Ha llegado una solicitud",
-    "body": "Un enlace almena:// ha abierto la cartera. Se muestra aquí y no se ha hecho nada más con él.",
-    "urlLabel": "Lo que ha llegado"
-  },
-  "signin": {
-    "title": "Petición de acceso",
-    "reading": "Comprobando quién pregunta",
-    "asks": "quiere que inicies sesión",
-    "proves": "Demostrarás que tienes esta identidad, y nada más.",
-    "separate": "Este sitio recibe un identificador propio. En ningún otro sitio se le reconoce.",
-    "verifiedBy": "Petición firmada por Almena ID",
-    "expiresIn": "Caduca en {time}",
-    "accept": "Aceptar",
-    "accepting": "Respondiendo…",
-    "decline": "Cancelar",
-    "declined": "Petición rechazada",
-    "declinedBody": "No se ha compartido nada.",
-    "errors": {
-      "signin_unreadable": "Esto no es una petición que la cartera pueda leer.",
-      "signin_not_ours": "Esta petición apunta a un sitio que no es Almena ID.",
-      "signin_unverified": "La petición no está firmada por Almena ID.",
-      "signin_expired": "La petición ha caducado. Pide un código nuevo.",
-      "signin_unreachable": "No se ha podido contactar con Almena ID.",
-      "signin_no_identity": "Crea o restaura una identidad antes de iniciar sesión.",
-      "signin_nothing": "No hay ninguna petición que responder.",
-      "signin_refused": "Almena ID no ha aceptado la respuesta.",
-      "signin_unknown": "Algo ha ido mal."
-    }
-  },
-  "invitation": {
-    "title": "Invitación",
-    "reading": "Comprobando quién te invita",
-    "invites": "{entity} te ha invitado",
-    "roles": {
-      "owner": "Como propietario",
-      "member": "Como miembro"
-    },
-    "listedAs": "Con el nombre {name}",
-    "separate": "Esta organización recibe un identificador propio. No lo reconoce nadie más.",
-    "thenConfirmed": "Un propietario tiene que confirmarte para que entres.",
-    "verifiedBy": "Invitación firmada por Almena ID",
-    "expiresInHours": "Caduca en {hours} h",
-    "expiresInDays": "Caduca en {days} días",
-    "accept": "Aceptar",
-    "accepting": "Respondiendo…",
-    "cancel": "Cancelar",
-    "sent": "Enviado",
-    "sentBody": "{entity} tiene que confirmarlo.",
-    "errors": {
-      "invitation_unreadable": "Esto no es una invitación que la cartera pueda leer.",
-      "invitation_not_ours": "Esta invitación apunta a un sitio que no es Almena ID.",
-      "invitation_unverified": "La invitación no está firmada por Almena ID.",
-      "invitation_expired": "Esta invitación ya no vale. Pide una nueva.",
-      "invitation_unreachable": "No se ha podido contactar con Almena ID.",
-      "invitation_no_identity": "Crea o recupera una identidad antes de aceptar.",
-      "invitation_nothing": "No hay ninguna invitación que responder.",
-      "invitation_already_joined": "Ya estás en esta organización.",
-      "invitation_refused": "Almena ID no ha aceptado la respuesta.",
-      "invitation_unknown": "Algo ha ido mal."
-    }
-  },
   "settings": {
     "title": "Ajustes",
     "sections": {
@@ -244,13 +153,9 @@
       "unenrolled": "Nada configurado en este dispositivo",
       "unsupported": "No disponible en esta plataforma",
       "request": "Solicitarlo",
-      "openSettings": "Abrir los ajustes del sistema",
       "deniedHint": "Se le retiró a la cartera. Solo los ajustes del sistema pueden devolverlo.",
       "notifications": {
         "title": "Notificaciones"
-      },
-      "camera": {
-        "title": "Cámara"
       },
       "biometrics": {
         "title": "Cara y huella"
@@ -282,12 +187,10 @@
       "device": {
         "title": "Este dispositivo",
         "featuresLabel": "Funciones de plataforma activas",
-        "featureScanner": "Escáner de cámara",
         "featureNotifications": "Notificaciones del sistema",
         "featureWindowState": "Estado de la ventana recordado",
         "featureSingleInstance": "Instancia única",
         "featureTray": "Bandeja del sistema",
-        "featureDeepLink": "Enlaces almena://",
         "featureOn": "activa",
         "featureOff": "inactiva"
       },

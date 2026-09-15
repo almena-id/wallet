@@ -11,7 +11,6 @@
     "notification:allow-is-permission-granted",
     "notification:allow-request-permission",
     "notification:allow-notify",
-    "deep-link:default",
     "dialog:allow-save"
   ]
 }
