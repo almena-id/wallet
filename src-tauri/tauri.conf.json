@@ -20,7 +20,8 @@
         "minHeight": 620,
         "resizable": true,
         "center": true,
-        "backgroundColor": "#f2f3f6"
+        "backgroundColor": "#f2f3f6",
+        "titleBarStyle": "Transparent"
       }
     ],
     "security": {

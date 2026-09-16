@@ -31,7 +31,8 @@
 //!
 //! [`develop`] is the log, and how it leaves the device it was written on.
 //!
-//! [`backdrop`] is the colour behind the page, which the window has to be told.
+//! [`backdrop`] is the colour behind the page and the appearance of the window
+//! around it, both of which the window has to be told.
 
 mod backdrop;
 mod develop;

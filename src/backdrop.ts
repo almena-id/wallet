@@ -23,6 +23,10 @@ import type { Theme } from "./theme";
  * background answers with the colour the platform is really drawing — which is
  * the thing that has to match.
  *
+ * On a computer the window's own chrome is sent the theme as well, because a
+ * title bar the system draws light over a page that is dark is the same flash
+ * made permanent — see `src-tauri/src/backdrop.rs`.
+ *
  * It goes through this application's own command and not through Tauri's
  * `setBackgroundColor`, which is registered for desktop alone and rejects on a
  * phone — the one place any of this matters.
@@ -31,7 +35,9 @@ import type { Theme } from "./theme";
 /** Whichever way the device is leaning, when nobody has chosen for it. */
 function useSystemScheme(): "dark" | "light" {
   const [scheme, setScheme] = useState<"dark" | "light">(() =>
-    window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
+    window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light",
   );
 
   useEffect(() => {
@@ -57,7 +63,12 @@ function painted(): [number, number, number, number] | null {
 
   // An alpha the page did not ask for would let the white through again, so a
   // missing one is opaque rather than nothing.
-  return [red, green, blue, alpha === undefined ? 255 : Math.round(alpha * 255)];
+  return [
+    red,
+    green,
+    blue,
+    alpha === undefined ? 255 : Math.round(alpha * 255),
+  ];
 }
 
 /**
@@ -81,9 +92,20 @@ export function useBackdrop(theme: Theme): void {
 
     const [red, green, blue, alpha] = colour;
 
+    // `system` is the absence of a choice, and the window is handed back to the
+    // system in the same terms rather than told which way the system leans:
+    // the window already follows that on its own, and telling it would stop it.
+    const chosen = theme === "system" ? null : theme;
+
     // A platform that will not take a colour keeps the one it has. The page is
     // painted the same either way — this is only what shows around it, and it
     // is not worth a message to somebody who cannot act on it.
-    void invoke("backdrop_set", { red, green, blue, alpha }).catch(() => undefined);
+    void invoke("backdrop_set", {
+      red,
+      green,
+      blue,
+      alpha,
+      theme: chosen,
+    }).catch(() => undefined);
   }, [theme, scheme]);
 }
