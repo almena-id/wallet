@@ -77,11 +77,19 @@ function painted(): [number, number, number, number] | null {
  * `theme` and the system's own answer are both watched, because either can move
  * the palette: somebody choosing dark, and somebody's phone deciding it is
  * evening, arrive here the same way.
+ *
+ * `scanning` pauses it. The scanner makes the webview transparent so the camera
+ * behind it can be seen, and a colour pushed while it is open would paint over
+ * the picture.
  */
-export function useBackdrop(theme: Theme): void {
+export function useBackdrop(theme: Theme, scanning: boolean): void {
   const scheme = useSystemScheme();
 
   useEffect(() => {
+    if (scanning) {
+      return;
+    }
+
     // Read after the theme has reached the document: `getComputedStyle` settles
     // the pending style change, so this is the palette that is about to be on
     // screen and not the one leaving it.
@@ -107,5 +115,5 @@ export function useBackdrop(theme: Theme): void {
       alpha,
       theme: chosen,
     }).catch(() => undefined);
-  }, [theme, scheme]);
+  }, [theme, scheme, scanning]);
 }

@@ -6,6 +6,7 @@
   "nav": {
     "label": "Main sections",
     "home": "Home",
+    "scan": "Scan QR",
     "settings": "Settings",
     "back": "Back",
     "backToHome": "Back to home"
@@ -92,6 +93,25 @@
     "copy": "Copy",
     "copied": "Copied"
   },
+  "scan": {
+    "title": "Scan QR",
+    "instruction": "Line the QR code up inside the frame",
+    "hint": "Hold the device steady until the code is read",
+    "starting": "Starting the camera",
+    "permission": {
+      "deniedTitle": "Camera access is turned off",
+      "deniedBody": "Turn the camera back on for the wallet in the system settings, then come back to this screen.",
+      "openSettings": "Open system settings"
+    },
+    "error": {
+      "title": "The camera could not be started",
+      "retry": "Try again"
+    },
+    "result": {
+      "title": "Code read",
+      "again": "Scan another code"
+    }
+  },
   "platform": {
     "desktop": "Desktop",
     "mobile": "Mobile",
@@ -154,8 +174,12 @@
       "unsupported": "Not available on this platform",
       "request": "Ask for it",
       "deniedHint": "It was turned off for the wallet. Only the system settings can turn it back on.",
+      "openSettings": "Open system settings",
       "notifications": {
         "title": "Notifications"
+      },
+      "camera": {
+        "title": "Camera"
       },
       "biometrics": {
         "title": "Face and fingerprint"
@@ -188,6 +212,7 @@
         "title": "This device",
         "featuresLabel": "Active platform features",
         "featureNotifications": "System notifications",
+        "featureScanner": "Camera scanner",
         "featureWindowState": "Window state remembered",
         "featureSingleInstance": "Single instance",
         "featureTray": "System tray",

@@ -4,6 +4,8 @@
 //!
 //! - `single-instance` and `window-state` only exist on desktop. A phone runs
 //!   one instance of an app and manages its window itself.
+//! - `barcode-scanner` only exists on mobile, where there is a camera the OS
+//!   lets an app drive for reading a code.
 //! - `biometric` only exists on mobile, where it is what answers whether this
 //!   phone can recognise its owner.
 //! - `sharekit` is registered on mobile alone, and it is the one plugin here
@@ -33,10 +35,14 @@
 //!
 //! [`backdrop`] is the colour behind the page and the appearance of the window
 //! around it, both of which the window has to be told.
+//!
+//! [`scene`] is the second window an iPad offers, and why it is turned down.
 
 mod backdrop;
 mod develop;
 mod identity;
+#[cfg(target_os = "ios")]
+mod scene;
 mod tray;
 mod vault;
 #[cfg(desktop)]
@@ -55,6 +61,8 @@ struct PlatformInfo {
     kind: &'static str,
     /// The operating system, as reported by the Rust standard library.
     os: &'static str,
+    /// Whether this build can read a code with the camera.
+    barcode_scanner: bool,
     /// Whether this build keeps window geometry across restarts.
     window_state: bool,
     /// Whether this build refuses to run twice at once.
@@ -70,6 +78,7 @@ fn platform_info() -> PlatformInfo {
     PlatformInfo {
         kind: if cfg!(mobile) { "mobile" } else { "desktop" },
         os: std::env::consts::OS,
+        barcode_scanner: cfg!(mobile),
         window_state: cfg!(desktop),
         single_instance: cfg!(desktop),
         tray: cfg!(desktop),
@@ -228,15 +237,16 @@ pub fn run() {
             #[cfg(desktop)]
             window::settle(app.handle());
 
-            // The plugin that answers whether this phone can recognise its
-            // owner, which only the mobile platforms have. **Touch ID needs no
-            // plugin**: on macOS the device key is held in the data protection
-            // keychain and the system itself asks for the finger before handing
-            // it back — see `vault::store`. On Windows and Linux the stores
-            // hand their items to whoever is logged in, so there the lock is
-            // the PIN alone.
+            // The camera scanner and the plugin that answers whether this phone
+            // can recognise its owner, both of which only the mobile platforms
+            // have. **Touch ID needs no plugin**: on macOS the device key is
+            // held in the data protection keychain and the system itself asks
+            // for the finger before handing it back — see `vault::store`. On
+            // Windows and Linux the stores hand their items to whoever is
+            // logged in, so there the lock is the PIN alone.
             #[cfg(mobile)]
             {
+                app.handle().plugin(tauri_plugin_barcode_scanner::init())?;
                 app.handle().plugin(tauri_plugin_biometric::init())?;
                 // The share sheet, which only a phone has. On a computer the
                 // log already has a path, a folder to reveal it in and a save
@@ -274,6 +284,13 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = _event {
                 window::show_main(_app);
+            }
+
+            // An iPad opening a second window of a wallet that has one — see
+            // [`scene`].
+            #[cfg(target_os = "ios")]
+            if let tauri::RunEvent::SceneRequested { scene, .. } = &_event {
+                scene::refuse(scene);
             }
         });
 }

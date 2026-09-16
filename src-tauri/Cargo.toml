@@ -77,6 +77,10 @@ tauri-plugin-single-instance = "2.4.4"
 tauri-plugin-window-state = "2.4.1"
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+# The camera, for reading a code somebody is showing the wallet. Only a phone or
+# a tablet has one the wallet may drive: the plugin does not exist for the
+# desktops, and the tab that opens it is not offered there either.
+tauri-plugin-barcode-scanner = "2.4.6"
 tauri-plugin-biometric = "2.3.3"
 # The system share sheet: `UIActivityViewController` on iOS, `ACTION_SEND`
 # through the FileProvider on Android. **Tauri has no first-party plugin for
@@ -92,6 +96,17 @@ tauri-plugin-sharekit = "=0.3.1"
 # `protected` is the data protection keychain, which is the only one that can be
 # told the item is for this device and no other.
 apple-native-keyring-store = { version = "1", features = ["protected"] }
+# Turning down the second window an iPad offers — see `scene.rs`. The same
+# `objc2-ui-kit` Tauri itself is built on, with only the pieces that ask the
+# application to destroy a scene session.
+objc2 = "0.6"
+objc2-ui-kit = { version = "0.3", default-features = false, features = [
+    "UIApplication",
+    "UIScene",
+    "UISceneSession",
+    "UISceneOptions",
+    "block2",
+] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # **Both keychains, and each one for what only it can do.**

@@ -1,6 +1,6 @@
 /*
  * Almena ID wallet — one stylesheet, organised by layer:
- * tokens, shell, screens, cards and controls, floating menu.
+ * tokens, shell, screens, cards and controls, floating menu, camera overlay.
  *
  * The interface is built mobile first. On a phone or tablet it fills the
  * viewport and respects the safe areas; on a desktop window it keeps the same
@@ -801,7 +801,8 @@ body {
 @media (prefers-reduced-transparency: reduce) {
   .card,
   .tab-bar__glass,
-  .icon-button {
+  .icon-button,
+  .screen--camera .screen__title {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     background: var(--surface-strong);
@@ -1753,4 +1754,149 @@ body {
 .copy-field__action svg {
   width: 16px;
   height: 16px;
+}
+
+/* ------------------------------------------------------- camera overlay */
+
+/*
+ * While the scanner runs, the operating system draws the camera behind the
+ * webview: everything the page paints would cover it, so it paints nothing.
+ */
+html[data-camera-preview="true"],
+html[data-camera-preview="true"] body,
+html[data-camera-preview="true"] #root,
+html[data-camera-preview="true"] .app,
+html[data-camera-preview="true"] .card {
+  background: transparent;
+}
+
+html[data-camera-preview="true"] .app::before {
+  display: none;
+}
+
+.app--camera .app__view {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 24px);
+}
+
+/* The scan header stays above the dimmed surround, so Back is never dulled. */
+.screen--camera .screen__header {
+  position: relative;
+  z-index: 11;
+}
+
+.screen--camera .screen__title {
+  padding: 5px 14px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 999px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  backdrop-filter: blur(18px) saturate(180%);
+}
+
+.framing {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding:
+    calc(env(safe-area-inset-top) + 72px) 24px
+    calc(env(safe-area-inset-bottom) + 40px);
+  pointer-events: none;
+  text-align: center;
+}
+
+.framing__instruction,
+.framing__hint {
+  margin: 0;
+  max-width: 30ch;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(8, 9, 11, 0.55);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: #ffffff;
+  text-wrap: balance;
+}
+
+.framing__instruction {
+  font-weight: 600;
+}
+
+.framing__hint {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+/* The frame is a hole: its shadow spreads outwards to dim the surroundings. */
+.framing__frame {
+  position: relative;
+  width: min(72vw, 320px);
+  aspect-ratio: 1;
+  border-radius: 30px;
+  box-shadow: 0 0 0 100vmax rgba(8, 9, 11, 0.55);
+}
+
+.framing__corner {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--brand);
+}
+
+.framing__corner--tl {
+  top: -3px;
+  left: -3px;
+  border-right: 0;
+  border-bottom: 0;
+  border-top-left-radius: 30px;
+}
+
+.framing__corner--tr {
+  top: -3px;
+  right: -3px;
+  border-left: 0;
+  border-bottom: 0;
+  border-top-right-radius: 30px;
+}
+
+.framing__corner--br {
+  right: -3px;
+  bottom: -3px;
+  border-left: 0;
+  border-top: 0;
+  border-bottom-right-radius: 30px;
+}
+
+.framing__corner--bl {
+  bottom: -3px;
+  left: -3px;
+  border-right: 0;
+  border-top: 0;
+  border-bottom-left-radius: 30px;
+}
+
+.framing__sweep {
+  position: absolute;
+  left: 7%;
+  right: 7%;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--brand), transparent);
+  box-shadow: 0 0 12px var(--brand);
+  animation: sweep 2.4s ease-in-out infinite;
+}
+
+@keyframes sweep {
+  0%,
+  100% {
+    top: 10%;
+  }
+
+  50% {
+    top: 90%;
+  }
 }

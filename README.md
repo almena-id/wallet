@@ -7,8 +7,11 @@ on Windows, macOS and Linux.
 ## What is in it
 
 The first screen is a dashboard with a floating menu in the iOS liquid glass
-idiom: **Home** and **Settings**. Home shows the identity and leads to its
-identifier as a QR code somebody else can read. Every string comes from a catalogue in `src/i18n/messages/`; English is the fallback
+idiom: **Home**, **Scan QR** and **Settings**. Home shows the identity and
+leads to its identifier as a QR code somebody else can read; Scan QR opens the
+camera and shows what the code it read says, and it is only offered on a phone
+or a tablet, where there is a camera the wallet may drive. Every string comes
+from a catalogue in `src/i18n/messages/`; English is the fallback
 and Spanish ships with it. Adding a language is adding a JSON file there —
 no code changes.
 
@@ -162,6 +165,7 @@ asks the Rust side what it got rather than sniffing the user agent:
 | `single-instance` | yes | no | A second launch brings back the window already open |
 | tray icon | yes | no | Keeps the wallet running with no window on screen |
 | `notification` | yes | yes | Notifies through the host system's own mechanism |
+| `barcode-scanner` | no | yes | Reads QR codes with the camera |
 | `biometric` | no | yes | Answers whether this phone can recognise its owner |
 
 ### Closing the window is not quitting

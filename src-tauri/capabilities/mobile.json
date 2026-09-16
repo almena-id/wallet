@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/mobile-schema.json",
   "identifier": "mobile",
-  "description": "Capabilities that only the mobile platforms provide: asking whether this device can recognise its owner. The share sheet is registered on these platforms too and is deliberately not listed: it is raised from `develop_logs_share` on the Rust side, and this list is what the webview may invoke.",
+  "description": "Capabilities that only the mobile platforms provide: the camera based scanner, and asking whether this device can recognise its owner. The share sheet is registered on these platforms too and is deliberately not listed: it is raised from `develop_logs_share` on the Rust side, and this list is what the webview may invoke.",
   "platforms": [
     "iOS",
     "android"
@@ -10,6 +10,11 @@
     "main"
   ],
   "permissions": [
+    "barcode-scanner:allow-scan",
+    "barcode-scanner:allow-cancel",
+    "barcode-scanner:allow-check-permissions",
+    "barcode-scanner:allow-request-permissions",
+    "barcode-scanner:allow-open-app-settings",
     "biometric:allow-status"
   ]
 }

@@ -29,13 +29,19 @@
 		23ADC287FCA0DD25D9D1C1A9 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		457E759E886F371C16057181 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		49FB7BD5992831A9FB905E6C /* lib.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = lib.rs; sourceTree = "<group>"; };
+		561B8E2858B7E3825D4E6DB7 /* store.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = store.rs; sourceTree = "<group>"; };
 		626DC57795D6F0B21BDA5C14 /* window.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = window.rs; sourceTree = "<group>"; };
 		6309B9B8963D919F1E42A61E /* wallet_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = wallet_iOS.entitlements; sourceTree = "<group>"; };
 		7DC712F51E0F7A71FB8DE7DE /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
+		92295F8FCD7A86A8D2E1AF62 /* record.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = record.rs; sourceTree = "<group>"; };
 		93252ECFD059A3CAC4640C2D /* main.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = main.rs; sourceTree = "<group>"; };
+		9FACCDB5A3DDD0921B761560 /* backdrop.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = backdrop.rs; sourceTree = "<group>"; };
+		A56B0F5175C81F09F0FAEFDA /* mod.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = mod.rs; sourceTree = "<group>"; };
 		A85994A8EB06060608D8A014 /* mod.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = mod.rs; sourceTree = "<group>"; };
 		AA3E565B35A9BE1991283E01 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		AB45494EB6FE52F4242A9801 /* develop.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = develop.rs; sourceTree = "<group>"; };
 		AEDCD1377F6EECD86AAE49E2 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		B1571F646CE770CA2FD411A0 /* presence.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = presence.rs; sourceTree = "<group>"; };
 		B37D409E4195558A880D2D5B /* Almena ID Wallet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Almena ID Wallet.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B3BDB27C8B7984FD7B9DD3DD /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
 		B565762931AB98B9378838A4 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
@@ -153,11 +159,14 @@
 		E3D77FA48AD155D03E436999 /* src */ = {
 			isa = PBXGroup;
 			children = (
+				9FACCDB5A3DDD0921B761560 /* backdrop.rs */,
+				AB45494EB6FE52F4242A9801 /* develop.rs */,
 				49FB7BD5992831A9FB905E6C /* lib.rs */,
 				93252ECFD059A3CAC4640C2D /* main.rs */,
 				02DDAEF2708881622483CC87 /* tray.rs */,
 				626DC57795D6F0B21BDA5C14 /* window.rs */,
 				C8DDBD5A40E99018F6458D9D /* identity */,
+				FD6F0C2E20AF36E05BF5274B /* vault */,
 			);
 			name = src;
 			path = ../../src;
@@ -185,6 +194,17 @@
 				2F6FA4630A5C9C94A313B9B2 /* bindings */,
 			);
 			path = wallet;
+			sourceTree = "<group>";
+		};
+		FD6F0C2E20AF36E05BF5274B /* vault */ = {
+			isa = PBXGroup;
+			children = (
+				A56B0F5175C81F09F0FAEFDA /* mod.rs */,
+				B1571F646CE770CA2FD411A0 /* presence.rs */,
+				92295F8FCD7A86A8D2E1AF62 /* record.rs */,
+				561B8E2858B7E3825D4E6DB7 /* store.rs */,
+			);
+			path = vault;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -304,7 +324,9 @@
 					"\".\"",
 				);
 				INFOPLIST_FILE = wallet_iOS/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Almena ID";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -347,7 +369,9 @@
 					"\".\"",
 				);
 				INFOPLIST_FILE = wallet_iOS/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Almena ID";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

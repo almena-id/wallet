@@ -6,6 +6,7 @@
   "nav": {
     "label": "Secciones principales",
     "home": "Inicio",
+    "scan": "Escanear QR",
     "settings": "Ajustes",
     "back": "Volver",
     "backToHome": "Volver al inicio"
@@ -92,6 +93,25 @@
     "copy": "Copiar",
     "copied": "Copiado"
   },
+  "scan": {
+    "title": "Escanear QR",
+    "instruction": "Encuadra el código QR dentro del marco",
+    "hint": "Mantén el dispositivo quieto hasta que se lea el código",
+    "starting": "Activando la cámara",
+    "permission": {
+      "deniedTitle": "El acceso a la cámara está desactivado",
+      "deniedBody": "Vuelve a activar la cámara para la cartera en los ajustes del sistema y regresa a esta pantalla.",
+      "openSettings": "Abrir los ajustes del sistema"
+    },
+    "error": {
+      "title": "No se ha podido activar la cámara",
+      "retry": "Volver a intentarlo"
+    },
+    "result": {
+      "title": "Código leído",
+      "again": "Escanear otro código"
+    }
+  },
   "platform": {
     "desktop": "Ordenador",
     "mobile": "Móvil",
@@ -154,8 +174,12 @@
       "unsupported": "No disponible en esta plataforma",
       "request": "Solicitarlo",
       "deniedHint": "Se le retiró a la cartera. Solo los ajustes del sistema pueden devolverlo.",
+      "openSettings": "Abrir los ajustes del sistema",
       "notifications": {
         "title": "Notificaciones"
+      },
+      "camera": {
+        "title": "Cámara"
       },
       "biometrics": {
         "title": "Cara y huella"
@@ -188,6 +212,7 @@
         "title": "Este dispositivo",
         "featuresLabel": "Funciones de plataforma activas",
         "featureNotifications": "Notificaciones del sistema",
+        "featureScanner": "Escáner de cámara",
         "featureWindowState": "Estado de la ventana recordado",
         "featureSingleInstance": "Instancia única",
         "featureTray": "Bandeja del sistema",

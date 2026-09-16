@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 
 import { LiquidTabBar, type TabDefinition } from "./components/LiquidTabBar";
 import { BrandSpinner } from "./components/BrandSpinner";
-import { HomeIcon, SettingsIcon } from "./components/icons";
+import { HomeIcon, QrIcon, SettingsIcon } from "./components/icons";
 import { plural, useI18n } from "./i18n";
 import { useAccent } from "./appearance";
 import { useAutoLock, useIdle } from "./autolock";
@@ -25,6 +25,7 @@ import { PinChange } from "./screens/PinChange";
 import { PinConfirm } from "./screens/PinConfirm";
 import { PinScreen } from "./screens/PinScreen";
 import { LogoutScreen } from "./screens/LogoutScreen";
+import { ScanScreen } from "./screens/ScanScreen";
 import { Onboarding } from "./screens/onboarding/Onboarding";
 import { SettingsScreen } from "./screens/settings/SettingsScreen";
 
@@ -34,7 +35,7 @@ import { SettingsScreen } from "./screens/settings/SettingsScreen";
  * identifier as a code. `pin` and `device` are the two things Security sends
  * somebody to. All of them are left through their own back button.
  */
-type Route = "home" | "settings" | "identity" | "logout" | "pin" | "device";
+type Route = "home" | "scan" | "settings" | "identity" | "logout" | "pin" | "device";
 
 export default function App() {
   const { t, locale } = useI18n();
@@ -52,10 +53,11 @@ export default function App() {
   // Where Settings opens: back where somebody was, when they are coming back
   // from a screen a section sent them to.
   const [settingsSection, setSettingsSection] = useState<"security" | null>(null);
+  const [cameraPreview, setCameraPreview] = useState(false);
   // The window behind the page wears the same colour the page does, so turning
   // the device does not flash the native white through — see `backdrop`. Read
   // after `useTheme` above, because it reads the palette that hook just applied.
-  useBackdrop(theme);
+  useBackdrop(theme, cameraPreview);
   const [unlockError, setUnlockError] = useState<string | null>(null);
   // Signing out is reachable from behind the lock and from a record that cannot
   // be opened, neither of which has a Settings to route through.
@@ -127,8 +129,15 @@ export default function App() {
     setRoute("settings");
   }, []);
 
+  // **Scanning is offered only where it can happen.** A computer has no camera
+  // the wallet may drive, and a tab there would be a tab that only ever leads
+  // to an apology. The answer comes from the Rust side, which knows because it
+  // is the same switch that decided whether to register the scanner at all.
   const tabs: TabDefinition<Route>[] = [
     { id: "home", label: t.nav.home, icon: <HomeIcon /> },
+    ...(platform.barcodeScanner
+      ? [{ id: "scan" as const, label: t.nav.scan, icon: <QrIcon /> }]
+      : []),
     { id: "settings", label: t.nav.settings, icon: <SettingsIcon /> },
   ];
 
@@ -268,12 +277,16 @@ export default function App() {
   const barless = route === "logout" || route === "pin" || route === "device";
 
   return (
-    <div className="app">
-      <main className={barless ? "app__view app__view--plain" : "app__view"} key={route}>
+    <div className={cameraPreview ? "app app--camera" : "app"}>
+      <main
+        className={barless && !cameraPreview ? "app__view app__view--plain" : "app__view"}
+        key={route}
+      >
         {route === "home" ? (
           <HomeScreen identity={identity} onShowCode={() => setRoute("identity")} />
         ) : null}
         {route === "identity" ? <IdentityScreen identity={identity} onBack={goHome} /> : null}
+        {route === "scan" ? <ScanScreen onBack={goHome} onPreviewChange={setCameraPreview} /> : null}
         {route === "settings" ? (
           <SettingsScreen
             platform={platform}
@@ -317,7 +330,8 @@ export default function App() {
         ) : null}
       </main>
 
-      {barless ? null : (
+      {/* The menu steps aside while the camera preview is live. */}
+      {cameraPreview || barless ? null : (
         <LiquidTabBar
           label={t.nav.label}
           tabs={tabs}
