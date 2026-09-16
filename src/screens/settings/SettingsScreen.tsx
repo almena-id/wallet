@@ -8,14 +8,22 @@ import type { PlatformInfo } from "../../platform";
 import type { Theme } from "../../theme";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { DevelopmentSettings } from "./DevelopmentSettings";
+import { MessagingSettings } from "./MessagingSettings";
 import { PermissionsSettings } from "./PermissionsSettings";
 import { SecuritySettings } from "./SecuritySettings";
 import type { AutoLock } from "../../autolock";
+import type { Mediator } from "../../mediator";
 
 /** Where Settings leads, and the list that leads there. */
-type Section = "appearance" | "permissions" | "security" | "development";
+type Section = "appearance" | "messaging" | "permissions" | "security" | "development";
 
-const SECTIONS: Section[] = ["appearance", "permissions", "security", "development"];
+const SECTIONS: Section[] = [
+  "appearance",
+  "messaging",
+  "permissions",
+  "security",
+  "development",
+];
 
 type SettingsScreenProps = {
   platform: PlatformInfo;
@@ -25,6 +33,9 @@ type SettingsScreenProps = {
   onThemeChange: (theme: Theme) => void;
   autoLock: AutoLock;
   onAutoLockChange: (minutes: AutoLock) => void;
+  /** Where the wallet leaves its messages, for the relationships it opens next. */
+  mediator: Mediator;
+  onMediatorChange: (mediator: Mediator) => void;
   vault: Vault;
   /** Where to open, for a return from a screen a section sent somebody to. */
   initialSection?: Section | null;
@@ -43,6 +54,8 @@ export function SettingsScreen({
   onThemeChange,
   autoLock,
   onAutoLockChange,
+  mediator,
+  onMediatorChange,
   vault,
   initialSection = null,
   onChangePin,
@@ -76,6 +89,9 @@ export function SettingsScreen({
             theme={theme}
             onThemeChange={onThemeChange}
           />
+        ) : null}
+        {section === "messaging" ? (
+          <MessagingSettings mediator={mediator} onMediatorChange={onMediatorChange} />
         ) : null}
         {section === "permissions" ? (
           <PermissionsSettings platform={platform} deviceUnlock={vault.status.deviceUnlock} />

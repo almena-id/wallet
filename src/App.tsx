@@ -8,6 +8,7 @@ import { useAccent } from "./appearance";
 import { useAutoLock, useIdle } from "./autolock";
 import { useBackdrop } from "./backdrop";
 import { useBackInSight } from "./lock";
+import { useMediator } from "./mediator";
 import { usePlatform } from "./platform";
 import { useTheme } from "./theme";
 import { useTray } from "./tray";
@@ -46,6 +47,7 @@ export default function App() {
   useTray();
   const { accent, setAccent } = useAccent();
   const { autoLock, setAutoLock } = useAutoLock();
+  const { mediator, setMediator } = useMediator();
   const { theme, setTheme } = useTheme();
   const vault = useVault();
   const [identity, setIdentity] = useState<Identity | null>(null);
@@ -296,6 +298,8 @@ export default function App() {
             onThemeChange={setTheme}
             autoLock={autoLock}
             onAutoLockChange={setAutoLock}
+            mediator={mediator}
+            onMediatorChange={setMediator}
             vault={vault}
             initialSection={settingsSection}
             onChangePin={() => setRoute("pin")}

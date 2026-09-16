@@ -1296,6 +1296,33 @@ body {
   transform: rotate(180deg);
 }
 
+/* An identifier under the label is read, copied and compared character by
+   character, which is what a monospace face is for; it wraps rather than
+   overflows, because a DID is longer than a phone is wide. */
+.row__hint--identifier {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* The tick that says which of several rows is the one in force, in the
+   accent, the way "on" is said everywhere else in the wallet. */
+.row__check {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  color: var(--brand);
+}
+
+/* Rows that are one choice each, listed: the menu's spacing, because a list
+   of options and a list of places should not read as two kinds of list. */
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
 /* The switch wears the accent rather than a fixed green: the colour of this
    wallet is the one its owner chose, and "on" is the same colour everywhere
    else in it. */

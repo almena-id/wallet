@@ -131,6 +131,10 @@
         "title": "Apariencia",
         "hint": "El color que viste la cartera"
       },
+      "messaging": {
+        "title": "Mensajería",
+        "hint": "Dónde esperan tus mensajes"
+      },
       "permissions": {
         "title": "Permisos",
         "hint": "Lo que este dispositivo deja hacer a la cartera"
@@ -162,6 +166,12 @@
         "system": "Sistema",
         "dark": "Oscuro",
         "light": "Claro"
+      }
+    },
+    "messaging": {
+      "title": "Mensajería",
+      "mediator": {
+        "title": "Mediador"
       }
     },
     "permissions": {

@@ -131,6 +131,10 @@
         "title": "Appearance",
         "hint": "The colour the wallet wears"
       },
+      "messaging": {
+        "title": "Messaging",
+        "hint": "Where your messages wait"
+      },
       "permissions": {
         "title": "Permissions",
         "hint": "What this device lets the wallet do"
@@ -162,6 +166,12 @@
         "system": "System",
         "dark": "Dark",
         "light": "Light"
+      }
+    },
+    "messaging": {
+      "title": "Messaging",
+      "mediator": {
+        "title": "Mediator"
       }
     },
     "permissions": {
