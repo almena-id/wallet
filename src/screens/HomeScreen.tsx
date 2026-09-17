@@ -1,15 +1,20 @@
 import { CredentialIcon, QrIcon } from "../components/icons";
 import { useTranslations } from "../i18n";
-import type { Identity } from "../identity";
 
 type HomeScreenProps = {
-  /** The identity this session is running as. */
-  identity: Identity;
-  /** Opens the identifier as a code somebody else's camera can read. */
+  /** Opens the invitation as a code somebody else's camera can read. */
   onShowCode: () => void;
 };
 
-export function HomeScreen({ identity, onShowCode }: HomeScreenProps) {
+/**
+ * **The identifier is not on this screen, or any other.** The root `did:key`
+ * is what every pairwise descends from, and showing it — as text to copy, as
+ * a code to scan — hands out the one thing that would let two counterparties
+ * find they are talking to the same person. What the identity card offers
+ * instead is the invitation: a code made for whoever is in front of the
+ * wallet, from which nothing about the identity follows.
+ */
+export function HomeScreen({ onShowCode }: HomeScreenProps) {
   const t = useTranslations();
 
   return (
@@ -39,8 +44,6 @@ export function HomeScreen({ identity, onShowCode }: HomeScreenProps) {
         <h2 className="card__title" id="home-identity">
           {t.home.identity.title}
         </h2>
-        <p className="card__subtitle">{t.home.identity.didLabel}</p>
-        <p className="identifier">{identity.did}</p>
         <button type="button" className="button button--primary button--icon" onClick={onShowCode}>
           <QrIcon />
           {t.home.identity.showCode}

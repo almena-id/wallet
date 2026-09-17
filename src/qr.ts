@@ -8,11 +8,13 @@
  * package that draws squares is a package that reaches a process holding a
  * seed. Nothing here is a matter of taste; every table is from ISO/IEC 18004.
  *
- * **Byte mode, correction level M, versions 1 to 10.** That is 213 characters,
- * which is an identifier several times over — the longest `did:key` this wallet
- * makes is 56. A code that would need more than version 10 is not a code
- * somebody is going to point a phone at, so `encodeQr` refuses rather than
- * carrying twenty more tables for a case that does not arise.
+ * **Byte mode, correction level M, versions 1 to 20.** That is 666 characters,
+ * which is what an invitation needs: an out-of-band invitation URL carries a
+ * `did:peer:2` — two keys and the mediator's address — inside base64, and
+ * comes to four or five hundred characters. A code that would need more than
+ * version 20 is not a code somebody is going to point a phone at, so
+ * `encodeQr` refuses rather than carrying twenty more tables for a case that
+ * does not arise.
  */
 
 /** A finished code: `size` × `size` modules, true where the module is dark. */
@@ -44,6 +46,16 @@ const VERSIONS: { ec: number; groups: [number, number][] }[] = [
   { ec: 22, groups: [[2, 38], [2, 39]] },
   { ec: 22, groups: [[3, 36], [2, 37]] },
   { ec: 26, groups: [[4, 43], [1, 44]] },
+  { ec: 30, groups: [[1, 50], [4, 51]] },
+  { ec: 22, groups: [[6, 36], [2, 37]] },
+  { ec: 22, groups: [[8, 37], [1, 38]] },
+  { ec: 24, groups: [[4, 40], [5, 41]] },
+  { ec: 24, groups: [[5, 41], [5, 42]] },
+  { ec: 28, groups: [[7, 45], [3, 46]] },
+  { ec: 28, groups: [[10, 46], [1, 47]] },
+  { ec: 26, groups: [[9, 43], [4, 44]] },
+  { ec: 26, groups: [[3, 44], [11, 45]] },
+  { ec: 26, groups: [[3, 41], [13, 42]] },
 ];
 
 /**
@@ -61,6 +73,16 @@ const ALIGNMENT: number[][] = [
   [6, 24, 42],
   [6, 26, 46],
   [6, 28, 50],
+  [6, 30, 54],
+  [6, 32, 58],
+  [6, 34, 62],
+  [6, 26, 46, 66],
+  [6, 26, 48, 70],
+  [6, 26, 50, 74],
+  [6, 30, 54, 78],
+  [6, 30, 56, 82],
+  [6, 30, 58, 86],
+  [6, 34, 62, 90],
 ];
 
 /* ------------------------------------------------------------------ GF(256) */
@@ -473,13 +495,13 @@ function interleave(codewords: number[], version: number): number[] {
  * The code for `text`, at correction level M, in the smallest version that
  * holds it and under whichever of the eight masks scores best.
  *
- * Throws `QrTooLong` for text past version 10 — see the note at the top.
+ * Throws `QrTooLong` for text past version 20 — see the note at the top.
  */
 export function encodeQr(text: string): QrMatrix {
   const bytes = new TextEncoder().encode(text);
   const version = versionFor(bytes.length);
   if (version === null) {
-    throw new QrTooLong(`${bytes.length} bytes is more than a version 10 code holds`);
+    throw new QrTooLong(`${bytes.length} bytes is more than a version ${VERSIONS.length} code holds`);
   }
 
   const stream = interleave(codewordsFor(bytes, version), version);

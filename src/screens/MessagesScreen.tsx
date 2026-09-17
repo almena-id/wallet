@@ -1,244 +1,142 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-import { BellIcon, CheckIcon } from "../components/icons";
+import { ChevronLeftIcon, PlusIcon, SyncIcon } from "../components/icons";
 import { plural, useI18n } from "../i18n";
 import {
   errorCode,
-  looksLikeInvitation,
   messageKind,
-  openRelationship,
-  readInvitation,
   relationshipName,
-  type Invitation,
   type Messaging,
-  type Received,
+  type Entry,
   type Relationship,
 } from "../messaging";
 
 type MessagesScreenProps = {
   messaging: Messaging;
-  /** The mediator a new relationship's mailbox is opened at. */
-  mediator: string;
-  /** Something scanned on the way here, to be read as an invitation. */
-  initialInvitation: string | null;
+  /** Opens the conversation a message belongs to. */
+  onOpenConversation: (counterparty: string) => void;
+  /** Where a new relationship is opened from an invitation. */
+  onNewRelationship: () => void;
 };
 
 /**
- * The relationships, and what came through them.
+ * The inbox: every message of every relationship, in one list, newest
+ * first — what came through, and what this wallet sent.
  *
- * Three things on one screen, in the order somebody arrives at them: a place
- * to put an invitation and see who it is from before opening it; the button
- * that empties every mailbox; and the relationships themselves, each with
- * its messages under it.
+ * **A mailbox, not a chat.** What arrives here is what an entity sent to
+ * this holder, and the holder reads it; the wallet does not write back from
+ * this screen — what it sent, it sent from the screen that asked. So the
+ * list is flat — one row per message, with who it is with and when — and a
+ * row leads to the conversation it is part of. Unread is said on the row,
+ * and stops being said once the conversation has been opened.
  *
- * **Nothing here opens anything on its own.** An invitation that was scanned
- * arrives in the field, read and named, and it is the person who presses the
- * button — the screen says who the relationship would be with, and that is
- * the whole of what it says about it.
+ * The mailboxes are emptied on a clock while the wallet is open, and on
+ * demand from the button at the top: a wallet on a phone is not listening,
+ * it asks, and the note under the title says what the asking brought.
  */
-export function MessagesScreen({ messaging, mediator, initialInvitation }: MessagesScreenProps) {
+export function MessagesScreen({
+  messaging,
+  onOpenConversation,
+  onNewRelationship,
+}: MessagesScreenProps) {
   const { t, locale } = useI18n();
-  const [invitation, setInvitation] = useState(initialInvitation ?? "");
-  const [preview, setPreview] = useState<Invitation | null>(null);
-  const [opening, setOpening] = useState(false);
-  const [openError, setOpenError] = useState<string | null>(null);
-  const [collectNote, setCollectNote] = useState<string | null>(null);
-  const [collectError, setCollectError] = useState<string | null>(null);
+  const [syncNote, setSyncNote] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
-  // Read as it is typed, so the card can say who it is from before anybody
-  // opens it. What does not read as an invitation is shown as nobody, and the
-  // button stays off; the error is for the press, not the keystroke.
-  useEffect(() => {
-    let current = true;
-    if (!looksLikeInvitation(invitation)) {
-      setPreview(null);
-      return;
-    }
-    readInvitation(invitation)
-      .then((read) => {
-        if (current) {
-          setPreview(read);
-        }
-      })
-      .catch(() => {
-        if (current) {
-          setPreview(null);
-        }
-      });
-    return () => {
-      current = false;
-    };
-  }, [invitation]);
-
-  async function open() {
-    setOpening(true);
-    setOpenError(null);
-    try {
-      await openRelationship(invitation, mediator);
-      setInvitation("");
-      setPreview(null);
-      await messaging.refresh();
-    } catch (failure) {
-      setOpenError(t.messages.errors[errorCode(failure)]);
-    } finally {
-      setOpening(false);
-    }
-  }
-
-  async function collect() {
-    setCollectNote(null);
-    setCollectError(null);
+  async function sync() {
+    setSyncNote(null);
+    setSyncError(null);
     try {
       const collected = await messaging.collect();
       const parts = [
         collected.received === 0
-          ? t.messages.collect.none
-          : plural(t.messages.collect.received, collected.received, locale),
+          ? t.messages.sync.none
+          : plural(t.messages.sync.received, collected.received, locale),
       ];
       if (collected.unreachable.length > 0) {
-        parts.push(plural(t.messages.collect.unreachable, collected.unreachable.length, locale));
+        parts.push(plural(t.messages.sync.unreachable, collected.unreachable.length, locale));
       }
-      setCollectNote(parts.join(" · "));
+      setSyncNote(parts.join(" · "));
     } catch (failure) {
-      setCollectError(t.messages.errors[errorCode(failure)]);
+      setSyncError(t.messages.errors[errorCode(failure)]);
     }
   }
 
   const { relationships, messages } = messaging.book;
-
-  return (
-    <div className="screen">
-      <header className="screen__header">
-        <h1 className="screen__title">{t.messages.title}</h1>
-      </header>
-
-      <section className="card" aria-labelledby="messages-open">
-        <h2 className="card__title" id="messages-open">
-          {t.messages.open.title}
-        </h2>
-        <label className="field">
-          <span className="field__label">{t.messages.open.invitation}</span>
-          <textarea
-            className="field__input field__input--phrase"
-            rows={3}
-            value={invitation}
-            onChange={(event) => setInvitation(event.target.value)}
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-          />
-        </label>
-        {preview ? (
-          <>
-            <p className="card__subtitle">{t.messages.open.with}</p>
-            <p className="identifier">
-              {preview.label ? `${preview.label} — ` : ""}
-              {preview.counterparty}
-            </p>
-          </>
-        ) : null}
-        {openError ? <p className="field__error">{openError}</p> : null}
-        <div className="button-row">
-          <button
-            type="button"
-            className="button button--primary"
-            disabled={preview === null || opening}
-            onClick={() => void open()}
-          >
-            {opening ? t.messages.open.opening : t.messages.open.action}
-          </button>
-        </div>
-      </section>
-
-      <section className="card" aria-labelledby="messages-collect">
-        <h2 className="card__title" id="messages-collect">
-          {t.messages.collect.title}
-        </h2>
-        {collectNote ? <p className="card__note">{collectNote}</p> : null}
-        {collectError ? <p className="field__error">{collectError}</p> : null}
-        <div className="button-row">
-          <button
-            type="button"
-            className="button button--primary button--icon"
-            disabled={messaging.collecting || relationships.length === 0}
-            onClick={() => void collect()}
-          >
-            <BellIcon />
-            {messaging.collecting ? t.messages.collect.checking : t.messages.collect.action}
-          </button>
-        </div>
-      </section>
-
-      {messaging.read && relationships.length === 0 ? (
-        <section className="card">
-          <div className="empty-state">
-            <p className="empty-state__title">{t.messages.relationships.empty}</p>
-          </div>
-        </section>
-      ) : null}
-
-      {relationships.map((relationship) => (
-        <RelationshipCard
-          key={relationship.counterparty}
-          relationship={relationship}
-          messages={messages.filter((m) => m.counterparty === relationship.counterparty)}
-          onOpen={(id) => void messaging.markRead(id)}
-        />
-      ))}
-    </div>
-  );
-}
-
-type RelationshipCardProps = {
-  relationship: Relationship;
-  messages: Received[];
-  onOpen: (id: string) => void;
-};
-
-function RelationshipCard({ relationship, messages, onOpen }: RelationshipCardProps) {
-  const { t, locale } = useI18n();
-  const heading = `relationship-${relationship.pairwise}`;
+  const byCounterparty = new Map(relationships.map((r) => [r.counterparty, r]));
   // Newest first: what came last is what somebody came to see.
   const ordered = [...messages].sort((a, b) => (b.createdTime ?? 0) - (a.createdTime ?? 0));
 
   return (
-    <section className="card" aria-labelledby={heading}>
-      <h2 className="card__title" id={heading}>
-        {relationshipName(relationship)}
-      </h2>
-      {relationship.label ? (
-        <p className="row__hint row__hint--identifier">{relationship.counterparty}</p>
-      ) : null}
-      <p className="card__subtitle">{t.messages.relationships.pairwise}</p>
-      <p className="identifier">{relationship.pairwise}</p>
+    <div className="screen">
+      <header className="screen__header screen__header--compact">
+        <h1 className="screen__title screen__title--compact screen__title--grow">
+          {t.messages.title}
+        </h1>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={() => void sync()}
+          disabled={messaging.collecting || relationships.length === 0}
+          aria-label={messaging.collecting ? t.messages.sync.syncing : t.messages.sync.action}
+          aria-busy={messaging.collecting}
+        >
+          <SyncIcon className={messaging.collecting ? "icon-button__spin" : undefined} />
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={onNewRelationship}
+          aria-label={t.messages.open.title}
+        >
+          <PlusIcon />
+        </button>
+      </header>
 
-      {ordered.length === 0 ? (
-        <p className="card__subtitle">{t.messages.list.empty}</p>
-      ) : (
+      {syncNote ? <p className="card__note">{syncNote}</p> : null}
+      {syncError ? <p className="field__error">{syncError}</p> : null}
+
+      {messaging.read && ordered.length === 0 ? (
+        <section className="card">
+          <div className="empty-state">
+            <p className="empty-state__title">{t.messages.inbox.empty}</p>
+          </div>
+        </section>
+      ) : null}
+
+      {ordered.length > 0 ? (
         <div className="options">
           {ordered.map((message) => (
-            <MessageRow key={message.id} message={message} locale={locale} onOpen={onOpen} />
+            <InboxRow
+              key={message.id}
+              message={message}
+              relationship={byCounterparty.get(message.counterparty) ?? null}
+              onOpen={() => onOpenConversation(message.counterparty)}
+            />
           ))}
         </div>
-      )}
-    </section>
+      ) : null}
+    </div>
   );
 }
 
-type MessageRowProps = {
-  message: Received;
-  locale: string;
-  onOpen: (id: string) => void;
+type InboxRowProps = {
+  message: Entry;
+  /** Null for a message whose relationship is no longer in the book. */
+  relationship: Relationship | null;
+  onOpen: () => void;
 };
 
 /**
- * One message: what it is, when it was written, and — once opened — what it
- * says. The body is shown as the JSON it is: this wallet does not yet speak
- * the protocols that would render it as anything else, and a shape it does
- * not understand is better shown than hidden.
+ * One message in the inbox: who it came through, what kind it is, and when
+ * — and, for one this wallet sent, that it did.
+ *
+ * The body is not here. A row is for deciding whether to open the
+ * conversation, and what the protocol calls the message is what there is to
+ * decide on until this wallet renders the protocols themselves.
  */
-function MessageRow({ message, locale, onOpen }: MessageRowProps) {
-  const [shown, setShown] = useState(false);
+function InboxRow({ message, relationship, onOpen }: InboxRowProps) {
+  const { t, locale } = useI18n();
   const when =
     message.createdTime === null
       ? null
@@ -246,32 +144,26 @@ function MessageRow({ message, locale, onOpen }: MessageRowProps) {
           dateStyle: "medium",
           timeStyle: "short",
         }).format(new Date(message.createdTime * 1000));
-  const hint = [when, message.from].filter((part) => part !== null).join(" · ");
+  const hint = [message.sent ? t.messages.inbox.sent : null, messageKind(message.type), when]
+    .filter((part) => part !== null)
+    .join(" · ");
 
   return (
-    <div className="message">
-      <button
-        type="button"
-        className="row"
-        aria-expanded={shown}
-        onClick={() => {
-          setShown((open) => !open);
-          if (!message.read) {
-            onOpen(message.id);
-          }
-        }}
-      >
-        <span className="row__text">
-          <span className={message.read ? "row__label" : "row__label message__label--unread"}>
-            {messageKind(message.type)}
-          </span>
-          {hint ? <span className="row__hint row__hint--identifier">{hint}</span> : null}
+    <button
+      type="button"
+      className={message.read ? "row" : "row message-row--unread"}
+      onClick={onOpen}
+    >
+      <span className="row__text">
+        <span className="row__label">
+          {relationship ? relationshipName(relationship) : message.counterparty}
         </span>
-        {message.read ? <CheckIcon className="row__check" /> : null}
-      </button>
-      {shown ? (
-        <pre className="identifier message__body">{JSON.stringify(message.body, null, 2)}</pre>
-      ) : null}
-    </div>
+        <span className="row__hint">{hint}</span>
+      </span>
+      {message.read ? null : (
+        <span className="message-row__dot" role="img" aria-label={t.messages.inbox.unread} />
+      )}
+      <ChevronLeftIcon className="row__chevron" />
+    </button>
   );
 }

@@ -16,6 +16,13 @@
 //! What a pairwise carries is what DIDComm needs to reach it: the Ed25519 key
 //! the `did:key` is, and the X25519 key derived from it the way the method
 //! specifies, which is what somebody encrypts towards.
+//!
+//! The same shape serves the one key that is not a pairwise: the invitation
+//! key — [`super::invite`] — which speaks for the wallet before there is a
+//! counterparty to derive from, and is named differently because it has to
+//! carry the mediator's address with it. What differs between them is the
+//! path the secret is walked down and the name the keys are given; the keys
+//! themselves are made the same way.
 
 use didcomm::secrets::{Secret, SecretMaterial, SecretType};
 use ed25519_dalek::SigningKey;
@@ -37,15 +44,34 @@ pub struct Pairwise {
     secrets: Vec<Secret>,
 }
 
+/// How a key pair is named: the DID, and the ids its two keys have in that
+/// DID's document — which the library matches secrets to by string.
+pub(super) struct Named {
+    pub did: String,
+    pub signing_kid: String,
+    pub agreement_kid: String,
+}
+
 impl Pairwise {
     /// The pairwise the seed produces for `counterparty`.
     pub fn derive(seed: &[u8; 64], counterparty: &str) -> Self {
         let secret = Zeroizing::new(keys::walk(seed, &path(counterparty)));
-        let signing = SigningKey::from_bytes(&secret);
-        let verifying = signing.verifying_key();
+        Self::from_secret(&secret, |signing_key, agreement_key| {
+            let did = format!("did:key:{signing_key}");
+            Named {
+                signing_kid: format!("{did}#{signing_key}"),
+                agreement_kid: format!("{did}#{agreement_key}"),
+                did,
+            }
+        })
+    }
 
+    /// The keys an Ed25519 secret makes, named by `name` from the two public
+    /// keys as multibase text — the signing key, then the agreement key.
+    pub(super) fn from_secret(secret: &[u8; 32], name: impl FnOnce(&str, &str) -> Named) -> Self {
+        let signing = SigningKey::from_bytes(secret);
+        let verifying = signing.verifying_key();
         let signing_key = keys::written(&verifying.to_bytes());
-        let did = format!("did:key:{signing_key}");
 
         // The X25519 pair the method derives: the public key is the Edwards
         // point mapped to Montgomery form, the private key is the clamped
@@ -55,13 +81,14 @@ impl Pairwise {
         let agreement_public = verifying.to_montgomery();
         let agreement_key = keys::multibase(&X25519_PUB, agreement_public.as_bytes());
 
+        let named = name(&signing_key, &agreement_key);
         let secrets = vec![
             secret_of(
-                &format!("{did}#{signing_key}"),
+                &named.signing_kid,
                 jwk("Ed25519", verifying.as_bytes(), &signing.to_bytes()),
             ),
             secret_of(
-                &format!("{did}#{agreement_key}"),
+                &named.agreement_kid,
                 jwk(
                     "X25519",
                     agreement_public.as_bytes(),
@@ -70,7 +97,10 @@ impl Pairwise {
             ),
         ];
 
-        Self { did, secrets }
+        Self {
+            did: named.did,
+            secrets,
+        }
     }
 
     /// The private keys, for the library.
@@ -80,18 +110,24 @@ impl Pairwise {
 }
 
 /// `m/1'/a'/b'/c'/d'`: the pairwise root, then four indices carved out of the
-/// hash of the counterparty. Thirty-one bits each, because a hardened index is
-/// the index plus 2^31 and the top bit is the hardening.
+/// hash of the counterparty.
 fn path(counterparty: &str) -> [u32; 5] {
+    indices(keys::PAIRWISE, DOMAIN, counterparty.as_bytes())
+}
+
+/// `root'/a'/b'/c'/d'`: four indices carved out of the salted hash of `what`.
+/// Thirty-one bits each, because a hardened index is the index plus 2^31 and
+/// the top bit is the hardening.
+pub(super) fn indices(root: u32, domain: &[u8], what: &[u8]) -> [u32; 5] {
     let digest = Sha256::new()
-        .chain_update(DOMAIN)
-        .chain_update(counterparty.as_bytes())
+        .chain_update(domain)
+        .chain_update(what)
         .finalize();
     let index = |at: usize| {
         u32::from_be_bytes([digest[at], digest[at + 1], digest[at + 2], digest[at + 3]])
             & 0x7FFF_FFFF
     };
-    [keys::PAIRWISE, index(0), index(4), index(8), index(12)]
+    [root, index(0), index(4), index(8), index(12)]
 }
 
 /// An in-memory `SecretsResolver`: the library asks it for the private key

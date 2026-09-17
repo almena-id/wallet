@@ -83,16 +83,16 @@
     },
     "identity": {
       "title": "Identity",
-      "didLabel": "Identifier",
-      "showCode": "Show QR"
+      "showCode": "Show invitation"
     }
   },
-  "identity": {
-    "title": "Identity",
-    "codeLabel": "Your identifier as a QR code",
-    "didLabel": "Identifier",
-    "copy": "Copy",
-    "copied": "Copied"
+  "invite": {
+    "title": "Invitation",
+    "codeLabel": "Invitation as a QR code",
+    "rotate": "New code",
+    "copy": "Copy link",
+    "copied": "Copied",
+    "preparing": "Preparing"
   },
   "scan": {
     "title": "Scan QR",
@@ -111,22 +111,15 @@
     "result": {
       "title": "Code read",
       "again": "Scan another code",
-      "open": "Open relationship"
+      "open": "Open relationship",
+      "request": "Review request"
     }
   },
   "messages": {
     "title": "Messages",
-    "open": {
-      "title": "New relationship",
-      "invitation": "Invitation",
-      "with": "With",
-      "action": "Open relationship",
-      "opening": "Opening"
-    },
-    "collect": {
-      "title": "Mailboxes",
-      "action": "Check for messages",
-      "checking": "Checking",
+    "sync": {
+      "action": "Sync mailboxes",
+      "syncing": "Syncing",
       "none": "Nothing new",
       "received": {
         "one": "{count} new message",
@@ -137,12 +130,21 @@
         "other": "{count} mailboxes did not answer"
       }
     },
-    "relationships": {
-      "empty": "No relationships",
+    "inbox": {
+      "empty": "No messages",
+      "unread": "Unread",
+      "sent": "Sent"
+    },
+    "conversation": {
       "pairwise": "Your identifier in this relationship"
     },
-    "list": {
-      "empty": "No messages"
+    "open": {
+      "title": "New relationship",
+      "invitation": "Invitation",
+      "with": "With",
+      "action": "Open relationship",
+      "accept": "Accept",
+      "opening": "Opening"
     },
     "errors": {
       "messaging_locked": "The wallet is locked.",
@@ -153,7 +155,17 @@
       "messaging_too_new": "The messages on this device were written by a newer version of the wallet.",
       "messaging_storage": "The messages could not be written on this device.",
       "messaging_entropy": "This device would not supply randomness.",
+      "messaging_request_unreadable": "That is not a request this wallet can read.",
+      "messaging_counterparty_unreachable": "The other party could not be reached.",
       "messaging_unknown": "Something went wrong."
+    },
+    "request": {
+      "title": "Credential request",
+      "version": "Template version {version}",
+      "to": "To",
+      "send": "Send",
+      "sending": "Sending",
+      "cancel": "Cancel"
     }
   },
   "platform": {

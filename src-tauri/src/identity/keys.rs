@@ -31,6 +31,13 @@ pub(crate) const PAIRWISE: u32 = 1;
 /// bytes with something that encrypts.
 pub(crate) const BOOK: u32 = 2;
 
+/// The root of every invitation key: `m/3'/…`. What comes after it is a hash
+/// of a salt drawn at random when the invitation is shown — see
+/// `messaging::invite` — because an invitation is for whoever scans it, and
+/// there is no counterparty yet to derive from. The salt, not the key, is
+/// what the book keeps.
+pub(crate) const INVITE: u32 = 3;
+
 /// What marks 32 bytes as an ed25519 public key: the multicodec `ed25519-pub`,
 /// `0xed`, as an unsigned varint — the same two bytes `did:key` uses.
 pub(crate) const ED25519_PUB: [u8; 2] = [0xed, 0x01];

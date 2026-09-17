@@ -311,6 +311,12 @@ body {
   font-size: clamp(19px, 5vw, 22px);
 }
 
+/* A title that takes the room, so the buttons after it sit at the far end. */
+.screen__title--grow {
+  flex: 1;
+  min-width: 0;
+}
+
 .screen__intro {
   margin: 0;
   max-width: 46ch;
@@ -618,6 +624,20 @@ body {
 
 .icon-button:active {
   transform: scale(0.92);
+}
+
+.icon-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.icon-button:disabled:active {
+  transform: none;
+}
+
+/* The glyph turns while the thing it stands for is under way. */
+.icon-button__spin {
+  animation: spin 1.1s linear infinite;
 }
 
 .action {
@@ -1725,62 +1745,66 @@ body {
  * It takes the width it is given up to a point and then stops: a code the width
  * of a desktop window is not more readable, only larger.
  */
+/* Wide enough for an invitation: a version-20 code is 97 modules a side,
+   and a module under three pixels is what a camera at arm's length misses. */
 .qr-plate {
   width: 100%;
-  max-width: 280px;
+  max-width: 320px;
   padding: 14px;
   border-radius: var(--radius-control);
   background: #ffffff;
   box-shadow: 0 12px 30px -22px var(--glass-shadow);
 }
 
+/* The plate before there is a code on it: the same square, so nothing jumps
+   when the code arrives. */
+.qr-plate--waiting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+}
+
+/* How long the code on show has left: a bar that drains, and the seconds.
+   The bar moves once a second and eases across that second, so it reads as
+   draining rather than stepping; the number is tabular so it does not
+   wobble as the digits change. */
+.countdown {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.countdown__track {
+  flex: 1;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--brand-soft);
+}
+
+.countdown__bar {
+  display: block;
+  width: calc(var(--fraction, 1) * 100%);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+  transition: width 1s linear;
+}
+
+.countdown__seconds {
+  flex: none;
+  min-width: 3.5ch;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 .qr {
   display: block;
   width: 100%;
   height: auto;
-}
-
-/* The identifier, which is also the button that copies it. */
-.copy-field {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 10px;
-  width: 100%;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--surface-strong);
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: transform 0.16s var(--ease-spring);
-}
-
-.copy-field:active {
-  transform: scale(0.99);
-}
-
-.copy-field__value {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-
-.copy-field__action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  color: var(--brand);
-  font-size: 13px;
-  font-weight: 650;
-}
-
-.copy-field__action svg {
-  width: 16px;
-  height: 16px;
 }
 
 /* ------------------------------------------------------- camera overlay */
@@ -1930,19 +1954,57 @@ html[data-camera-preview="true"] .app::before {
 
 /* ------------------------------------------------------------- messages */
 
-.message {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+/* Unread is said twice on the row, with weight and with a dot, because the
+   two are read from different distances: the dot is what a glance down the
+   inbox picks out, and the weight is what the eye lands on once it is there.
+   The dot is the accent — the colour "on" is said in everywhere else. */
+.message-row--unread .row__label {
+  font-weight: 700;
 }
 
-/* Unread is said with weight, not with a dot: the row already carries a tick
-   once it has been opened, and two marks for one fact is one too many. */
-.message__label--unread {
-  font-weight: 700;
+.message-row__dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+.message {
+  gap: 8px;
 }
 
 .message__body {
   margin: 0;
   white-space: pre-wrap;
+}
+
+/* What this wallet sent, told apart by a stripe in the brand's colour. */
+.message--sent {
+  border-left: 3px solid var(--brand);
+}
+
+/* The summary of a request: what each answer was asked as, and what it is. */
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+
+.summary__row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.summary__label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.summary__value {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }

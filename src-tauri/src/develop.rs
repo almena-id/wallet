@@ -522,14 +522,21 @@ mod tests {
     /// content to hand to a stranger, and this is what makes somebody decide it
     /// rather than assume it.
     ///
-    /// Three today: this module, which writes that the wallet started and on
-    /// what; `src/lib.rs`, which writes a panic; and
-    /// `src/messaging/mediator.rs`, which writes that a delivery could not be
-    /// opened or that a mediator said no, and with what code — the protocol's
-    /// own word, such as `e.p.mediation-not-granted`. None of the three names
-    /// a DID, a counterparty or a message: a relationship is exactly what a
-    /// log that leaves the device must not carry.
-    const CALL_SITES: &[&str] = &["src/develop.rs", "src/lib.rs", "src/messaging/mediator.rs"];
+    /// Four today: this module, which writes that the wallet started and on
+    /// what; `src/lib.rs`, which writes a panic; `src/messaging/mediator.rs`,
+    /// which writes that a delivery could not be opened or that a mediator
+    /// said no, and with what code — the protocol's own word, such as
+    /// `e.p.mediation-not-granted`; and `src/messaging/mod.rs`, which writes
+    /// that an answer to the invitation did not say who it was from, or that
+    /// the pairwise's answer did not reach its counterparty. None of the four
+    /// names a DID, a counterparty or a message: a relationship is exactly
+    /// what a log that leaves the device must not carry.
+    const CALL_SITES: &[&str] = &[
+        "src/develop.rs",
+        "src/lib.rs",
+        "src/messaging/mediator.rs",
+        "src/messaging/mod.rs",
+    ];
 
     /// A directory of this test's own, since the crate carries no temporary
     /// file helper and one test does not earn a dependency.

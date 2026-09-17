@@ -31,6 +31,7 @@ use serde_json::Value;
 use tauri::{Manager, Runtime};
 use zeroize::Zeroizing;
 
+use super::invite::Invite;
 use super::MessagingError;
 use crate::identity::keys;
 
@@ -58,26 +59,35 @@ pub struct Relationship {
     pub label: Option<String>,
 }
 
-/// A message that came through a relationship, opened and kept.
+/// A message of a relationship, kept: one that came through it and was
+/// opened, or one this wallet sent through it — the receipt the spec has
+/// the wallet write for itself, so that what somebody did is on record
+/// without anything travelling back to say so.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Received {
+pub struct Entry {
     /// The message's own id, which is what confirms it to the mediator and
     /// what keeps a redelivery from being kept twice.
     pub id: String,
-    /// The relationship it came through, by counterparty.
+    /// The relationship it belongs to, by counterparty.
     pub counterparty: String,
     /// The protocol message type, a URI.
     #[serde(rename = "type")]
     pub type_: String,
-    /// Who the envelope said it was from, when it was authenticated.
+    /// Who the envelope said it was from, when it was authenticated — or,
+    /// for what this wallet sent, the pairwise it sent as.
     pub from: Option<String>,
     pub body: Value,
     /// The time the sender wrote into the message, in seconds since the
     /// epoch, when it wrote one.
     pub created_time: Option<u64>,
-    /// Whether somebody has opened it in the wallet.
+    /// Whether somebody has opened it in the wallet. What the wallet sent
+    /// was read as it was written.
     pub read: bool,
+    /// Whether this wallet is the one that sent it. Absent from a book
+    /// written before the wallet sent anything, which reads as received.
+    #[serde(default)]
+    pub sent: bool,
 }
 
 /// Everything in the file.
@@ -85,7 +95,12 @@ pub struct Received {
 #[serde(rename_all = "camelCase")]
 pub struct Book {
     pub relationships: Vec<Relationship>,
-    pub messages: Vec<Received>,
+    pub messages: Vec<Entry>,
+    /// The invitation on show, if one is: the salt its key is walked to,
+    /// and the mailbox it is collected from. Absent from a book written
+    /// before there were invitations, which reads as none on show.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invite: Option<Invite>,
 }
 
 impl Book {
@@ -97,7 +112,7 @@ impl Book {
     }
 
     /// Keeps a message, unless one with that id is already here.
-    pub fn keep(&mut self, message: Received) -> bool {
+    pub fn keep(&mut self, message: Entry) -> bool {
         if self.messages.iter().any(|m| m.id == message.id) {
             return false;
         }

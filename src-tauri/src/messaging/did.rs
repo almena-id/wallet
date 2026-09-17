@@ -1,10 +1,13 @@
 //! Resolving the DIDs a conversation names: `did:key` by derivation, with
-//! nothing fetched, and `did:web` over HTTPS. Two methods, because those are
-//! the two the platform's people and entities use; a third is not resolved
-//! until the spec adopts it.
+//! nothing fetched, `did:web` over HTTPS, and `did:peer:2` by reading the
+//! identifier, which carries its whole document. The first two are what the
+//! platform's people and entities use; the third is what an invitation this
+//! wallet shows is made of — see [`super::invite`] — and nothing else.
 
 use std::time::Duration;
 
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
 use didcomm::did::{
     DIDCommMessagingService, DIDDoc, DIDResolver, Service, ServiceKind, VerificationMaterial,
     VerificationMethod, VerificationMethodType,
@@ -100,9 +103,12 @@ impl DIDResolver for Resolver {
         if did.starts_with("did:web:") {
             return self.web(did).await;
         }
+        if did.starts_with("did:peer:2") {
+            return peer(did).map(Some);
+        }
         Err(Error::msg(
             ErrorKind::Unsupported,
-            "only did:key and did:web are resolved",
+            "only did:key, did:web and did:peer:2 are resolved",
         ))
     }
 }
@@ -175,6 +181,136 @@ pub fn key(did: &str) -> DidcommResult<DIDDoc> {
         // address is what a relationship keeps instead.
         service: vec![],
     })
+}
+
+/// The document a `did:peer:2` carries: after the prefix, one element per
+/// `.`, each a purpose letter and its value — `V` an authentication key and
+/// `E` a key-agreement key, both multibase, and `S` a service as base64url
+/// JSON with the method's abbreviations. Keys are named `#key-1`, `#key-2`…
+/// in the order they appear, and the first service `#service`.
+///
+/// Only what this wallet writes is read back: Ed25519 under `V`, X25519
+/// under `E`, and a DIDCommMessaging service. An element of another kind is
+/// refused rather than skipped, because a document read with a hole in it is
+/// a document that says something other than what its author wrote.
+pub fn peer(did: &str) -> DidcommResult<DIDDoc> {
+    let rest = did
+        .strip_prefix("did:peer:2")
+        .ok_or_else(|| Error::msg(ErrorKind::Malformed, "not a did:peer:2"))?;
+    let malformed = |what: &str| Error::msg(ErrorKind::Malformed, what.to_owned());
+
+    let mut verification_method = Vec::new();
+    let mut authentication = Vec::new();
+    let mut key_agreement = Vec::new();
+    let mut service = Vec::new();
+    let mut keys = 0;
+
+    for element in rest.split('.').filter(|e| !e.is_empty()) {
+        let (purpose, value) = element.split_at(1);
+        match purpose {
+            "V" | "E" => {
+                keys += 1;
+                let id = format!("{did}#key-{keys}");
+                let codec = codec_of(value)?;
+                let (expected, type_, relationship) = if purpose == "V" {
+                    (
+                        ED25519_PUB,
+                        VerificationMethodType::Ed25519VerificationKey2020,
+                        &mut authentication,
+                    )
+                } else {
+                    (
+                        X25519_PUB,
+                        VerificationMethodType::X25519KeyAgreementKey2020,
+                        &mut key_agreement,
+                    )
+                };
+                if codec != expected {
+                    return Err(malformed("did:peer:2 key of an unexpected kind"));
+                }
+                verification_method.push(method(&id, did, type_, value.to_owned()));
+                relationship.push(id);
+            }
+            "S" => {
+                let bytes = URL_SAFE_NO_PAD
+                    .decode(value)
+                    .map_err(|_| malformed("did:peer:2 service is not base64url"))?;
+                let json: Value = serde_json::from_slice(&bytes)
+                    .map_err(|_| malformed("did:peer:2 service is not JSON"))?;
+                let id = if service.is_empty() {
+                    format!("{did}#service")
+                } else {
+                    format!("{did}#service-{}", service.len())
+                };
+                service.push(
+                    read_service(did, &expand(&json, &id)).ok_or_else(|| {
+                        malformed("did:peer:2 service is not one this wallet reads")
+                    })?,
+                );
+            }
+            _ => return Err(malformed("did:peer:2 element of an unknown purpose")),
+        }
+    }
+    if key_agreement.is_empty() {
+        return Err(malformed("did:peer:2 without a key-agreement key"));
+    }
+
+    Ok(DIDDoc {
+        id: did.to_owned(),
+        key_agreement,
+        authentication,
+        verification_method,
+        service,
+    })
+}
+
+/// The multicodec prefix of a multibase key, to know what kind it holds.
+fn codec_of(multibase: &str) -> DidcommResult<[u8; 2]> {
+    let bytes = multibase
+        .strip_prefix('z')
+        .and_then(|rest| bs58::decode(rest).into_vec().ok())
+        .ok_or_else(|| Error::msg(ErrorKind::Malformed, "key is not base58btc multibase"))?;
+    bytes
+        .get(..2)
+        .and_then(|prefix| prefix.try_into().ok())
+        .ok_or_else(|| Error::msg(ErrorKind::Malformed, "key too short for a multicodec"))
+}
+
+/// A `did:peer:2` service, written out in the words DID Core uses: the
+/// method abbreviates `type`, `serviceEndpoint`, `routingKeys` and `accept`
+/// to their initials, and `DIDCommMessaging` to `dm`, to keep the identifier
+/// short. The endpoint's own keys are abbreviated the same way.
+fn expand(abbreviated: &Value, id: &str) -> Value {
+    fn long(name: &str) -> &str {
+        match name {
+            "t" => "type",
+            "s" => "serviceEndpoint",
+            "r" => "routingKeys",
+            "a" => "accept",
+            other => other,
+        }
+    }
+    let word = |value: &Value| match value.as_str() {
+        Some("dm") => json!("DIDCommMessaging"),
+        _ => value.clone(),
+    };
+    let mut out = serde_json::Map::new();
+    out.insert("id".into(), json!(id));
+    if let Some(fields) = abbreviated.as_object() {
+        for (name, value) in fields {
+            let value = match value {
+                Value::Object(endpoint) => Value::Object(
+                    endpoint
+                        .iter()
+                        .map(|(n, v)| (long(n).to_owned(), v.clone()))
+                        .collect(),
+                ),
+                other => word(other),
+            };
+            out.insert(long(name).to_owned(), value);
+        }
+    }
+    Value::Object(out)
 }
 
 fn method(
@@ -392,6 +528,35 @@ mod tests {
         let doc = key(DID).unwrap();
         assert_eq!(doc.authentication, vec![format!("{DID}#{}", &DID[8..])]);
         assert_eq!(doc.key_agreement, vec![format!("{DID}#{DERIVED}")]);
+    }
+
+    #[test]
+    fn a_peer_did_carries_its_document() {
+        let service = URL_SAFE_NO_PAD
+            .encode(r#"{"t":"dm","s":{"uri":"did:web:mediator.test","a":["didcomm/v2"]}}"#);
+        let did = format!("did:peer:2.V{}.E{DERIVED}.S{service}", &DID[8..]);
+        let doc = peer(&did).unwrap();
+        assert_eq!(doc.authentication, vec![format!("{did}#key-1")]);
+        assert_eq!(doc.key_agreement, vec![format!("{did}#key-2")]);
+        assert_eq!(doc.verification_method.len(), 2);
+        assert_eq!(doc.service.len(), 1);
+        assert_eq!(doc.service[0].id, format!("{did}#service"));
+        let ServiceKind::DIDCommMessaging { value } = &doc.service[0].service_endpoint else {
+            panic!("not a messaging service");
+        };
+        assert_eq!(value.uri, "did:web:mediator.test");
+        assert_eq!(
+            value.accept.as_deref(),
+            Some(&["didcomm/v2".to_owned()][..])
+        );
+    }
+
+    #[test]
+    fn a_peer_did_of_another_shape_is_refused() {
+        // A key under the wrong purpose, an unknown purpose, no agreement key.
+        assert!(peer(&format!("did:peer:2.V{DERIVED}")).is_err());
+        assert!(peer(&format!("did:peer:2.E{DERIVED}.Xabc")).is_err());
+        assert!(peer(&format!("did:peer:2.V{}", &DID[8..])).is_err());
     }
 
     #[test]

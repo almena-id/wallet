@@ -515,6 +515,11 @@ tasks:
             connection = device.get("connectionProperties") or {}
             if hardware.get("platform") not in ("iOS", "iPadOS"):
                 continue
+            # devicectl lists simulators too, as "simulated" devices attached
+            # on this same machine; those come from xctrace below, and one
+            # listed here would be built and installed as if it were hardware.
+            if hardware.get("reality") != "physical":
+                continue
             link = {"wired": "cable", "localNetwork": "Wi-Fi"}.get(
                 connection.get("transportType"), "unknown link"
             )

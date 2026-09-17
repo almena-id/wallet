@@ -147,3 +147,22 @@ export function BackspaceIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+export function SyncIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M19.5 12a7.5 7.5 0 0 1-12.9 5.2" />
+      <path d="M4.5 12a7.5 7.5 0 0 1 12.9-5.2" />
+      <path d="M17 3.5v3.5h-3.5" />
+      <path d="M7 20.5V17h3.5" />
+    </svg>
+  );
+}
+
+export function PlusIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}

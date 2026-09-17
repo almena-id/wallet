@@ -83,16 +83,16 @@
     },
     "identity": {
       "title": "Identidad",
-      "didLabel": "Identificador",
-      "showCode": "Mostrar QR"
+      "showCode": "Mostrar invitación"
     }
   },
-  "identity": {
-    "title": "Identidad",
-    "codeLabel": "Tu identificador como código QR",
-    "didLabel": "Identificador",
-    "copy": "Copiar",
-    "copied": "Copiado"
+  "invite": {
+    "title": "Invitación",
+    "codeLabel": "Invitación como código QR",
+    "rotate": "Código nuevo",
+    "copy": "Copiar enlace",
+    "copied": "Copiado",
+    "preparing": "Preparando"
   },
   "scan": {
     "title": "Escanear QR",
@@ -111,22 +111,15 @@
     "result": {
       "title": "Código leído",
       "again": "Escanear otro código",
-      "open": "Abrir relación"
+      "open": "Abrir relación",
+      "request": "Revisar solicitud"
     }
   },
   "messages": {
     "title": "Mensajes",
-    "open": {
-      "title": "Nueva relación",
-      "invitation": "Invitación",
-      "with": "Con",
-      "action": "Abrir relación",
-      "opening": "Abriendo"
-    },
-    "collect": {
-      "title": "Buzones",
-      "action": "Buscar mensajes",
-      "checking": "Buscando",
+    "sync": {
+      "action": "Sincronizar buzones",
+      "syncing": "Sincronizando",
       "none": "Nada nuevo",
       "received": {
         "one": "{count} mensaje nuevo",
@@ -137,12 +130,21 @@
         "other": "{count} buzones no han respondido"
       }
     },
-    "relationships": {
-      "empty": "Sin relaciones",
+    "inbox": {
+      "empty": "Sin mensajes",
+      "unread": "Sin leer",
+      "sent": "Enviado"
+    },
+    "conversation": {
       "pairwise": "Tu identificador en esta relación"
     },
-    "list": {
-      "empty": "Sin mensajes"
+    "open": {
+      "title": "Nueva relación",
+      "invitation": "Invitación",
+      "with": "Con",
+      "action": "Abrir relación",
+      "accept": "Aceptar",
+      "opening": "Abriendo"
     },
     "errors": {
       "messaging_locked": "La wallet está bloqueada.",
@@ -153,7 +155,17 @@
       "messaging_too_new": "Los mensajes de este dispositivo los escribió una versión más nueva de la wallet.",
       "messaging_storage": "No se han podido guardar los mensajes en este dispositivo.",
       "messaging_entropy": "Este dispositivo no ha proporcionado aleatoriedad.",
+      "messaging_request_unreadable": "Eso no es una solicitud que este wallet pueda leer.",
+      "messaging_counterparty_unreachable": "No se ha podido contactar con la otra parte.",
       "messaging_unknown": "Algo ha fallado."
+    },
+    "request": {
+      "title": "Solicitud de credencial",
+      "version": "Plantilla versión {version}",
+      "to": "Para",
+      "send": "Enviar",
+      "sending": "Enviando",
+      "cancel": "Cancelar"
     }
   },
   "platform": {

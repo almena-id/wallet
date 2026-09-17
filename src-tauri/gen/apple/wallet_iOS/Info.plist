@@ -22,6 +22,8 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>The Almena ID wallet uses the camera to read QR codes.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>The Almena ID wallet unlocks with Face ID.</string>
 	<key>UIApplicationSceneManifest</key>
@@ -61,7 +63,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>The Almena ID wallet uses the camera to read QR codes.</string>
 </dict>
 </plist>

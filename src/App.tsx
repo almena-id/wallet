@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { LiquidTabBar, type TabDefinition } from "./components/LiquidTabBar";
 import { BrandSpinner } from "./components/BrandSpinner";
@@ -9,7 +9,7 @@ import { useAutoLock, useIdle } from "./autolock";
 import { useBackdrop } from "./backdrop";
 import { useBackInSight } from "./lock";
 import { useMediator } from "./mediator";
-import { useMessaging } from "./messaging";
+import { useMessaging, type Messaging } from "./messaging";
 import { usePlatform } from "./platform";
 import { useTheme } from "./theme";
 import { useTray } from "./tray";
@@ -22,11 +22,14 @@ import {
   useVault,
 } from "./vault";
 import { HomeScreen } from "./screens/HomeScreen";
-import { IdentityScreen } from "./screens/IdentityScreen";
+import { InviteScreen } from "./screens/InviteScreen";
 import { PinChange } from "./screens/PinChange";
 import { PinConfirm } from "./screens/PinConfirm";
 import { PinScreen } from "./screens/PinScreen";
 import { LogoutScreen } from "./screens/LogoutScreen";
+import { ConversationScreen } from "./screens/ConversationScreen";
+import { CredentialRequestScreen } from "./screens/CredentialRequestScreen";
+import { InvitationScreen } from "./screens/InvitationScreen";
 import { MessagesScreen } from "./screens/MessagesScreen";
 import { ScanScreen } from "./screens/ScanScreen";
 import { Onboarding } from "./screens/onboarding/Onboarding";
@@ -34,13 +37,27 @@ import { SettingsScreen } from "./screens/settings/SettingsScreen";
 
 /**
  * `logout` is not a tab: it is what Settings opens to ask whether somebody
- * means it. `identity` is where the home screen's own card leads, to show the
- * identifier as a code. `pin` and `device` are the two things Security sends
+ * means it. `invite` is where the home screen's own card leads, to show the
+ * invitation as a code. `pin` and `device` are the two things Security sends
  * somebody to. All of them are left through their own back button.
- * `messages` is a tab, and it is also where the scanner sends a code that
- * reads as an invitation.
+ * `messages` is a tab, the inbox; `conversation` is where one of its rows
+ * leads, and `invitation` is where a new relationship is opened — from the
+ * inbox's own button, or from the scanner with a code that reads as one.
+ * `request` is where the scanner leads with the marketplace's second code:
+ * the filled form, shown before it is sent.
  */
-type Route = "home" | "messages" | "scan" | "settings" | "identity" | "logout" | "pin" | "device";
+type Route =
+  | "home"
+  | "messages"
+  | "conversation"
+  | "invitation"
+  | "request"
+  | "scan"
+  | "settings"
+  | "invite"
+  | "logout"
+  | "pin"
+  | "device";
 
 export default function App() {
   const { t, locale } = useI18n();
@@ -64,8 +81,13 @@ export default function App() {
   const [settingsSection, setSettingsSection] = useState<"security" | null>(null);
   const [cameraPreview, setCameraPreview] = useState(false);
   // Something the scanner read that looks like an invitation, carried to the
-  // messages screen for the person to open — or not — there.
+  // invitation screen for the person to open — or not — there.
   const [scannedInvitation, setScannedInvitation] = useState<string | null>(null);
+  // The second code the scanner read, carried to the screen that shows what
+  // would be sent — and sends it only if the person says so.
+  const [scannedRequest, setScannedRequest] = useState<string | null>(null);
+  // The relationship whose conversation is open, by counterparty.
+  const [conversationWith, setConversationWith] = useState<string | null>(null);
   // The window behind the page wears the same colour the page does, so turning
   // the device does not flash the native white through — see `backdrop`. Read
   // after `useTheme` above, because it reads the palette that hook just applied.
@@ -136,6 +158,10 @@ export default function App() {
   );
 
   const goHome = useCallback(() => setRoute("home"), []);
+  const backToInbox = useCallback(() => {
+    setScannedInvitation(null);
+    setRoute("messages");
+  }, []);
   const backToSecurity = useCallback(() => {
     setSettingsSection("security");
     setRoute("settings");
@@ -295,15 +321,47 @@ export default function App() {
         className={barless && !cameraPreview ? "app__view app__view--plain" : "app__view"}
         key={route}
       >
-        {route === "home" ? (
-          <HomeScreen identity={identity} onShowCode={() => setRoute("identity")} />
-        ) : null}
-        {route === "identity" ? <IdentityScreen identity={identity} onBack={goHome} /> : null}
+        {route === "home" ? <HomeScreen onShowCode={() => setRoute("invite")} /> : null}
+        {route === "invite" ? <InviteScreen mediator={mediator} onBack={goHome} /> : null}
         {route === "messages" ? (
           <MessagesScreen
             messaging={messaging}
+            onOpenConversation={(counterparty) => {
+              setConversationWith(counterparty);
+              setRoute("conversation");
+            }}
+            onNewRelationship={() => setRoute("invitation")}
+          />
+        ) : null}
+        {route === "conversation" ? (
+          <Conversation
+            messaging={messaging}
+            counterparty={conversationWith}
+            onBack={backToInbox}
+          />
+        ) : null}
+        {route === "invitation" ? (
+          <InvitationScreen
+            messaging={messaging}
             mediator={mediator}
             initialInvitation={scannedInvitation}
+            onBack={backToInbox}
+          />
+        ) : null}
+        {route === "request" && scannedRequest !== null ? (
+          <CredentialRequestScreen
+            messaging={messaging}
+            mediator={mediator}
+            code={scannedRequest}
+            onBack={() => {
+              setScannedRequest(null);
+              setRoute("scan");
+            }}
+            onSent={(counterparty) => {
+              setScannedRequest(null);
+              setConversationWith(counterparty);
+              setRoute("conversation");
+            }}
           />
         ) : null}
         {route === "scan" ? (
@@ -312,7 +370,11 @@ export default function App() {
             onPreviewChange={setCameraPreview}
             onOpenRelationship={(content) => {
               setScannedInvitation(content);
-              setRoute("messages");
+              setRoute("invitation");
+            }}
+            onCredentialRequest={(content) => {
+              setScannedRequest(content);
+              setRoute("request");
             }}
           />
         ) : null}
@@ -366,14 +428,55 @@ export default function App() {
         <LiquidTabBar
           label={t.nav.label}
           tabs={tabs}
-          active={route === "identity" ? "home" : route}
+          active={tabOf(route)}
           onSelect={(next) => {
             setSettingsSection(null);
             setScannedInvitation(null);
+            setScannedRequest(null);
             setRoute(next);
           }}
         />
       )}
     </div>
   );
+}
+
+/** The tab a route is under: the screens behind a tab light that tab. */
+function tabOf(route: Route): Route {
+  switch (route) {
+    case "invite":
+      return "home";
+    case "conversation":
+    case "invitation":
+      return "messages";
+    case "request":
+      return "scan";
+    default:
+      return route;
+  }
+}
+
+type ConversationProps = {
+  messaging: Messaging;
+  counterparty: string | null;
+  onBack: () => void;
+};
+
+/**
+ * The conversation route, resolved against the book: the relationship is
+ * looked up on every render, so a book read again while the screen is open
+ * — after a sync — is what the screen shows. One that is not in the book is
+ * nothing to show, and the inbox is where somebody goes instead.
+ */
+function Conversation({ messaging, counterparty, onBack }: ConversationProps) {
+  const relationship = messaging.book.relationships.find((r) => r.counterparty === counterparty);
+  useEffect(() => {
+    if (messaging.read && !relationship) {
+      onBack();
+    }
+  }, [messaging.read, relationship, onBack]);
+  if (!relationship) {
+    return null;
+  }
+  return <ConversationScreen messaging={messaging} relationship={relationship} onBack={onBack} />;
 }

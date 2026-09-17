@@ -7,9 +7,10 @@ on Windows, macOS and Linux.
 ## What is in it
 
 The first screen is a dashboard with a floating menu in the iOS liquid glass
-idiom: **Home**, **Messages**, **Scan QR** and **Settings**. Home shows the
-identity and leads to its identifier as a QR code somebody else can read;
-Messages holds the relationships and what came through them; Scan QR opens
+idiom: **Home**, **Messages**, **Scan QR** and **Settings**. Home leads to
+the invitation as a QR code somebody else can read — never the identifier,
+which is shown nowhere; Messages is the inbox, every message from every
+relationship in one list and each one leading to its conversation; Scan QR opens
 the camera and shows what the code it read says, and it is only offered on a
 phone or a tablet, where there is a camera the wallet may drive. Every string
 comes from a catalogue in `src/i18n/messages/`; English is the fallback
@@ -19,17 +20,55 @@ no code changes.
 ### Messages
 
 A relationship is opened from an invitation — a DIDComm v2 out-of-band URL,
-its JSON, or a bare `did:web` — pasted on the Messages screen or scanned and
-carried there; the screen says who it would be with, and the person opens it.
+its JSON, or a bare `did:web` — pasted on the *New relationship* screen or
+scanned and carried there; the screen says who it would be with, and the
+person opens it.
 Opening one derives a **pairwise `did:key`** for that counterparty and nothing
 else — from the seed and the counterparty's DID, `m/1'/…`, so the same phrase
 meets the same counterparty at the same key on any device — and asks the
 chosen mediator for a mailbox as that pairwise. **One mailbox per
 relationship**, and the mediator receives for that one DID: no request ever
 names two pairwise identifiers, so nothing on the mediator says they are one
-person. *Check for messages* empties every mailbox, one relationship at a
-time, opens what arrived as the pairwise it was written to, and confirms it
-to the mediator only once it is written down here.
+person. The mailboxes are emptied one relationship at a time — what arrived
+is opened as the pairwise it was written to, and confirmed to the mediator
+only once it is written down here — on a clock while the wallet is open,
+every fifteen seconds and whenever it comes back into view, and on demand
+from *Sync mailboxes*. The mediator is passage, not storage: what it holds
+for this wallet is meant to be gone from it as soon as it can be.
+
+### Asking for a credential
+
+The marketplace's QR is an invitation like any other, with a goal code that
+says it starts a request and an id that names the run. Opening it — the
+button says *Accept* — is the spec's "authorises the start": the
+relationship with the issuer is opened as above and the wallet answers with
+`accept`, from the pairwise, naming the invitation as its parent thread,
+which is what moves the page that showed the code on to its form. The form
+is filled on that page; what it makes of the answers is a second code, bare
+JSON with the run, the issuer, the credential and every answer under its
+label, which the scanner recognises and carries to a screen that shows all
+of it. *Send* seals the request towards the issuer — `request`, with the
+same parent thread and the answers by key — and posts it to the issuer's
+mediator. Both messages are kept in the book as sent, which is the receipt
+the spec has the wallet write for itself; nothing travels back to say so.
+The protocol is the platform's own, `https://almena.id/credential-request/1.0`.
+
+The other way round — somebody scanning the wallet — goes through the
+**invitation** Home leads to. The code carries neither the identity nor a
+pairwise: there is no counterparty yet to derive one from. It carries an
+**invitation key**, walked from the seed by a salt drawn for that showing,
+`m/3'/…`, and named as a `did:peer:2` so that it can say which mediator to
+write to, which a `did:key` cannot. The key opens its own mailbox; whoever
+scans the code writes there; and on the next sync the wallet reads who wrote
+from the envelope, derives the pairwise for them — the one it already had, if
+it had one — and answers from it with a `from_prior` the invitation key
+signed, which is DIDComm's way of saying the identifier has moved. One
+invitation lives at a time: showing a new code retires the last, and the
+retired key's mailbox is given back to the mediator — `recipient-update`
+removing its own DID, which the mediator takes as closing it — as is a spent
+one once what it held is confirmed. A mailbox the mediator no longer has for
+a pairwise (its lease ran out, or it was lost) is asked for again on the next
+sync, with the same `mediate-request` that opened it.
 
 What the wallet writes down — which pairwise is whose, which mediator, and
 the messages — is one file, `messaging.json` in the app's local data, sealed
@@ -59,7 +98,7 @@ the screen looked like a moment ago.
 written down again — a phrase somebody could not read back is a phrase they do
 not have, and letting them past it would be the wallet agreeing to lose their
 identity later. When all three land, the mark turns while the identity is
-derived and the wallet opens on the dashboard, which shows the identifier.
+derived and the wallet opens on the dashboard.
 
 The wordlist follows the interface. BIP-39 defines wordlists for ten languages
 and the wallet carries all of them, so a phrase read in Spanish is written in

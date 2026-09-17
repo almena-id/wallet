@@ -26,6 +26,9 @@ pub const ENCRYPTED: &str = "application/didcomm-encrypted+json";
 
 const MEDIATE_REQUEST: &str = "https://didcomm.org/coordinate-mediation/3.0/mediate-request";
 const MEDIATE_GRANT: &str = "https://didcomm.org/coordinate-mediation/3.0/mediate-grant";
+const RECIPIENT_UPDATE: &str = "https://didcomm.org/coordinate-mediation/3.0/recipient-update";
+const RECIPIENT_UPDATE_RESPONSE: &str =
+    "https://didcomm.org/coordinate-mediation/3.0/recipient-update-response";
 const DELIVERY_REQUEST: &str = "https://didcomm.org/messagepickup/3.0/delivery-request";
 const DELIVERY: &str = "https://didcomm.org/messagepickup/3.0/delivery";
 const STATUS: &str = "https://didcomm.org/messagepickup/3.0/status";
@@ -47,6 +50,10 @@ pub struct Delivered {
     /// The attachment id, which is what the mediator deletes by.
     pub id: String,
     pub message: Message,
+    /// Whether the envelope proved the `from` it names: authcrypt, as
+    /// opposed to a sender who only wrote a name in. What is kept is kept
+    /// either way; what a relationship is opened with is only the former.
+    pub authenticated: bool,
 }
 
 impl<'a> Mailbox<'a> {
@@ -63,6 +70,24 @@ impl<'a> Mailbox<'a> {
     pub async fn open(&self) -> Result<(), MessagingError> {
         let grant = self.exchange(MEDIATE_REQUEST, json!({})).await?;
         if grant.type_ != MEDIATE_GRANT {
+            return Err(MessagingError::MediatorRefused);
+        }
+        Ok(())
+    }
+
+    /// Gives the mailbox back, with whatever is still in it. The protocol
+    /// has no word for this; removing the one DID the mailbox receives for —
+    /// its own — is what the mediator takes it to mean. What is left behind
+    /// otherwise is a mailbox nobody will ever empty, which the mediator
+    /// would only get round to by its lease.
+    pub async fn close(&self) -> Result<(), MessagingError> {
+        let response = self
+            .exchange(
+                RECIPIENT_UPDATE,
+                json!({ "updates": [{ "recipient_did": self.pairwise.did, "action": "remove" }] }),
+            )
+            .await?;
+        if response.type_ != RECIPIENT_UPDATE_RESPONSE {
             return Err(MessagingError::MediatorRefused);
         }
         Ok(())
@@ -99,7 +124,11 @@ impl<'a> Mailbox<'a> {
                 continue;
             };
             match self.unpack(&packed).await {
-                Ok(message) => delivered.push(Delivered { id, message }),
+                Ok((message, authenticated)) => delivered.push(Delivered {
+                    id,
+                    message,
+                    authenticated,
+                }),
                 Err(_) => {
                     log::info!(target: crate::develop::TARGET, "a delivery could not be opened");
                 }
@@ -162,7 +191,7 @@ impl<'a> Mailbox<'a> {
             .text()
             .await
             .map_err(|_| MessagingError::MediatorUnreachable)?;
-        let reply = self.unpack(&text).await?;
+        let (reply, _) = self.unpack(&text).await?;
         if reply.type_ == PROBLEM_REPORT {
             log::info!(
                 target: crate::develop::TARGET,
@@ -174,7 +203,7 @@ impl<'a> Mailbox<'a> {
         Ok(reply)
     }
 
-    async fn unpack(&self, packed: &str) -> Result<Message, MessagingError> {
+    async fn unpack(&self, packed: &str) -> Result<(Message, bool), MessagingError> {
         Message::unpack(
             packed,
             self.resolver,
@@ -182,9 +211,60 @@ impl<'a> Mailbox<'a> {
             &UnpackOptions::default(),
         )
         .await
-        .map(|(message, _)| message)
+        .map(|(message, metadata)| (message, metadata.authenticated))
         .map_err(|_| MessagingError::MediatorRefused)
     }
+}
+
+/// Sends `message` from `speaker` to `to`, the way `to`'s document says it
+/// is reached: an entity of this platform names the mediator as its
+/// endpoint, so the message is encrypted for the entity, wrapped in a
+/// forward for the mediator, and posted there — the library does the
+/// wrapping from the document, and says where the result goes. Nothing is
+/// waited for beyond the mediator's acceptance: what the entity makes of it
+/// comes back, if it does, through the speaker's own mailbox.
+pub async fn send(
+    resolver: &Resolver,
+    speaker: &Pairwise,
+    to: &str,
+    message: Message,
+) -> Result<(), MessagingError> {
+    let (packed, metadata) = message
+        .pack_encrypted(
+            to,
+            Some(&speaker.did),
+            None,
+            resolver,
+            &speaker.secrets(),
+            &PackEncryptedOptions {
+                forward: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(|_| MessagingError::MediatorUnreachable)?;
+    let endpoint = match metadata.messaging_service {
+        Some(service) => service.service_endpoint,
+        // No forward was needed: the recipient is reached directly, at the
+        // endpoint its own document names. The library says nothing then.
+        None => resolver
+            .endpoint(to)
+            .await
+            .map_err(|_| MessagingError::MediatorUnreachable)?
+            .ok_or(MessagingError::MediatorUnreachable)?,
+    };
+    let response = resolver
+        .http()
+        .post(&endpoint)
+        .header(reqwest::header::CONTENT_TYPE, ENCRYPTED)
+        .body(packed)
+        .send()
+        .await
+        .map_err(|_| MessagingError::MediatorUnreachable)?;
+    if !response.status().is_success() {
+        return Err(MessagingError::MediatorRefused);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -296,5 +376,114 @@ mod tests {
         let ids: Vec<String> = delivered.iter().map(|d| d.id.clone()).collect();
         mailbox.confirm(&ids).await.expect("confirms");
         assert!(mailbox.take().await.expect("takes").is_empty());
+    }
+
+    #[tokio::test]
+    #[ignore = "needs a running mediator, named by ALMENA_MEDIATOR"]
+    async fn an_invitation_key_is_written_to_and_says_who_by() {
+        let Some(mediator) = mediator_under_test() else {
+            return;
+        };
+        let resolver = Resolver::new();
+        // The wallet shows an invitation; an entity — a did:key here, since
+        // any DID with keys will do for the envelope — scans it and writes.
+        let holder_seed = [33u8; 64];
+        let invite = super::super::invite::Invite::draw(&holder_seed, &mediator).unwrap();
+        let key = invite.key(&holder_seed).unwrap();
+        let entity = Pairwise::derive(&[44u8; 64], &invite.did);
+        let mailbox = Mailbox::new(&resolver, &key, &mediator);
+        mailbox
+            .open()
+            .await
+            .expect("the invitation key's mailbox opens");
+
+        let inner = Message::build(
+            uuid::Uuid::new_v4().to_string(),
+            "https://example.test/hello/1.0/hello".into(),
+            json!({ "text": "I scanned your code" }),
+        )
+        .from(entity.did.clone())
+        .to(invite.did.clone())
+        .thid(invite.id.clone())
+        .finalize();
+        let (packed, _) = inner
+            .pack_encrypted(
+                &invite.did,
+                Some(&entity.did),
+                None,
+                &resolver,
+                &entity.secrets(),
+                &PackEncryptedOptions {
+                    forward: false,
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("packs for the invitation key");
+        let wrapped = wrap_in_forward(
+            &packed,
+            None,
+            &invite.did,
+            &vec![mediator.clone()],
+            &AnonCryptAlg::default(),
+            &resolver,
+        )
+        .await
+        .expect("wraps in a forward");
+        let endpoint = resolver.endpoint(&mediator).await.unwrap().unwrap();
+        let status = resolver
+            .http()
+            .post(&endpoint)
+            .header(reqwest::header::CONTENT_TYPE, ENCRYPTED)
+            .body(wrapped)
+            .send()
+            .await
+            .expect("posts")
+            .status();
+        assert_eq!(status, reqwest::StatusCode::ACCEPTED);
+
+        // Taken as the invitation key, and the envelope says who wrote —
+        // which is what the wallet derives the pairwise from.
+        let delivered = mailbox.take().await.expect("takes");
+        assert_eq!(delivered.len(), 1);
+        assert!(delivered[0].authenticated);
+        assert_eq!(
+            delivered[0].message.from.as_deref(),
+            Some(entity.did.as_str())
+        );
+        let ids: Vec<String> = delivered.iter().map(|d| d.id.clone()).collect();
+        mailbox.confirm(&ids).await.expect("confirms");
+
+        // The pairwise answers, from itself and carrying the rotation. The
+        // entity of this test has no endpoint to be reached at, so the ping
+        // goes to the mediator, which answers a trust ping and is the one
+        // party here whose document says where it is written to.
+        let pairwise = Pairwise::derive(&holder_seed, &entity.did);
+        let (from_prior, _) = didcomm::FromPrior::build(invite.did.clone(), pairwise.did.clone())
+            .finalize()
+            .pack(
+                Some(&format!("{}#key-1", invite.did)),
+                &resolver,
+                &key.secrets(),
+            )
+            .await
+            .expect("the invitation key signs the rotation");
+        let ping = Message::build(
+            uuid::Uuid::new_v4().to_string(),
+            super::super::TRUST_PING.to_owned(),
+            json!({ "response_requested": false }),
+        )
+        .from(pairwise.did.clone())
+        .to(mediator.clone())
+        .from_prior(from_prior)
+        .finalize();
+        send(&resolver, &pairwise, &mediator, ping)
+            .await
+            .expect("the ping is accepted");
+
+        // Spent, so given back: the mediator forgets the key, and asking it
+        // for the mailbox's contents is asking as a stranger.
+        mailbox.close().await.expect("the mailbox closes");
+        assert!(mailbox.take().await.is_err());
     }
 }

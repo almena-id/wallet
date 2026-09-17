@@ -20,12 +20,31 @@ use super::MessagingError;
 
 pub const OOB_INVITATION: &str = "https://didcomm.org/out-of-band/2.0/invitation";
 
+/// The goal code the DIDComm community uses for "I will issue you a
+/// credential": what the marketplace's invitation carries, and what makes
+/// opening it the start of a request rather than just a relationship.
+pub const ISSUE_GOAL: &str = "issue-vc";
+
 /// Who an invitation is from, and what it says about itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Invitation {
     pub counterparty: String,
     pub label: Option<String>,
+    /// The invitation's own id, which what answers it names as its parent
+    /// thread. None for a bare DID, which is nobody's invitation in
+    /// particular.
+    pub id: Option<String>,
+    /// What the sender says the relationship is for, as a goal code.
+    pub goal_code: Option<String>,
+}
+
+impl Invitation {
+    /// Whether opening this starts a request for a credential: the
+    /// marketplace's invitation, which is answered rather than just opened.
+    pub fn asks_for_credential(&self) -> bool {
+        self.id.is_some() && self.goal_code.as_deref() == Some(ISSUE_GOAL)
+    }
 }
 
 pub fn read(input: &str) -> Result<Invitation, MessagingError> {
@@ -34,6 +53,8 @@ pub fn read(input: &str) -> Result<Invitation, MessagingError> {
         return did(input).map(|counterparty| Invitation {
             counterparty,
             label: None,
+            id: None,
+            goal_code: None,
         });
     }
     if let Ok(url) = url::Url::parse(input) {
@@ -69,9 +90,18 @@ fn from_json(json: &Value) -> Result<Invitation, MessagingError> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_owned);
+    let text = |value: &Value| {
+        value
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+    };
     Ok(Invitation {
         counterparty,
         label,
+        id: text(&json["id"]),
+        goal_code: text(&json["body"]["goal_code"]),
     })
 }
 
@@ -108,6 +138,24 @@ mod tests {
         let read = read(&format!("https://almena.id/invite?_oob={encoded}")).unwrap();
         assert_eq!(read.counterparty, "did:web:almena.id:city-hall");
         assert_eq!(read.label.as_deref(), Some("Residence certificate"));
+        assert_eq!(read.id.as_deref(), Some("1"));
+        assert_eq!(read.goal_code, None);
+        assert!(!read.asks_for_credential());
+    }
+
+    #[test]
+    fn the_marketplace_invitation_asks_for_a_credential() {
+        let invitation = serde_json::json!({
+            "type": OOB_INVITATION,
+            "id": "a1b2c3",
+            "from": "did:web:almena.id:i1",
+            "body": { "goal_code": ISSUE_GOAL, "goal": "Degrees", "accept": ["didcomm/v2"] }
+        });
+        let asked = read(&invitation.to_string()).unwrap();
+        assert_eq!(asked.id.as_deref(), Some("a1b2c3"));
+        assert_eq!(asked.goal_code.as_deref(), Some(ISSUE_GOAL));
+        assert!(asked.asks_for_credential());
+        assert!(!read("did:web:almena.id:i1").unwrap().asks_for_credential());
     }
 
     #[test]
