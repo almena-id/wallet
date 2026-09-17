@@ -9,7 +9,8 @@
     "scan": "Escanear QR",
     "settings": "Ajustes",
     "back": "Volver",
-    "backToHome": "Volver al inicio"
+    "backToHome": "Volver al inicio",
+    "messages": "Mensajes"
   },
   "onboarding": {
     "welcome": {
@@ -109,7 +110,50 @@
     },
     "result": {
       "title": "Código leído",
-      "again": "Escanear otro código"
+      "again": "Escanear otro código",
+      "open": "Abrir relación"
+    }
+  },
+  "messages": {
+    "title": "Mensajes",
+    "open": {
+      "title": "Nueva relación",
+      "invitation": "Invitación",
+      "with": "Con",
+      "action": "Abrir relación",
+      "opening": "Abriendo"
+    },
+    "collect": {
+      "title": "Buzones",
+      "action": "Buscar mensajes",
+      "checking": "Buscando",
+      "none": "Nada nuevo",
+      "received": {
+        "one": "{count} mensaje nuevo",
+        "other": "{count} mensajes nuevos"
+      },
+      "unreachable": {
+        "one": "{count} buzón no ha respondido",
+        "other": "{count} buzones no han respondido"
+      }
+    },
+    "relationships": {
+      "empty": "Sin relaciones",
+      "pairwise": "Tu identificador en esta relación"
+    },
+    "list": {
+      "empty": "Sin mensajes"
+    },
+    "errors": {
+      "messaging_locked": "La wallet está bloqueada.",
+      "messaging_invitation_unreadable": "Eso no es una invitación que esta wallet pueda leer.",
+      "messaging_mediator_unreachable": "No se ha podido llegar al mediador.",
+      "messaging_mediator_refused": "El mediador no ha aceptado la petición.",
+      "messaging_unreadable": "Los mensajes de este dispositivo no se pueden leer.",
+      "messaging_too_new": "Los mensajes de este dispositivo los escribió una versión más nueva de la wallet.",
+      "messaging_storage": "No se han podido guardar los mensajes en este dispositivo.",
+      "messaging_entropy": "Este dispositivo no ha proporcionado aleatoriedad.",
+      "messaging_unknown": "Algo ha fallado."
     }
   },
   "platform": {

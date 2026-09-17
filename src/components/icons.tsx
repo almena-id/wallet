@@ -58,6 +58,15 @@ export function ChevronLeftIcon({ className }: IconProps) {
   );
 }
 
+export function MessagesIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <rect x="3.5" y="6" width="17" height="12" rx="2.5" />
+      <path d="m4.5 7.5 7.5 5.5 7.5-5.5" />
+    </svg>
+  );
+}
+
 export function BellIcon({ className }: IconProps) {
   return (
     <svg {...base} className={className}>

@@ -7,13 +7,41 @@ on Windows, macOS and Linux.
 ## What is in it
 
 The first screen is a dashboard with a floating menu in the iOS liquid glass
-idiom: **Home**, **Scan QR** and **Settings**. Home shows the identity and
-leads to its identifier as a QR code somebody else can read; Scan QR opens the
-camera and shows what the code it read says, and it is only offered on a phone
-or a tablet, where there is a camera the wallet may drive. Every string comes
-from a catalogue in `src/i18n/messages/`; English is the fallback
+idiom: **Home**, **Messages**, **Scan QR** and **Settings**. Home shows the
+identity and leads to its identifier as a QR code somebody else can read;
+Messages holds the relationships and what came through them; Scan QR opens
+the camera and shows what the code it read says, and it is only offered on a
+phone or a tablet, where there is a camera the wallet may drive. Every string
+comes from a catalogue in `src/i18n/messages/`; English is the fallback
 and Spanish ships with it. Adding a language is adding a JSON file there —
 no code changes.
+
+### Messages
+
+A relationship is opened from an invitation — a DIDComm v2 out-of-band URL,
+its JSON, or a bare `did:web` — pasted on the Messages screen or scanned and
+carried there; the screen says who it would be with, and the person opens it.
+Opening one derives a **pairwise `did:key`** for that counterparty and nothing
+else — from the seed and the counterparty's DID, `m/1'/…`, so the same phrase
+meets the same counterparty at the same key on any device — and asks the
+chosen mediator for a mailbox as that pairwise. **One mailbox per
+relationship**, and the mediator receives for that one DID: no request ever
+names two pairwise identifiers, so nothing on the mediator says they are one
+person. *Check for messages* empties every mailbox, one relationship at a
+time, opens what arrived as the pairwise it was written to, and confirms it
+to the mediator only once it is written down here.
+
+What the wallet writes down — which pairwise is whose, which mediator, and
+the messages — is one file, `messaging.json` in the app's local data, sealed
+with XChaCha20-Poly1305 under a key the seed derives at `m/2'`. It is
+readable exactly while the wallet is open: locking drops the seed, and
+signing out removes the file. The identity's own key never speaks to anybody.
+
+The mediator list is the wallet's own for now. A development build reads one
+more from `VITE_MEDIATOR` in `.env.local` — `did:web:localhost%3A8100` for
+the mediator repository run with its DID and endpoint pointed at loopback —
+and `cargo test -- --ignored messaging::mediator` with `ALMENA_MEDIATOR` set
+to the same walks the whole conversation against it.
 
 ## Getting in
 

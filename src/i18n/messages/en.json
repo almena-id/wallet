@@ -9,7 +9,8 @@
     "scan": "Scan QR",
     "settings": "Settings",
     "back": "Back",
-    "backToHome": "Back to home"
+    "backToHome": "Back to home",
+    "messages": "Messages"
   },
   "onboarding": {
     "welcome": {
@@ -109,7 +110,50 @@
     },
     "result": {
       "title": "Code read",
-      "again": "Scan another code"
+      "again": "Scan another code",
+      "open": "Open relationship"
+    }
+  },
+  "messages": {
+    "title": "Messages",
+    "open": {
+      "title": "New relationship",
+      "invitation": "Invitation",
+      "with": "With",
+      "action": "Open relationship",
+      "opening": "Opening"
+    },
+    "collect": {
+      "title": "Mailboxes",
+      "action": "Check for messages",
+      "checking": "Checking",
+      "none": "Nothing new",
+      "received": {
+        "one": "{count} new message",
+        "other": "{count} new messages"
+      },
+      "unreachable": {
+        "one": "{count} mailbox did not answer",
+        "other": "{count} mailboxes did not answer"
+      }
+    },
+    "relationships": {
+      "empty": "No relationships",
+      "pairwise": "Your identifier in this relationship"
+    },
+    "list": {
+      "empty": "No messages"
+    },
+    "errors": {
+      "messaging_locked": "The wallet is locked.",
+      "messaging_invitation_unreadable": "That is not an invitation this wallet can read.",
+      "messaging_mediator_unreachable": "The mediator could not be reached.",
+      "messaging_mediator_refused": "The mediator did not accept the request.",
+      "messaging_unreadable": "The messages on this device cannot be read.",
+      "messaging_too_new": "The messages on this device were written by a newer version of the wallet.",
+      "messaging_storage": "The messages could not be written on this device.",
+      "messaging_entropy": "This device would not supply randomness.",
+      "messaging_unknown": "Something went wrong."
     }
   },
   "platform": {

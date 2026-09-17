@@ -1927,3 +1927,22 @@ html[data-camera-preview="true"] .app::before {
     top: 90%;
   }
 }
+
+/* ------------------------------------------------------------- messages */
+
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Unread is said with weight, not with a dot: the row already carries a tick
+   once it has been opened, and two marks for one fact is one too many. */
+.message__label--unread {
+  font-weight: 700;
+}
+
+.message__body {
+  margin: 0;
+  white-space: pre-wrap;
+}

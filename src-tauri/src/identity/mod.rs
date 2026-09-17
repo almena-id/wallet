@@ -10,7 +10,7 @@
 //! a wallet. Between launches it is [`crate::vault`] that keeps it, encrypted
 //! and behind a PIN — this module derives, and knows nothing about where.
 
-mod keys;
+pub(crate) mod keys;
 mod phrase;
 
 use std::sync::Mutex;

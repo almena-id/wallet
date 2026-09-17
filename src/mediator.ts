@@ -14,10 +14,20 @@ import { useCallback, useState } from "react";
  * list of one does not justify starting to. When it does, that answer is what
  * replaces this constant; the choice below and where it is kept stay as they
  * are. The first one is what a wallet uses until somebody picks another.
+ *
+ * A development build may add one: `VITE_MEDIATOR` in `.env.local`, the DID
+ * of a mediator on the developer's machine — `did:web:localhost%3A8100` for
+ * the mediator repository's `cargo run` pointed at loopback. It is read only
+ * in development, so a release carries the list above and nothing else.
  */
-export const mediators = ["did:web:mediator.almena.id"] as const;
+export const mediators: readonly string[] = [
+  "did:web:mediator.almena.id",
+  ...(import.meta.env.DEV && typeof import.meta.env.VITE_MEDIATOR === "string"
+    ? [import.meta.env.VITE_MEDIATOR]
+    : []),
+];
 
-export type Mediator = (typeof mediators)[number];
+export type Mediator = string;
 
 /** The one a wallet uses when nobody has said otherwise. */
 export const defaultMediator: Mediator = mediators[0];
@@ -34,7 +44,7 @@ export const defaultMediator: Mediator = mediators[0];
 const storageKey = "almena.mediator";
 
 function isMediator(value: unknown): value is Mediator {
-  return typeof value === "string" && (mediators as readonly string[]).includes(value);
+  return typeof value === "string" && mediators.includes(value);
 }
 
 function stored(): Mediator {

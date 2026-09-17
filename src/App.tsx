@@ -2,13 +2,14 @@ import { useCallback, useState } from "react";
 
 import { LiquidTabBar, type TabDefinition } from "./components/LiquidTabBar";
 import { BrandSpinner } from "./components/BrandSpinner";
-import { HomeIcon, QrIcon, SettingsIcon } from "./components/icons";
+import { HomeIcon, MessagesIcon, QrIcon, SettingsIcon } from "./components/icons";
 import { plural, useI18n } from "./i18n";
 import { useAccent } from "./appearance";
 import { useAutoLock, useIdle } from "./autolock";
 import { useBackdrop } from "./backdrop";
 import { useBackInSight } from "./lock";
 import { useMediator } from "./mediator";
+import { useMessaging } from "./messaging";
 import { usePlatform } from "./platform";
 import { useTheme } from "./theme";
 import { useTray } from "./tray";
@@ -26,6 +27,7 @@ import { PinChange } from "./screens/PinChange";
 import { PinConfirm } from "./screens/PinConfirm";
 import { PinScreen } from "./screens/PinScreen";
 import { LogoutScreen } from "./screens/LogoutScreen";
+import { MessagesScreen } from "./screens/MessagesScreen";
 import { ScanScreen } from "./screens/ScanScreen";
 import { Onboarding } from "./screens/onboarding/Onboarding";
 import { SettingsScreen } from "./screens/settings/SettingsScreen";
@@ -35,8 +37,10 @@ import { SettingsScreen } from "./screens/settings/SettingsScreen";
  * means it. `identity` is where the home screen's own card leads, to show the
  * identifier as a code. `pin` and `device` are the two things Security sends
  * somebody to. All of them are left through their own back button.
+ * `messages` is a tab, and it is also where the scanner sends a code that
+ * reads as an invitation.
  */
-type Route = "home" | "scan" | "settings" | "identity" | "logout" | "pin" | "device";
+type Route = "home" | "messages" | "scan" | "settings" | "identity" | "logout" | "pin" | "device";
 
 export default function App() {
   const { t, locale } = useI18n();
@@ -51,11 +55,17 @@ export default function App() {
   const { theme, setTheme } = useTheme();
   const vault = useVault();
   const [identity, setIdentity] = useState<Identity | null>(null);
+  // Readable exactly while an identity is open: the book is sealed under a
+  // key the seed derives, and the seed leaves with the lock.
+  const messaging = useMessaging(identity !== null);
   const [route, setRoute] = useState<Route>("home");
   // Where Settings opens: back where somebody was, when they are coming back
   // from a screen a section sent them to.
   const [settingsSection, setSettingsSection] = useState<"security" | null>(null);
   const [cameraPreview, setCameraPreview] = useState(false);
+  // Something the scanner read that looks like an invitation, carried to the
+  // messages screen for the person to open — or not — there.
+  const [scannedInvitation, setScannedInvitation] = useState<string | null>(null);
   // The window behind the page wears the same colour the page does, so turning
   // the device does not flash the native white through — see `backdrop`. Read
   // after `useTheme` above, because it reads the palette that hook just applied.
@@ -137,6 +147,7 @@ export default function App() {
   // is the same switch that decided whether to register the scanner at all.
   const tabs: TabDefinition<Route>[] = [
     { id: "home", label: t.nav.home, icon: <HomeIcon /> },
+    { id: "messages", label: t.nav.messages, icon: <MessagesIcon /> },
     ...(platform.barcodeScanner
       ? [{ id: "scan" as const, label: t.nav.scan, icon: <QrIcon /> }]
       : []),
@@ -288,7 +299,23 @@ export default function App() {
           <HomeScreen identity={identity} onShowCode={() => setRoute("identity")} />
         ) : null}
         {route === "identity" ? <IdentityScreen identity={identity} onBack={goHome} /> : null}
-        {route === "scan" ? <ScanScreen onBack={goHome} onPreviewChange={setCameraPreview} /> : null}
+        {route === "messages" ? (
+          <MessagesScreen
+            messaging={messaging}
+            mediator={mediator}
+            initialInvitation={scannedInvitation}
+          />
+        ) : null}
+        {route === "scan" ? (
+          <ScanScreen
+            onBack={goHome}
+            onPreviewChange={setCameraPreview}
+            onOpenRelationship={(content) => {
+              setScannedInvitation(content);
+              setRoute("messages");
+            }}
+          />
+        ) : null}
         {route === "settings" ? (
           <SettingsScreen
             platform={platform}
@@ -342,6 +369,7 @@ export default function App() {
           active={route === "identity" ? "home" : route}
           onSelect={(next) => {
             setSettingsSection(null);
+            setScannedInvitation(null);
             setRoute(next);
           }}
         />

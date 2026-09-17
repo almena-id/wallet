@@ -11,6 +11,7 @@ import {
 import { ChevronLeftIcon } from "../components/icons";
 import { ScanFramingGuide } from "../components/ScanFramingGuide";
 import { useTranslations } from "../i18n";
+import { looksLikeInvitation } from "../messaging";
 
 type ScanState =
   | { status: "starting" }
@@ -28,6 +29,12 @@ type ScanScreenProps = {
    * transparent webview, and the menu and the backdrop would paint over it.
    */
   onPreviewChange: (previewing: boolean) => void;
+  /**
+   * Hands a code that reads as an invitation to the messages screen. Offered
+   * as a button and never done on its own: the person decides, there, after
+   * seeing who it is from.
+   */
+  onOpenRelationship: (content: string) => void;
 };
 
 /**
@@ -38,9 +45,10 @@ type ScanScreenProps = {
  * from the same switch on the Rust side that registered the plugin. What a
  * code says is shown once it is read, and nothing is done with it: nothing
  * that arrives from outside gets to tell the wallet what to do with the
- * identity it holds.
+ * identity it holds. A code that reads as an invitation gets one more button,
+ * which carries it to the screen where somebody can open it.
  */
-export function ScanScreen({ onBack, onPreviewChange }: ScanScreenProps) {
+export function ScanScreen({ onBack, onPreviewChange, onOpenRelationship }: ScanScreenProps) {
   const t = useTranslations();
   const [state, setState] = useState<ScanState>({ status: "starting" });
   // Bumped to start a fresh scan, which re-runs the effect below.
@@ -169,9 +177,18 @@ export function ScanScreen({ onBack, onPreviewChange }: ScanScreenProps) {
           <h2 className="card__title">{t.scan.result.title}</h2>
           <p className="identifier">{state.content}</p>
           <div className="button-row">
+            {looksLikeInvitation(state.content) ? (
+              <button
+                type="button"
+                className="button button--primary"
+                onClick={() => onOpenRelationship(state.content)}
+              >
+                {t.scan.result.open}
+              </button>
+            ) : null}
             <button
               type="button"
-              className="button button--primary"
+              className={looksLikeInvitation(state.content) ? "button" : "button button--primary"}
               onClick={() => setAttempt((n) => n + 1)}
             >
               {t.scan.result.again}

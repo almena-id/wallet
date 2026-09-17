@@ -353,6 +353,7 @@ pub fn vault_destroy<R: Runtime>(
     let _guard = gate.0.lock();
 
     store::clear(&app);
+    crate::messaging::clear(&app);
     held.forget();
 
     status(&app)
@@ -380,6 +381,7 @@ fn attempt<R: Runtime>(
                 // lost phone. Everything the device was holding goes, and so
                 // does anything still open in front of it.
                 store::clear(app);
+                crate::messaging::clear(app);
                 held.forget();
                 return Err(VaultError::Destroyed);
             }

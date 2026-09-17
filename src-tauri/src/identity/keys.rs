@@ -16,15 +16,27 @@ const MASTER_KEY: &[u8] = b"ed25519 seed";
 
 /// The hardened index of the key that governs the identity: `m/0'`.
 ///
-/// One step, not a wallet-style tree. This wallet derives one key, its meaning
-/// is fixed, and depth beyond that would only be somewhere for two
-/// implementations to disagree. The step is hardened because SLIP-0010 has no
-/// unhardened derivation on this curve.
+/// One step for the identity itself. The step is hardened because SLIP-0010 has
+/// no unhardened derivation on this curve.
 const CONTROL: u32 = 0;
+
+/// The root of every pairwise key: `m/1'/…`. What comes after it is decided
+/// by the counterparty — see `messaging::pairwise` — so that the same words
+/// and the same counterparty always meet at the same key, on any device, with
+/// nothing to remember in between.
+pub(crate) const PAIRWISE: u32 = 1;
+
+/// The key the messaging book is sealed under: `m/2'`. Not a signing key and
+/// never used as one; a branch of its own so that nothing that signs shares
+/// bytes with something that encrypts.
+pub(crate) const BOOK: u32 = 2;
 
 /// What marks 32 bytes as an ed25519 public key: the multicodec `ed25519-pub`,
 /// `0xed`, as an unsigned varint — the same two bytes `did:key` uses.
-const ED25519_PUB: [u8; 2] = [0xed, 0x01];
+pub(crate) const ED25519_PUB: [u8; 2] = [0xed, 0x01];
+/// And an x25519 one, `x25519-pub`: the key-agreement key a `did:key` derives
+/// from its ed25519 key, which is what DIDComm encrypts towards.
+pub(crate) const X25519_PUB: [u8; 2] = [0xec, 0x01];
 
 /// The key the identity is, from the seed the words produce.
 pub fn signing_key(seed: &[u8; 64]) -> SigningKey {
@@ -39,8 +51,15 @@ pub fn signing_key(seed: &[u8; 64]) -> SigningKey {
 ///
 /// This is the form `did:key` is built from, and the form every key is shown in.
 pub fn written(key: &[u8; 32]) -> String {
-    let mut bytes = Vec::with_capacity(ED25519_PUB.len() + key.len());
-    bytes.extend_from_slice(&ED25519_PUB);
+    multibase(&ED25519_PUB, key)
+}
+
+/// `z` + base58btc of a multicodec prefix followed by the raw key: the
+/// `publicKeyMultibase` form of the Multikey data model, and the body of a
+/// `did:key`.
+pub(crate) fn multibase(codec: &[u8], key: &[u8]) -> String {
+    let mut bytes = Vec::with_capacity(codec.len() + key.len());
+    bytes.extend_from_slice(codec);
     bytes.extend_from_slice(key);
     format!("z{}", bs58::encode(bytes).into_string())
 }
@@ -52,7 +71,7 @@ pub fn written(key: &[u8; 32]) -> String {
 /// SLIP-0010 publishes its vectors for seeds of other lengths, and a walk that
 /// could not be handed one could only ever be tested against its own output.
 /// Everything above this still passes exactly 64 bytes.
-fn walk(seed: &[u8], path: &[u32]) -> [u8; 32] {
+pub(crate) fn walk(seed: &[u8], path: &[u32]) -> [u8; 32] {
     // The master key and chain code. Both are worth as much as the seed:
     // whoever holds them derives every key these words will ever produce, so
     // each pair is wiped as the walk leaves it behind.
@@ -206,7 +225,12 @@ mod tests {
     fn the_walk_is_the_one_the_standard_publishes() {
         for (seed, path, private, public) in PUBLISHED {
             let derived = walk(&decode(seed), path);
-            assert_eq!(encode(&derived), private, "the private key at m{}", named(path));
+            assert_eq!(
+                encode(&derived),
+                private,
+                "the private key at m{}",
+                named(path)
+            );
 
             // And that the key ed25519 builds from it is the one the standard
             // says, which is what ties this walk to the identifier it ends at.

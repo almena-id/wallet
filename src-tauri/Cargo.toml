@@ -71,6 +71,21 @@ tauri-plugin-fs = "2"
 # author tells applications to do, and it answers `NoDefaultStore` where nothing
 # was registered rather than quietly pretending. See `vault::store`.
 keyring-core = "1"
+# Messaging: DIDComm v2 envelopes and plaintext, by the DIF reference
+# implementation — the same crate the mediator answers with. `uniffi` is only a
+# cfg flag here: it makes the resolver traits `Send + Sync`, which a Tauri
+# command's future has to be.
+didcomm = { version = "0.4", features = ["uniffi"] }
+async-trait = "0.1"
+# Reaching a mediator, and reading a `did:web` document. Rustls rather than the
+# platform's TLS because it is the same code on every one of the five.
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+# The runtime the ignored end-to-end test of the mediator conversation runs
+# on. Tauri brings its own for the commands; a test has no Tauri.
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2.4.4"

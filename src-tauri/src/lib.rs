@@ -31,6 +31,10 @@
 //! front of it: the seed encrypted on the device, opened by a PIN or — where the
 //! platform has somewhere to keep a key — by the device itself.
 //!
+//! [`messaging`] is the relationships the identity has and what comes through
+//! them: a pairwise and a mailbox per relationship, and the sealed book that
+//! says which is whose.
+//!
 //! [`develop`] is the log, and how it leaves the device it was written on.
 //!
 //! [`backdrop`] is the colour behind the page and the appearance of the window
@@ -41,6 +45,7 @@
 mod backdrop;
 mod develop;
 mod identity;
+mod messaging;
 #[cfg(target_os = "ios")]
 mod scene;
 mod tray;
@@ -272,6 +277,11 @@ pub fn run() {
             vault::vault_change_pin,
             vault::vault_set_device,
             vault::vault_destroy,
+            messaging::messaging_read_invitation,
+            messaging::messaging_book,
+            messaging::messaging_open,
+            messaging::messaging_collect,
+            messaging::messaging_mark_read,
             develop::develop_logs,
             develop::develop_logs_share,
             develop::develop_logs_save_to,
