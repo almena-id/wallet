@@ -110,9 +110,7 @@
     },
     "result": {
       "title": "Code read",
-      "again": "Scan another code",
-      "open": "Open relationship",
-      "request": "Review request"
+      "again": "Scan another code"
     }
   },
   "messages": {
@@ -131,12 +129,14 @@
       }
     },
     "inbox": {
-      "empty": "No messages",
-      "unread": "Unread",
-      "sent": "Sent"
+      "empty": "No requests",
+      "unread": "Unread"
     },
-    "conversation": {
-      "pairwise": "Your identifier in this relationship"
+    "thread": {
+      "to": "Requested from",
+      "sentAt": "Sent",
+      "request": "Request",
+      "reply": "Reply"
     },
     "open": {
       "title": "New relationship",
@@ -161,6 +161,9 @@
     },
     "request": {
       "title": "Credential request",
+      "issuer": "Issuer",
+      "continue": "Continue",
+      "continuing": "Continuing",
       "version": "Template version {version}",
       "to": "To",
       "send": "Send",

@@ -4,31 +4,33 @@ import { ChevronLeftIcon, PlusIcon, SyncIcon } from "../components/icons";
 import { plural, useI18n } from "../i18n";
 import {
   errorCode,
-  messageKind,
   relationshipName,
+  requestsOf,
+  threadName,
   type Messaging,
-  type Entry,
   type Relationship,
+  type Thread,
 } from "../messaging";
 
 type MessagesScreenProps = {
   messaging: Messaging;
-  /** Opens the conversation a message belongs to. */
-  onOpenConversation: (counterparty: string) => void;
+  /** Opens a thread, by its key. */
+  onOpenThread: (key: string) => void;
   /** Where a new relationship is opened from an invitation. */
   onNewRelationship: () => void;
 };
 
 /**
- * The inbox: every message of every relationship, in one list, newest
- * first — what came through, and what this wallet sent.
+ * The inbox: the credentials this wallet has asked for, one row each —
+ * a request and everything said about it — across every relationship,
+ * newest activity first.
  *
- * **A mailbox, not a chat.** What arrives here is what an entity sent to
- * this holder, and the holder reads it; the wallet does not write back from
- * this screen — what it sent, it sent from the screen that asked. So the
- * list is flat — one row per message, with who it is with and when — and a
- * row leads to the conversation it is part of. Unread is said on the row,
- * and stops being said once the conversation has been opened.
+ * **A mailbox, not a chat.** What arrives here is what an issuer sent
+ * back about a request, and the holder reads it; the wallet does not
+ * write from this screen — what it sent, it sent from the screen that
+ * asked. A row says which credential, from whom and when it last moved,
+ * and leads to the request itself. Unread is said on the row, and stops
+ * being said once the request has been opened.
  *
  * The mailboxes are emptied on a clock while the wallet is open, and on
  * demand from the button at the top: a wallet on a phone is not listening,
@@ -36,7 +38,7 @@ type MessagesScreenProps = {
  */
 export function MessagesScreen({
   messaging,
-  onOpenConversation,
+  onOpenThread,
   onNewRelationship,
 }: MessagesScreenProps) {
   const { t, locale } = useI18n();
@@ -62,10 +64,9 @@ export function MessagesScreen({
     }
   }
 
-  const { relationships, messages } = messaging.book;
+  const { relationships } = messaging.book;
   const byCounterparty = new Map(relationships.map((r) => [r.counterparty, r]));
-  // Newest first: what came last is what somebody came to see.
-  const ordered = [...messages].sort((a, b) => (b.createdTime ?? 0) - (a.createdTime ?? 0));
+  const threads = requestsOf(messaging.book);
 
   return (
     <div className="screen">
@@ -96,7 +97,7 @@ export function MessagesScreen({
       {syncNote ? <p className="card__note">{syncNote}</p> : null}
       {syncError ? <p className="field__error">{syncError}</p> : null}
 
-      {messaging.read && ordered.length === 0 ? (
+      {messaging.read && threads.length === 0 ? (
         <section className="card">
           <div className="empty-state">
             <p className="empty-state__title">{t.messages.inbox.empty}</p>
@@ -104,14 +105,14 @@ export function MessagesScreen({
         </section>
       ) : null}
 
-      {ordered.length > 0 ? (
+      {threads.length > 0 ? (
         <div className="options">
-          {ordered.map((message) => (
-            <InboxRow
-              key={message.id}
-              message={message}
-              relationship={byCounterparty.get(message.counterparty) ?? null}
-              onOpen={() => onOpenConversation(message.counterparty)}
+          {threads.map((thread) => (
+            <ThreadRow
+              key={thread.key}
+              thread={thread}
+              relationship={byCounterparty.get(thread.counterparty) ?? null}
+              onOpen={() => onOpenThread(thread.key)}
             />
           ))}
         </div>
@@ -120,47 +121,45 @@ export function MessagesScreen({
   );
 }
 
-type InboxRowProps = {
-  message: Entry;
-  /** Null for a message whose relationship is no longer in the book. */
+type ThreadRowProps = {
+  thread: Thread;
+  /** Null for a thread whose relationship is no longer in the book. */
   relationship: Relationship | null;
   onOpen: () => void;
 };
 
 /**
- * One message in the inbox: who it came through, what kind it is, and when
- * — and, for one this wallet sent, that it did.
+ * One request in the inbox: the credential it asked for, whom it asked,
+ * and when it last moved.
  *
- * The body is not here. A row is for deciding whether to open the
- * conversation, and what the protocol calls the message is what there is to
- * decide on until this wallet renders the protocols themselves.
+ * The messages are not here. A row is for deciding whether to open the
+ * request, and the credential's name — kept with the request as the
+ * person authorised it — is what there is to decide on.
  */
-function InboxRow({ message, relationship, onOpen }: InboxRowProps) {
+function ThreadRow({ thread, relationship, onOpen }: ThreadRowProps) {
   const { t, locale } = useI18n();
   const when =
-    message.createdTime === null
+    thread.lastTime === null
       ? null
       : new Intl.DateTimeFormat(locale, {
           dateStyle: "medium",
           timeStyle: "short",
-        }).format(new Date(message.createdTime * 1000));
-  const hint = [message.sent ? t.messages.inbox.sent : null, messageKind(message.type), when]
+        }).format(new Date(thread.lastTime * 1000));
+  const hint = [relationship ? relationshipName(relationship) : thread.counterparty, when]
     .filter((part) => part !== null)
     .join(" · ");
 
   return (
     <button
       type="button"
-      className={message.read ? "row" : "row message-row--unread"}
+      className={thread.unread === 0 ? "row" : "row message-row--unread"}
       onClick={onOpen}
     >
       <span className="row__text">
-        <span className="row__label">
-          {relationship ? relationshipName(relationship) : message.counterparty}
-        </span>
+        <span className="row__label">{threadName(thread)}</span>
         <span className="row__hint">{hint}</span>
       </span>
-      {message.read ? null : (
+      {thread.unread === 0 ? null : (
         <span className="message-row__dot" role="img" aria-label={t.messages.inbox.unread} />
       )}
       <ChevronLeftIcon className="row__chevron" />

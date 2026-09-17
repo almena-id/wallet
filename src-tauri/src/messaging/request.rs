@@ -53,6 +53,18 @@ pub struct Request {
     pub fields: Vec<Field>,
 }
 
+/// What the person saw and authorised, kept with the request as sent. The
+/// body that travels carries the answers by key, because the issuer has
+/// the template and knows its own labels; the person does not, and what
+/// they read back later is what they read before pressing the button —
+/// the credential by name and each answer under the label it was asked
+/// with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Summary {
+    pub credential: String,
+    pub fields: Vec<Field>,
+}
+
 impl Request {
     /// What goes to the issuer: the template and the answers by key. The
     /// labels stay here — the issuer has the template, and knows its own.
@@ -66,6 +78,14 @@ impl Request {
             "template": { "slug": self.template.slug, "version": self.template.version },
             "fields": fields,
         })
+    }
+
+    /// What stays with the receipt: the summary the person authorised.
+    pub fn summary(&self) -> Summary {
+        Summary {
+            credential: self.credential.clone(),
+            fields: self.fields.clone(),
+        }
     }
 }
 
@@ -120,6 +140,9 @@ mod tests {
                 "fields": { "given_name": "Ana", "year": "2020" }
             })
         );
+        let summary = request.summary();
+        assert_eq!(summary.credential, "Degree certificate");
+        assert_eq!(summary.fields, request.fields);
     }
 
     #[test]

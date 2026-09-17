@@ -8,6 +8,7 @@ import {
   sendRequest,
   type CredentialRequest,
   type Messaging,
+  type Sent,
 } from "../messaging";
 
 type CredentialRequestScreenProps = {
@@ -18,8 +19,8 @@ type CredentialRequestScreenProps = {
   code: string;
   /** Back to where the code was scanned from, whether or not it was sent. */
   onBack: () => void;
-  /** Where to go once it is sent: the conversation with the issuer. */
-  onSent: (counterparty: string) => void;
+  /** Where to go once it is sent: the thread it is now part of. */
+  onSent: (sent: Sent) => void;
 };
 
 /**
@@ -67,9 +68,9 @@ export function CredentialRequestScreen({
     setSending(true);
     setSendError(null);
     try {
-      const relationship = await sendRequest(code, mediator);
+      const sent = await sendRequest(code, mediator);
       await messaging.refresh();
-      onSent(relationship.counterparty);
+      onSent(sent);
     } catch (failure) {
       setSendError(t.messages.errors[errorCode(failure)]);
       setSending(false);

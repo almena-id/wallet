@@ -32,6 +32,7 @@ use tauri::{Manager, Runtime};
 use zeroize::Zeroizing;
 
 use super::invite::Invite;
+use super::request::Summary;
 use super::MessagingError;
 use crate::identity::keys;
 
@@ -88,6 +89,20 @@ pub struct Entry {
     /// written before the wallet sent anything, which reads as received.
     #[serde(default)]
     pub sent: bool,
+    /// The thread the message names, and the thread above it — for a
+    /// credential request, the run the marketplace's invitation began. The
+    /// inbox reads the book by these: a request and everything said about
+    /// it is one thing to the person, however many messages it took.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_thread: Option<String>,
+    /// For a credential request this wallet sent, what the person saw and
+    /// authorised: the credential by name and the answers under their
+    /// labels, which the body does not carry. Absent from anything else,
+    /// and from a request written before the wallet kept it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<Summary>,
 }
 
 /// Everything in the file.

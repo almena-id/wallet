@@ -24,7 +24,10 @@
 //! credential — [`request`]. The marketplace's invitation is answered with
 //! `accept` as it is opened, which is what moves the page that showed it on
 //! to the form; and the second code the page then shows, read here, is
-//! sent as `request`, which is the form in the issuer's mailbox.
+//! sent as `request`, which is the form in the issuer's mailbox. Only the
+//! `request` is kept: it is what was asked, with what, and the receipt the
+//! spec has the wallet write. The `accept` says nothing but "go on", and a
+//! signal to a page is not a message of the conversation.
 
 mod book;
 mod did;
@@ -196,7 +199,8 @@ pub fn messaging_book<R: Runtime>(
 /// pressing the button is the spec's "authorises the start of the request",
 /// and `accept` — from the pairwise, naming the invitation as its parent
 /// thread — is what tells the page that showed the code to go on to the
-/// form. Kept as sent, so the conversation shows that it was.
+/// form. Sent and not kept: nothing has been asked yet, and the thread
+/// begins with the request, once the form comes back as the second code.
 #[tauri::command]
 pub async fn messaging_open<R: Runtime>(
     app: tauri::AppHandle<R>,
@@ -231,16 +235,9 @@ pub async fn messaging_open<R: Runtime>(
         .to(read.counterparty.clone())
         .created_time(now())
         .finalize();
-        send_and_keep(
-            &app,
-            &seed,
-            &resolver,
-            &mut book,
-            &pairwise,
-            &read.counterparty,
-            message,
-        )
-        .await?;
+        mediator::send(&resolver, &pairwise, &read.counterparty, message)
+            .await
+            .map_err(|_| MessagingError::CounterpartyUnreachable)?;
     }
     Ok(relationship)
 }
@@ -282,9 +279,10 @@ async fn ensure<R: Runtime>(
     Ok((relationship, pairwise))
 }
 
-/// Sends `message` to `counterparty` as `pairwise`, and keeps it as sent.
-/// Kept only once the counterparty's mediator has taken it: a message that
-/// never left is not something that happened.
+/// Sends `message` to `counterparty` as `pairwise`, and keeps it as sent,
+/// with `summary` — what the person authorised — beside it. Kept only once
+/// the counterparty's mediator has taken it: a message that never left is
+/// not something that happened.
 async fn send_and_keep<R: Runtime>(
     app: &tauri::AppHandle<R>,
     seed: &[u8; 64],
@@ -293,6 +291,7 @@ async fn send_and_keep<R: Runtime>(
     pairwise: &pairwise::Pairwise,
     counterparty: &str,
     message: Message,
+    summary: Option<request::Summary>,
 ) -> Result<(), MessagingError> {
     mediator::send(resolver, pairwise, counterparty, message.clone())
         .await
@@ -306,8 +305,20 @@ async fn send_and_keep<R: Runtime>(
         created_time: message.created_time,
         read: true,
         sent: true,
+        thread: message.thid,
+        parent_thread: message.pthid,
+        summary,
     });
     book::write(app, seed, book)
+}
+
+/// What sending came to: whom it went to, and the thread it is now part of,
+/// which is where the screen goes next.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Sent {
+    pub counterparty: String,
+    pub thread: String,
 }
 
 /// Seconds since the epoch, for the time a message says it was written.
@@ -335,7 +346,7 @@ pub async fn messaging_send_request<R: Runtime>(
     held: State<'_, Held>,
     input: String,
     mediator: String,
-) -> Result<Relationship, MessagingError> {
+) -> Result<Sent, MessagingError> {
     let seed = held.seed().ok_or(MessagingError::Locked)?;
     let read = request::read(&input)?;
     let resolver = did::Resolver::new();
@@ -367,9 +378,13 @@ pub async fn messaging_send_request<R: Runtime>(
         &pairwise,
         &read.issuer,
         message,
+        Some(read.summary()),
     )
     .await?;
-    Ok(relationship)
+    Ok(Sent {
+        counterparty: relationship.counterparty,
+        thread: read.acquisition,
+    })
 }
 
 /// Empties every mailbox, one relationship at a time, and keeps what came.
@@ -442,6 +457,9 @@ pub async fn messaging_collect<R: Runtime>(
                 created_time: message.created_time,
                 read: false,
                 sent: false,
+                thread: message.thid,
+                parent_thread: message.pthid,
+                summary: None,
             });
             if kept {
                 received += 1;
@@ -555,6 +573,9 @@ async fn answered<R: Runtime>(
             created_time: message.created_time,
             read: false,
             sent: false,
+            thread: message.thid,
+            parent_thread: message.pthid,
+            summary: None,
         }) {
             received += 1;
         }

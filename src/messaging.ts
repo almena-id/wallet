@@ -37,7 +37,114 @@ export type Entry = {
   read: boolean;
   /** Whether this wallet is the one that sent it. */
   sent: boolean;
+  /** The thread the message names, and the one above it — the run, for a request. */
+  thread: string | null;
+  parentThread: string | null;
+  /**
+   * For a credential request this wallet sent, what the person saw and
+   * authorised: the credential by name and the answers under their labels.
+   * The body carries the answers by key only. Null for anything else, and
+   * for a request written before the wallet kept this.
+   */
+  summary: RequestSummary | null;
 };
+
+export type RequestSummary = {
+  credential: string;
+  fields: { key: string; label: string; value: string }[];
+};
+
+/**
+ * One thing said between this wallet and a counterparty, however many
+ * messages it took: a credential request is the `request` this wallet
+ * sent — the form, with what the person filled in — and whatever the
+ * issuer answers. The `accept` that moved the page on to the form is not
+ * among them: it was a signal, not something said, and it is not kept.
+ *
+ * Read off the book rather than written to it: a message belongs to the
+ * run it names, else the thread it names, else itself, and the protocol
+ * is the first message's type without its last word.
+ */
+export type Thread = {
+  key: string;
+  counterparty: string;
+  protocol: string;
+  /** Oldest first. */
+  messages: Entry[];
+  /** The newest message's time, for ordering the inbox. */
+  lastTime: number | null;
+  unread: number;
+  /**
+   * The request this wallet sent, for a credential request: what the
+   * thread is about. Null for a thread of another protocol, or one whose
+   * request this wallet does not hold.
+   */
+  request: Entry | null;
+};
+
+/** The platform's protocol for asking an issuer for a credential, and the
+ * type the second code declares itself with and the request is sent as. */
+const CREDENTIAL_REQUEST = "https://almena.id/credential-request/1.0";
+const REQUEST_TYPE = `${CREDENTIAL_REQUEST}/request`;
+
+/** The protocol a message type belongs to: the type without its last word. */
+export function protocolOf(type: string): string {
+  const cut = type.lastIndexOf("/");
+  return cut > 0 ? type.slice(0, cut) : type;
+}
+
+/**
+ * The name of a protocol, out of its URI: `…/credential-request/1.0` is
+ * *credential-request*. The version at the end is not the name.
+ */
+export function protocolKind(protocol: string): string {
+  const parts = protocol.split("/").filter((part) => part.length > 0);
+  if (parts.length > 1 && /^\d+(\.\d+)*$/.test(parts[parts.length - 1])) {
+    parts.pop();
+  }
+  return parts[parts.length - 1] ?? protocol;
+}
+
+/** The book's messages, gathered into threads, newest activity first. */
+export function threadsOf(book: Book): Thread[] {
+  const byKey = new Map<string, Entry[]>();
+  for (const entry of book.messages) {
+    const key = entry.parentThread ?? entry.thread ?? entry.id;
+    byKey.set(key, [...(byKey.get(key) ?? []), entry]);
+  }
+  const threads: Thread[] = [];
+  for (const [key, entries] of byKey) {
+    const messages = [...entries].sort(
+      (a, b) => (a.createdTime ?? 0) - (b.createdTime ?? 0) || a.id.localeCompare(b.id),
+    );
+    const last = messages[messages.length - 1];
+    threads.push({
+      key,
+      counterparty: messages[0].counterparty,
+      protocol: protocolOf(messages[0].type),
+      messages,
+      lastTime: last.createdTime,
+      unread: messages.filter((m) => !m.read).length,
+      request: messages.find((m) => m.sent && m.type === REQUEST_TYPE) ?? null,
+    });
+  }
+  return threads.sort((a, b) => (b.lastTime ?? 0) - (a.lastTime ?? 0));
+}
+
+/**
+ * The credentials this wallet has asked for, newest activity first: the
+ * threads of the platform's credential request protocol. What the inbox
+ * lists — a thread of any other protocol is not something the person
+ * asked for, and is not put in front of them.
+ */
+export function requestsOf(book: Book): Thread[] {
+  return threadsOf(book).filter((thread) => thread.protocol === CREDENTIAL_REQUEST);
+}
+
+/** What a thread is called on screen: the credential it asked for, when known. */
+export function threadName(thread: Thread): string {
+  return thread.request?.summary?.credential ?? protocolKind(thread.protocol);
+}
 
 export type Book = {
   relationships: Relationship[];
@@ -70,8 +177,22 @@ export type CredentialRequest = {
   fields: { key: string; label: string; value: string }[];
 };
 
-/** The type the second code declares itself with. */
-const REQUEST_TYPE = "https://almena.id/credential-request/1.0/request";
+/**
+ * The goal code the DIDComm community uses for "I will issue you a
+ * credential": what the marketplace's invitation carries. The Rust side
+ * reads it the same way, in `Invitation::asks_for_credential`.
+ */
+const ISSUE_GOAL = "issue-vc";
+
+/**
+ * Whether opening this invitation starts a request for a credential — the
+ * marketplace's first code — rather than just a relationship. The two are
+ * shown differently: a request is put to the person as the request it is,
+ * with the issuer named, and never as the invitation that carries it.
+ */
+export function asksForCredential(invitation: Invitation): boolean {
+  return invitation.id !== null && invitation.goalCode === ISSUE_GOAL;
+}
 
 const CODES = [
   "messaging_locked",
@@ -129,13 +250,19 @@ export function readRequest(input: string): Promise<CredentialRequest> {
   return invoke<CredentialRequest>("messaging_read_request", { input });
 }
 
+/** What sending came to: whom it went to, and the thread it is now part of. */
+export type Sent = {
+  counterparty: string;
+  thread: string;
+};
+
 /**
  * Sends the request the second code describes to the issuer it names, and
  * keeps it as sent. The relationship is opened first if this wallet has
  * none, at `mediator`.
  */
-export function sendRequest(input: string, mediator: string): Promise<Relationship> {
-  return invoke<Relationship>("messaging_send_request", { input, mediator });
+export function sendRequest(input: string, mediator: string): Promise<Sent> {
+  return invoke<Sent>("messaging_send_request", { input, mediator });
 }
 
 export type Shown = {
@@ -150,16 +277,6 @@ export type Shown = {
  */
 export function showInvitation(mediator: string): Promise<Shown> {
   return invoke<Shown>("messaging_invite", { mediator });
-}
-
-/**
- * The last part of a protocol message type, which is the word the protocol
- * uses for it: `…/messagepickup/3.0/delivery` is *delivery*. Shown as it is,
- * because it is an identifier and not a sentence.
- */
-export function messageKind(type: string): string {
-  const parts = type.split("/").filter((part) => part.length > 0);
-  return parts[parts.length - 1] ?? type;
 }
 
 /** What a relationship is called on screen: its label, or who it is with. */

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Format,
   cancel,
@@ -11,7 +11,12 @@ import {
 import { ChevronLeftIcon } from "../components/icons";
 import { ScanFramingGuide } from "../components/ScanFramingGuide";
 import { useTranslations } from "../i18n";
-import { looksLikeInvitation, looksLikeRequest } from "../messaging";
+import {
+  asksForCredential,
+  looksLikeInvitation,
+  looksLikeRequest,
+  readInvitation,
+} from "../messaging";
 
 type ScanState =
   | { status: "starting" }
@@ -30,14 +35,19 @@ type ScanScreenProps = {
    */
   onPreviewChange: (previewing: boolean) => void;
   /**
-   * Hands a code that reads as an invitation to the messages screen. Offered
-   * as a button and never done on its own: the person decides, there, after
-   * seeing who it is from.
+   * Hands a code that reads as an invitation — but not as the marketplace's —
+   * to the screen where a relationship is opened. Nothing is opened here: the
+   * person decides, there, after seeing who it is from.
    */
   onOpenRelationship: (content: string) => void;
   /**
+   * Hands the first code the marketplace shows — the start of a request for
+   * a credential — to the screen that puts the request to the person.
+   */
+  onRequestStart: (content: string) => void;
+  /**
    * Hands the second code the marketplace shows — the filled form — to the
-   * screen that shows what would be sent. A button too, for the same reason.
+   * screen that shows what would be sent. Nothing is sent here either.
    */
   onCredentialRequest: (content: string) => void;
 };
@@ -47,24 +57,31 @@ type ScanScreenProps = {
  *
  * Only reached where the scanner exists: the tab that opens this screen is
  * offered on a phone or a tablet and nowhere else, because the answer comes
- * from the same switch on the Rust side that registered the plugin. What a
- * code says is shown once it is read, and nothing is done with it: nothing
+ * from the same switch on the Rust side that registered the plugin. Nothing
  * that arrives from outside gets to tell the wallet what to do with the
- * identity it holds. A code that reads as an invitation gets one more button,
- * which carries it to the screen where somebody can open it; one that reads
- * as the marketplace's second code — a filled form — gets the button that
- * carries it to the screen where somebody can send it.
+ * identity it holds: a code the wallet knows is carried, as read, to the one
+ * screen that puts it to the person — the marketplace's first code to the
+ * start of a request, its second to the request itself, any other invitation
+ * to where a relationship is opened — and nothing happens until somebody
+ * presses the button there. What that screen shows is what the code means,
+ * not what it says; the code itself is shown here only when it reads as
+ * nothing the wallet knows, because then that is all there is to show.
  */
 export function ScanScreen({
   onBack,
   onPreviewChange,
   onOpenRelationship,
+  onRequestStart,
   onCredentialRequest,
 }: ScanScreenProps) {
   const t = useTranslations();
   const [state, setState] = useState<ScanState>({ status: "starting" });
   // Bumped to start a fresh scan, which re-runs the effect below.
   const [attempt, setAttempt] = useState(0);
+  // Read through a ref so that a parent re-rendering with fresh callbacks
+  // does not restart the camera: the effect below is keyed on `attempt` alone.
+  const handOff = useRef({ onOpenRelationship, onRequestStart, onCredentialRequest });
+  handOff.current = { onOpenRelationship, onRequestStart, onCredentialRequest };
 
   useEffect(() => {
     let active = true;
@@ -92,9 +109,31 @@ export function ScanScreen({
         formats: [Format.QRCode],
         cameraDirection: "back",
       });
-      if (active) {
-        setState({ status: "result", content: scanned.content });
+      if (!active) {
+        return;
       }
+      const content = scanned.content;
+      if (looksLikeRequest(content)) {
+        handOff.current.onCredentialRequest(content);
+        return;
+      }
+      if (looksLikeInvitation(content)) {
+        // Read on the Rust side, which is the only reader of invitations; one
+        // it cannot read is shown as it is, like any other code.
+        const read = await readInvitation(content).catch(() => null);
+        if (!active) {
+          return;
+        }
+        if (read !== null) {
+          if (asksForCredential(read)) {
+            handOff.current.onRequestStart(content);
+          } else {
+            handOff.current.onOpenRelationship(content);
+          }
+          return;
+        }
+      }
+      setState({ status: "result", content });
     })().catch(() => {
       if (active) {
         setState({ status: "error" });
@@ -189,31 +228,9 @@ export function ScanScreen({
           <h2 className="card__title">{t.scan.result.title}</h2>
           <p className="identifier">{state.content}</p>
           <div className="button-row">
-            {looksLikeInvitation(state.content) ? (
-              <button
-                type="button"
-                className="button button--primary"
-                onClick={() => onOpenRelationship(state.content)}
-              >
-                {t.scan.result.open}
-              </button>
-            ) : null}
-            {looksLikeRequest(state.content) ? (
-              <button
-                type="button"
-                className="button button--primary"
-                onClick={() => onCredentialRequest(state.content)}
-              >
-                {t.scan.result.request}
-              </button>
-            ) : null}
             <button
               type="button"
-              className={
-                looksLikeInvitation(state.content) || looksLikeRequest(state.content)
-                  ? "button"
-                  : "button button--primary"
-              }
+              className="button button--primary"
               onClick={() => setAttempt((n) => n + 1)}
             >
               {t.scan.result.again}

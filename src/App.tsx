@@ -9,7 +9,7 @@ import { useAutoLock, useIdle } from "./autolock";
 import { useBackdrop } from "./backdrop";
 import { useBackInSight } from "./lock";
 import { useMediator } from "./mediator";
-import { useMessaging, type Messaging } from "./messaging";
+import { threadsOf, useMessaging, type Messaging } from "./messaging";
 import { usePlatform } from "./platform";
 import { useTheme } from "./theme";
 import { useTray } from "./tray";
@@ -27,11 +27,12 @@ import { PinChange } from "./screens/PinChange";
 import { PinConfirm } from "./screens/PinConfirm";
 import { PinScreen } from "./screens/PinScreen";
 import { LogoutScreen } from "./screens/LogoutScreen";
-import { ConversationScreen } from "./screens/ConversationScreen";
 import { CredentialRequestScreen } from "./screens/CredentialRequestScreen";
 import { InvitationScreen } from "./screens/InvitationScreen";
+import { RequestStartScreen } from "./screens/RequestStartScreen";
 import { MessagesScreen } from "./screens/MessagesScreen";
 import { ScanScreen } from "./screens/ScanScreen";
+import { ThreadScreen } from "./screens/ThreadScreen";
 import { Onboarding } from "./screens/onboarding/Onboarding";
 import { SettingsScreen } from "./screens/settings/SettingsScreen";
 
@@ -40,17 +41,19 @@ import { SettingsScreen } from "./screens/settings/SettingsScreen";
  * means it. `invite` is where the home screen's own card leads, to show the
  * invitation as a code. `pin` and `device` are the two things Security sends
  * somebody to. All of them are left through their own back button.
- * `messages` is a tab, the inbox; `conversation` is where one of its rows
+ * `messages` is a tab, the inbox; `thread` is where one of its rows
  * leads, and `invitation` is where a new relationship is opened — from the
  * inbox's own button, or from the scanner with a code that reads as one.
- * `request` is where the scanner leads with the marketplace's second code:
- * the filled form, shown before it is sent.
+ * `requestStart` and `request` are where the scanner leads with the
+ * marketplace's two codes: the first puts the request to the person before
+ * it is started, the second shows the filled form before it is sent.
  */
 type Route =
   | "home"
   | "messages"
-  | "conversation"
+  | "thread"
   | "invitation"
+  | "requestStart"
   | "request"
   | "scan"
   | "settings"
@@ -83,11 +86,14 @@ export default function App() {
   // Something the scanner read that looks like an invitation, carried to the
   // invitation screen for the person to open — or not — there.
   const [scannedInvitation, setScannedInvitation] = useState<string | null>(null);
+  // The marketplace's first code the scanner read, carried to the screen that
+  // puts the request to the person — and starts it only if they say so.
+  const [scannedStart, setScannedStart] = useState<string | null>(null);
   // The second code the scanner read, carried to the screen that shows what
   // would be sent — and sends it only if the person says so.
   const [scannedRequest, setScannedRequest] = useState<string | null>(null);
-  // The relationship whose conversation is open, by counterparty.
-  const [conversationWith, setConversationWith] = useState<string | null>(null);
+  // The thread that is open, by key.
+  const [openThread, setOpenThread] = useState<string | null>(null);
   // The window behind the page wears the same colour the page does, so turning
   // the device does not flash the native white through — see `backdrop`. Read
   // after `useTheme` above, because it reads the palette that hook just applied.
@@ -326,19 +332,15 @@ export default function App() {
         {route === "messages" ? (
           <MessagesScreen
             messaging={messaging}
-            onOpenConversation={(counterparty) => {
-              setConversationWith(counterparty);
-              setRoute("conversation");
+            onOpenThread={(key) => {
+              setOpenThread(key);
+              setRoute("thread");
             }}
             onNewRelationship={() => setRoute("invitation")}
           />
         ) : null}
-        {route === "conversation" ? (
-          <Conversation
-            messaging={messaging}
-            counterparty={conversationWith}
-            onBack={backToInbox}
-          />
+        {route === "thread" ? (
+          <OpenThread messaging={messaging} threadKey={openThread} onBack={backToInbox} />
         ) : null}
         {route === "invitation" ? (
           <InvitationScreen
@@ -346,6 +348,23 @@ export default function App() {
             mediator={mediator}
             initialInvitation={scannedInvitation}
             onBack={backToInbox}
+          />
+        ) : null}
+        {route === "requestStart" && scannedStart !== null ? (
+          <RequestStartScreen
+            messaging={messaging}
+            mediator={mediator}
+            code={scannedStart}
+            onCancel={() => {
+              setScannedStart(null);
+              goHome();
+            }}
+            onContinued={() => {
+              // The page that showed the code is on to the form now, and the
+              // form comes back as a second code: the camera is the next step.
+              setScannedStart(null);
+              setRoute("scan");
+            }}
           />
         ) : null}
         {route === "request" && scannedRequest !== null ? (
@@ -357,10 +376,10 @@ export default function App() {
               setScannedRequest(null);
               setRoute("scan");
             }}
-            onSent={(counterparty) => {
+            onSent={(sent) => {
               setScannedRequest(null);
-              setConversationWith(counterparty);
-              setRoute("conversation");
+              setOpenThread(sent.thread);
+              setRoute("thread");
             }}
           />
         ) : null}
@@ -371,6 +390,10 @@ export default function App() {
             onOpenRelationship={(content) => {
               setScannedInvitation(content);
               setRoute("invitation");
+            }}
+            onRequestStart={(content) => {
+              setScannedStart(content);
+              setRoute("requestStart");
             }}
             onCredentialRequest={(content) => {
               setScannedRequest(content);
@@ -432,6 +455,7 @@ export default function App() {
           onSelect={(next) => {
             setSettingsSection(null);
             setScannedInvitation(null);
+            setScannedStart(null);
             setScannedRequest(null);
             setRoute(next);
           }}
@@ -446,9 +470,10 @@ function tabOf(route: Route): Route {
   switch (route) {
     case "invite":
       return "home";
-    case "conversation":
+    case "thread":
     case "invitation":
       return "messages";
+    case "requestStart":
     case "request":
       return "scan";
     default:
@@ -456,27 +481,38 @@ function tabOf(route: Route): Route {
   }
 }
 
-type ConversationProps = {
+type OpenThreadProps = {
   messaging: Messaging;
-  counterparty: string | null;
+  threadKey: string | null;
   onBack: () => void;
 };
 
 /**
- * The conversation route, resolved against the book: the relationship is
- * looked up on every render, so a book read again while the screen is open
- * — after a sync — is what the screen shows. One that is not in the book is
- * nothing to show, and the inbox is where somebody goes instead.
+ * The thread route, resolved against the book: the thread and its
+ * relationship are looked up on every render, so a book read again while
+ * the screen is open — after a collection — is what the screen shows. One
+ * that is not in the book is nothing to show, and the inbox is where
+ * somebody goes instead.
  */
-function Conversation({ messaging, counterparty, onBack }: ConversationProps) {
-  const relationship = messaging.book.relationships.find((r) => r.counterparty === counterparty);
+function OpenThread({ messaging, threadKey, onBack }: OpenThreadProps) {
+  const thread = threadsOf(messaging.book).find((t) => t.key === threadKey);
+  const relationship = messaging.book.relationships.find(
+    (r) => r.counterparty === thread?.counterparty,
+  );
   useEffect(() => {
-    if (messaging.read && !relationship) {
+    if (messaging.read && (!thread || !relationship)) {
       onBack();
     }
-  }, [messaging.read, relationship, onBack]);
-  if (!relationship) {
+  }, [messaging.read, thread, relationship, onBack]);
+  if (!thread || !relationship) {
     return null;
   }
-  return <ConversationScreen messaging={messaging} relationship={relationship} onBack={onBack} />;
+  return (
+    <ThreadScreen
+      messaging={messaging}
+      thread={thread}
+      relationship={relationship}
+      onBack={onBack}
+    />
+  );
 }

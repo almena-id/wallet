@@ -110,9 +110,7 @@
     },
     "result": {
       "title": "Código leído",
-      "again": "Escanear otro código",
-      "open": "Abrir relación",
-      "request": "Revisar solicitud"
+      "again": "Escanear otro código"
     }
   },
   "messages": {
@@ -131,12 +129,14 @@
       }
     },
     "inbox": {
-      "empty": "Sin mensajes",
-      "unread": "Sin leer",
-      "sent": "Enviado"
+      "empty": "Sin solicitudes",
+      "unread": "Sin leer"
     },
-    "conversation": {
-      "pairwise": "Tu identificador en esta relación"
+    "thread": {
+      "to": "Solicitada a",
+      "sentAt": "Enviada",
+      "request": "Solicitud",
+      "reply": "Respuesta"
     },
     "open": {
       "title": "Nueva relación",
@@ -161,6 +161,9 @@
     },
     "request": {
       "title": "Solicitud de credencial",
+      "issuer": "Emisor",
+      "continue": "Continuar",
+      "continuing": "Continuando",
       "version": "Plantilla versión {version}",
       "to": "Para",
       "send": "Enviar",

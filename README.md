@@ -53,6 +53,12 @@ mediator. Both messages are kept in the book as sent, which is the receipt
 the spec has the wallet write for itself; nothing travels back to say so.
 The protocol is the platform's own, `https://almena.id/credential-request/1.0`.
 
+The inbox reads the book by **thread**: a message belongs to the run it
+names (`pthid`), else the thread it names (`thid`), else itself, so a request
+and everything said about it — the `accept`, the `request`, the issuer's
+answer when it comes — is one row, with where it stands: started, awaiting
+a reply, or replied. Opening the row is the thread, oldest first.
+
 The other way round — somebody scanning the wallet — goes through the
 **invitation** Home leads to. The code carries neither the identity nor a
 pairwise: there is no counterparty yet to derive one from. It carries an
