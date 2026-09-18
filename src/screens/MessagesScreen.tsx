@@ -1,9 +1,6 @@
-import { useState } from "react";
-
-import { ChevronLeftIcon, PlusIcon, SyncIcon } from "../components/icons";
-import { plural, useI18n } from "../i18n";
+import { ChevronLeftIcon, PlusIcon } from "../components/icons";
+import { useI18n } from "../i18n";
 import {
-  errorCode,
   relationshipName,
   requestsOf,
   threadName,
@@ -18,6 +15,10 @@ type MessagesScreenProps = {
   onOpenThread: (key: string) => void;
   /** Where a new relationship is opened from an invitation. */
   onNewRelationship: () => void;
+  /** What the last collection asked for by hand brought, said under the title. */
+  syncNote: string | null;
+  /** What stopped it, if anything did. */
+  syncError: string | null;
 };
 
 /**
@@ -33,36 +34,18 @@ type MessagesScreenProps = {
  * being said once the request has been opened.
  *
  * The mailboxes are emptied on a clock while the wallet is open, and on
- * demand from the button at the top: a wallet on a phone is not listening,
- * it asks, and the note under the title says what the asking brought.
+ * demand from the button the shell pins to the corner of every screen: a
+ * wallet on a phone is not listening, it asks, and the note under the title
+ * here says what the asking brought.
  */
 export function MessagesScreen({
   messaging,
   onOpenThread,
   onNewRelationship,
+  syncNote,
+  syncError,
 }: MessagesScreenProps) {
-  const { t, locale } = useI18n();
-  const [syncNote, setSyncNote] = useState<string | null>(null);
-  const [syncError, setSyncError] = useState<string | null>(null);
-
-  async function sync() {
-    setSyncNote(null);
-    setSyncError(null);
-    try {
-      const collected = await messaging.collect();
-      const parts = [
-        collected.received === 0
-          ? t.messages.sync.none
-          : plural(t.messages.sync.received, collected.received, locale),
-      ];
-      if (collected.unreachable.length > 0) {
-        parts.push(plural(t.messages.sync.unreachable, collected.unreachable.length, locale));
-      }
-      setSyncNote(parts.join(" · "));
-    } catch (failure) {
-      setSyncError(t.messages.errors[errorCode(failure)]);
-    }
-  }
+  const { t } = useI18n();
 
   const { relationships } = messaging.book;
   const byCounterparty = new Map(relationships.map((r) => [r.counterparty, r]));
@@ -74,16 +57,6 @@ export function MessagesScreen({
         <h1 className="screen__title screen__title--compact screen__title--grow">
           {t.messages.title}
         </h1>
-        <button
-          type="button"
-          className="icon-button"
-          onClick={() => void sync()}
-          disabled={messaging.collecting || relationships.length === 0}
-          aria-label={messaging.collecting ? t.messages.sync.syncing : t.messages.sync.action}
-          aria-busy={messaging.collecting}
-        >
-          <SyncIcon className={messaging.collecting ? "icon-button__spin" : undefined} />
-        </button>
         <button
           type="button"
           className="icon-button"

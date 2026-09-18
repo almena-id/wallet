@@ -152,7 +152,8 @@ tasks:
         # what everybody runs, they need no Apple account, and a config that
         # named an identity would fail on every machine that does not have it.
         # Paths inside are resolved against src-tauri, which is where the config
-        # they are merged into lives.
+        # they are merged into lives; the path to the file itself is resolved
+        # from here, which is why the two are spelt differently.
         cat > "$signing/tauri.signed.conf.json" <<CONF
         {
           "bundle": {
@@ -166,7 +167,7 @@ tasks:
           }
         }
         CONF
-      - '{{.TAURI}} build --config .signing/tauri.signed.conf.json'
+      - '{{.TAURI}} build --config src-tauri/.signing/tauri.signed.conf.json'
 
   build:web:
     desc: Build only the web assets

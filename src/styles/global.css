@@ -816,6 +816,37 @@ body {
   white-space: nowrap;
 }
 
+/* ------------------------------------------------------- collection (shell) */
+
+/* The button that empties the mailboxes is pinned to the top corner of the
+   shell the way the menu is pinned to its foot: one place, on every screen,
+   over whatever is scrolling under it. It sits at the same inset the view pads
+   its content with, so it lands on the header row of the screen below and
+   reads as the last button of that row. */
+.app__sync {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 24px);
+  right: calc(env(safe-area-inset-right) + 18px);
+  z-index: 20;
+}
+
+/* Follows the view's own padding on a wide, tall window. */
+@media (min-width: 900px) and (min-height: 800px) {
+  .app__sync {
+    top: calc(env(safe-area-inset-top) + 40px);
+  }
+}
+
+/* A screen is at most 640px wide and centred, so on a wide window the corner
+   is clear of it. Narrower than that, the header's own last button — the
+   inbox's plus, the invitation's redraw — would sit under the corner, and a
+   long title would run under it; the row stops short of the corner instead. */
+@media (max-width: 775px) {
+  .app--sync .screen__header {
+    padding-right: 50px;
+  }
+}
+
 /* ----------------------------------------------------------- preferences */
 
 @media (prefers-reduced-transparency: reduce) {
@@ -1019,18 +1050,20 @@ body {
    */
   --pin-chrome: 400px;
 
-  /* A key is the smaller of what the width allows — the pad is 320px across,
-     which is what a thumb has always found — and what the height has left once
-     everything else on the screen has been laid out. A phone is taller than it
-     is wide, so width is what limits the pad there and the keys keep the size
-     they have always been. A desktop window is wider than it is tall, so the
-     height limits it instead: without that second term the pad kept its phone
-     size in a window half a phone's height, and pushed its own footer off the
-     bottom of it. */
+  /* How wide the pad may grow: 320px is what a thumb has always found. */
+  --pin-width: 320px;
+
+  /* A key is the smaller of what the width allows and what the height has
+     left once everything else on the screen has been laid out. A phone is
+     taller than it is wide, so width is what limits the pad there and the keys
+     keep the size they have always been. A desktop window is wider than it is
+     tall, so the height limits it instead: without that second term the pad
+     kept its phone size in a window half a phone's height, and pushed its own
+     footer off the bottom of it. */
   --pin-key: max(
     44px,
     min(
-      calc((320px - var(--pin-gap) * 2) / 3),
+      calc((var(--pin-width) - var(--pin-gap) * 2) / 3),
       calc((100dvh - var(--pin-chrome) - var(--pin-gap) * 3) / 4)
     )
   );
@@ -1171,6 +1204,18 @@ body {
 @media (min-width: 720px) and (pointer: fine) {
   .screen--pin {
     justify-content: center;
+
+    /* A pad sized for a thumb reads as small under a mouse, so it may grow a
+       little past what a phone allows. Not much: it is still a keypad, and one
+       stretched across a desktop window stops looking like one. */
+    --pin-width: 360px;
+
+    /* The worst case on a phone is a subtitle folded onto two lines and a
+       footer at its longest; at this width the subtitle never folds, and the
+       rest was measured at 325px with the longest footer under it. Reserving
+       the phone's 400px here kept the keys at 72px in the window the wallet
+       opens with, with a band of nothing above and below the group. */
+    --pin-chrome: 340px;
   }
 
   .pin__keys {

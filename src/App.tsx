@@ -2,14 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 
 import { LiquidTabBar, type TabDefinition } from "./components/LiquidTabBar";
 import { BrandSpinner } from "./components/BrandSpinner";
-import { HomeIcon, MessagesIcon, QrIcon, SettingsIcon } from "./components/icons";
+import { HomeIcon, MessagesIcon, QrIcon, SettingsIcon, SyncIcon } from "./components/icons";
 import { plural, useI18n } from "./i18n";
 import { useAccent } from "./appearance";
 import { useAutoLock, useIdle } from "./autolock";
 import { useBackdrop } from "./backdrop";
 import { useBackInSight } from "./lock";
 import { useMediator } from "./mediator";
-import { threadsOf, useMessaging, type Messaging } from "./messaging";
+import { errorCode, threadsOf, useMessaging, type Messaging } from "./messaging";
 import { usePlatform } from "./platform";
 import { useTheme } from "./theme";
 import { useTray } from "./tray";
@@ -94,6 +94,10 @@ export default function App() {
   const [scannedRequest, setScannedRequest] = useState<string | null>(null);
   // The thread that is open, by key.
   const [openThread, setOpenThread] = useState<string | null>(null);
+  // What the last collection asked for by hand brought, and what stopped it.
+  // Said in the inbox, which is where what arrived is read.
+  const [syncNote, setSyncNote] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   // The window behind the page wears the same colour the page does, so turning
   // the device does not flash the native white through — see `backdrop`. Read
   // after `useTheme` above, because it reads the palette that hook just applied.
@@ -162,6 +166,31 @@ export default function App() {
     },
     [t, vault],
   );
+
+  // **The mailboxes are emptied from one place, whatever screen is open.** A
+  // wallet on a phone is not listening, it asks; the clock asks while the
+  // wallet is open, and this is the person asking. The button that does it is
+  // pinned to the shell rather than to the inbox, because what it brings —
+  // an answer about a request — matters on every screen, not only on the one
+  // that lists it.
+  const sync = useCallback(async () => {
+    setSyncNote(null);
+    setSyncError(null);
+    try {
+      const collected = await messaging.collect();
+      const parts = [
+        collected.received === 0
+          ? t.messages.sync.none
+          : plural(t.messages.sync.received, collected.received, locale),
+      ];
+      if (collected.unreachable.length > 0) {
+        parts.push(plural(t.messages.sync.unreachable, collected.unreachable.length, locale));
+      }
+      setSyncNote(parts.join(" · "));
+    } catch (failure) {
+      setSyncError(t.messages.errors[errorCode(failure)]);
+    }
+  }, [messaging, t, locale]);
 
   const goHome = useCallback(() => setRoute("home"), []);
   const backToInbox = useCallback(() => {
@@ -321,8 +350,14 @@ export default function App() {
   // keypad reaching the bottom of the screen at all.
   const barless = route === "logout" || route === "pin" || route === "device";
 
+  // The collection button keeps the menu's company: not over a camera, and not
+  // over a keypad or a question, where a stray control is one somebody taps
+  // past by accident. The scanner hides it whether or not its preview is live,
+  // so nothing sits in the corner of what the camera frames.
+  const syncShown = route !== "scan" && !cameraPreview && !barless;
+
   return (
-    <div className={cameraPreview ? "app app--camera" : "app"}>
+    <div className={[cameraPreview ? "app app--camera" : "app", syncShown ? "app--sync" : ""].join(" ").trim()}>
       <main
         className={barless && !cameraPreview ? "app__view app__view--plain" : "app__view"}
         key={route}
@@ -332,6 +367,8 @@ export default function App() {
         {route === "messages" ? (
           <MessagesScreen
             messaging={messaging}
+            syncNote={syncNote}
+            syncError={syncError}
             onOpenThread={(key) => {
               setOpenThread(key);
               setRoute("thread");
@@ -445,6 +482,19 @@ export default function App() {
           <LogoutScreen onBack={backToSecurity} onConfirmed={() => void signOut()} />
         ) : null}
       </main>
+
+      {syncShown ? (
+        <button
+          type="button"
+          className="icon-button app__sync"
+          onClick={() => void sync()}
+          disabled={messaging.collecting || messaging.book.relationships.length === 0}
+          aria-label={messaging.collecting ? t.messages.sync.syncing : t.messages.sync.action}
+          aria-busy={messaging.collecting}
+        >
+          <SyncIcon className={messaging.collecting ? "icon-button__spin" : undefined} />
+        </button>
+      ) : null}
 
       {/* The menu steps aside while the camera preview is live. */}
       {cameraPreview || barless ? null : (
