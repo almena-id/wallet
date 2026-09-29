@@ -44,6 +44,7 @@ mod backdrop;
 mod identity;
 mod messaging;
 mod notify;
+mod registry;
 #[cfg(target_os = "ios")]
 mod scene;
 mod tray;
@@ -167,6 +168,7 @@ pub fn run() {
             vault::manage(app.handle());
             messaging::manage(app.handle());
             notify::manage(app.handle());
+            registry::manage(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -212,6 +214,8 @@ pub fn run() {
             messaging::live::live_stop,
             messaging::push_register,
             messaging::push_unregister,
+            registry::registry_request,
+            registry::registry_answer,
         ])
         .build(tauri::generate_context!())
         .expect("error while building the Almena Wallet")

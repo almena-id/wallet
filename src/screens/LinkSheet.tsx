@@ -1,11 +1,19 @@
 import { useEffect, useState } from "react";
 
 import { ConfirmSheet, type ConfirmDetail } from "../components/ConfirmSheet";
-import { ProfileIcon, ServerIcon } from "../components/icons";
+import { CredentialIcon, ProfileIcon, ServerIcon } from "../components/icons";
 import { useI18n } from "../i18n";
 import { plural } from "../i18n/format";
 import { acceptInvitation } from "../contacts";
-import { linkDetails, type LinkDetails } from "../links";
+import {
+  invitationKind,
+  linkDetails,
+  registryAnswer,
+  registryErrorCode,
+  registryRequest,
+  type LinkDetails,
+  type RegistryRequest,
+} from "../links";
 import { connectMediator, errorCode, mediatorName } from "../mediator";
 
 /** Where a link or a code came from, said at the top of the sheet. */
@@ -21,10 +29,17 @@ type LinkSheetProps = {
   onMediatorConnected: () => void;
 };
 
+/** What the sheet has read: the device's details, or a registry's request. */
+type Read =
+  | LinkDetails
+  | { kind: "registry"; request: RegistryRequest }
+  | { kind: "registryFailed"; code: string };
+
 /**
  * What a scanned code or an opened link asks, put to the person over the open
- * screen: somebody's invitation, or a mediator's. The details come from the
- * Rust side, which reads the link without acting on it; Accept is what acts.
+ * screen: somebody's invitation, a mediator's, or a registry portal's request
+ * to sign in or to link this wallet. The details come from the Rust side,
+ * which reads the link without acting on it; Accept is what acts.
  */
 export function LinkSheet({
   url,
@@ -34,14 +49,25 @@ export function LinkSheet({
   onMediatorConnected,
 }: LinkSheetProps) {
   const { t, locale } = useI18n();
-  const [details, setDetails] = useState<LinkDetails | null>(null);
+  const [details, setDetails] = useState<Read | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    linkDetails(url)
-      .then(setDetails)
-      .catch(() => setDetails({ kind: "unknown" }));
+    void (async () => {
+      if ((await invitationKind(url)) === "registry") {
+        // Read over the network: who asks, and for what.
+        await registryRequest(url)
+          .then((request) => setDetails({ kind: "registry", request }))
+          .catch((failure: unknown) =>
+            setDetails({ kind: "registryFailed", code: registryErrorCode(failure) }),
+          );
+        return;
+      }
+      await linkDetails(url)
+        .then(setDetails)
+        .catch(() => setDetails({ kind: "unknown" }));
+    })();
   }, [url]);
 
   // Nothing the wallet can read: there is no question to ask.
@@ -72,6 +98,105 @@ export function LinkSheet({
       setError(t.messaging.errors[errorCode(failure)]);
       setBusy(false);
     }
+  }
+
+  if (details.kind === "registry" || details.kind === "registryFailed") {
+    const copy = t.confirm.registry;
+    const request = details.kind === "registry" ? details.request : null;
+    const failed =
+      details.kind === "registryFailed"
+        ? copy.errors[details.code as keyof typeof copy.errors]
+        : null;
+    const linking = request?.purpose === "link";
+    const signing = request?.signing ?? null;
+    const until = signing?.validUntil
+      ? new Date(signing.validUntil).toLocaleDateString(locale)
+      : null;
+    const rows: ConfirmDetail[] = !request
+      ? []
+      : signing?.kind === "endorsement"
+        ? [
+            { label: copy.portal, value: request.portal },
+            { label: copy.answerTo, value: request.answerTo },
+            ...(signing.tenant ? [{ label: copy.tenant, value: signing.tenant }] : []),
+            ...(until ? [{ label: copy.validUntil, value: until }] : []),
+            { label: copy.identity, value: signing.did ?? copy.newDid, mono: true },
+            { label: copy.as, value: request.did, mono: true },
+          ]
+        : signing
+          ? [
+              { label: copy.portal, value: request.portal },
+              { label: copy.answerTo, value: request.answerTo },
+              ...(signing.tenant ? [{ label: copy.tenant, value: signing.tenant }] : []),
+              { label: copy.identity, value: signing.did ?? copy.newDid, mono: signing.did !== null },
+              { label: copy.version, value: String(signing.version ?? "") },
+              { label: copy.as, value: request.did, mono: true },
+            ]
+          : [
+              { label: copy.portal, value: request.portal },
+              { label: copy.answerTo, value: request.answerTo },
+              { label: copy.as, value: request.did, mono: true },
+            ];
+    const title = signing
+      ? (signing.kind === "endorsement" ? copy.endorseTitle : copy.signTitle).replace(
+          "{identity}",
+          signing.identity,
+        )
+      : (linking ? copy.linkTitle : copy.signInTitle).replace(
+          "{name}",
+          request?.name ?? copy.aRegistry,
+        );
+    const lead = signing
+      ? signing.kind === "endorsement"
+        ? copy.endorseLead
+        : signing.did
+          ? copy.signLead
+          : copy.signFirstLead
+      : linking
+        ? copy.linkLead
+        : copy.signInLead;
+    const notSigner = signing !== null && !signing.signer;
+    return (
+      <ConfirmSheet
+        {...common}
+        error={error ?? failed}
+        icon={<CredentialIcon />}
+        title={title}
+        lead={lead}
+        details={rows}
+        // Somebody could show you their own page's code: accept only what you started.
+        note={
+          notSigner
+            ? copy.notSigner
+            : request
+              ? copy.note.replace("{portal}", request.portal)
+              : null
+        }
+        confirmDisabled={request === null || notSigner}
+        confirmLabel={
+          signing?.kind === "endorsement"
+            ? copy.publish
+            : signing
+                ? copy.sign
+                : linking
+                  ? copy.link
+                  : copy.signIn
+        }
+        onConfirm={() =>
+          void (async () => {
+            setBusy(true);
+            setError(null);
+            try {
+              await registryAnswer(url);
+              onClose();
+            } catch (failure) {
+              setError(copy.errors[registryErrorCode(failure)]);
+              setBusy(false);
+            }
+          })()
+        }
+      />
+    );
   }
 
   if (details.kind === "contact") {

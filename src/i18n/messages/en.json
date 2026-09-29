@@ -75,6 +75,41 @@
         "one": "You have {count} contact through your current mediator. Changing it from a link is not possible yet: their messages would stop arriving.",
         "other": "You have {count} contacts through your current mediator. Changing it from a link is not possible yet: their messages would stop arriving."
       }
+    },
+    "registry": {
+      "signInTitle": "Sign in to {name}",
+      "linkTitle": "Link this wallet to {name}",
+      "aRegistry": "a registry",
+      "signInLead": "You sign in with a key this wallet keeps for this portal only.",
+      "linkLead": "Your account there will take this wallet as a way in.",
+      "portal": "Portal",
+      "answerTo": "Answer goes to",
+      "as": "You appear as",
+      "note": "Accept only if you started this yourself on {portal}.",
+      "signIn": "Sign in",
+      "link": "Link",
+      "errors": {
+        "registry_locked": "Open the wallet first.",
+        "registry_unreadable": "This request cannot be read.",
+        "registry_insecure": "This registry is not reached securely.",
+        "registry_unreachable": "The registry cannot be reached. Try again in a moment.",
+        "registry_expired": "This request has expired. Ask for a new code.",
+        "registry_refused": "The registry did not accept the answer.",
+        "registry_not_a_signer": "This wallet is not one of those that may sign it."
+      },
+      "signTitle": "Sign {identity}",
+      "signFirstLead": "This creates its DID. The registry publishes it with your signature.",
+      "signLead": "The registry publishes this version of its DID document with your signature.",
+      "tenant": "Organisation",
+      "identity": "DID",
+      "newDid": "New",
+      "version": "Version",
+      "sign": "Sign",
+      "notSigner": "This wallet is not one of those that may sign it.",
+      "validUntil": "Valid until",
+      "publish": "Publish",
+      "endorseTitle": "Publish {identity}",
+      "endorseLead": "Your organisation vouches for it for a year, with your signature."
     }
   },
   "messages": {

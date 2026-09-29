@@ -90,6 +90,12 @@ tasks:
     cmds:
       - pnpm tauri build
 
+  build:debug:
+    desc: "Build a debug bundle (src-tauri/target/debug/bundle): it receives almena:// links, unlike task dev on macOS, and trusts the system's roots, so it reaches the local dev services"
+    deps: [install]
+    cmds:
+      - pnpm tauri build --debug
+
   build:macos:
     desc: Build the macOS bundle signed for this machine, so Touch ID can hold the device key
     deps: [install]

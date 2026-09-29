@@ -50,6 +50,9 @@ current when a permission, a data flow or a capability is added.
     (`messaging/push.rs`);
   - the name the person chose is sent to each contact; the profile picture
     stays on the device;
+  - signing in to (or linking to) an Almena Registry portal sends that portal
+    a DID made for it alone and a signature, only when the person accepts the
+    request (`src-tauri/src/registry.rs`); nothing else about them;
   - there is no analytics and no advertising.
 - **Encryption.** The wallet implements its own encryption (the vault, and
   DIDComm for messages), so the export-compliance questions in App Store

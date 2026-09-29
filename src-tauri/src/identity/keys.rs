@@ -41,6 +41,12 @@ pub(crate) const PAIRWISE: u32 = 3;
 /// or published.
 pub(crate) const CARD: u32 = 4;
 
+/// The keys the wallet signs in to registries with: `m/5'/a'/b'/c'/n'`, where
+/// `a`, `b` and `c` come from a hash of the registry portal's origin — so each
+/// registry sees a DID of its own, the same one from the same words — and `n`
+/// counts the key's replacements, starting at 0. See `crate::registry`.
+pub(crate) const REGISTRY: u32 = 5;
+
 /// What marks 32 bytes as an ed25519 public key: the multicodec `ed25519-pub`,
 /// `0xed`, as an unsigned varint — the same two bytes `did:key` uses.
 const ED25519_PUB: [u8; 2] = [0xed, 0x01];

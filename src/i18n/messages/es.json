@@ -75,6 +75,41 @@
         "one": "Tienes {count} contacto a través de tu mediador actual. Cambiarlo desde un enlace aún no es posible: dejarían de llegar sus mensajes.",
         "other": "Tienes {count} contactos a través de tu mediador actual. Cambiarlo desde un enlace aún no es posible: dejarían de llegar sus mensajes."
       }
+    },
+    "registry": {
+      "signInTitle": "Entrar en {name}",
+      "linkTitle": "Vincular este wallet a {name}",
+      "aRegistry": "un registro",
+      "signInLead": "Entras con una clave que este wallet guarda solo para este portal.",
+      "linkLead": "Tu cuenta allí aceptará este wallet como forma de entrar.",
+      "portal": "Portal",
+      "answerTo": "La respuesta va a",
+      "as": "Apareces como",
+      "note": "Acepta solo si lo has iniciado tú en {portal}.",
+      "signIn": "Entrar",
+      "link": "Vincular",
+      "errors": {
+        "registry_locked": "Abre primero el wallet.",
+        "registry_unreadable": "No se puede leer esta solicitud.",
+        "registry_insecure": "Este registro no se alcanza de forma segura.",
+        "registry_unreachable": "No se puede contactar con el registro. Inténtalo de nuevo en un momento.",
+        "registry_expired": "Esta solicitud ha caducado. Pide un código nuevo.",
+        "registry_refused": "El registro no aceptó la respuesta.",
+        "registry_not_a_signer": "Este wallet no es de los que pueden firmarlo."
+      },
+      "signTitle": "Firmar {identity}",
+      "signFirstLead": "Esto crea su DID. El registro lo publica con tu firma.",
+      "signLead": "El registro publica esta versión de su documento DID con tu firma.",
+      "tenant": "Organización",
+      "identity": "DID",
+      "newDid": "Nuevo",
+      "version": "Versión",
+      "sign": "Firmar",
+      "notSigner": "Este wallet no es de los que pueden firmarlo.",
+      "validUntil": "Válida hasta",
+      "publish": "Publicar",
+      "endorseTitle": "Publicar {identity}",
+      "endorseLead": "Tu organización lo avala durante un año, con tu firma."
     }
   },
   "messages": {

@@ -79,6 +79,12 @@ tauri-plugin-barcode-scanner = "2"
 # the wallet does not use.
 tauri-plugin-notifications = { version = "=0.5.0-rc.14", default-features = false, features = ["push-notifications"] }
 
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# The system's trusted roots, read by a debug build only (`mediator::tls`), so
+# a development service behind a locally trusted CA — the dev Caddy's for
+# api.almena.id — is reachable. A release build trusts the Mozilla roots alone.
+rustls-native-certs = "0.8"
+
 [target.'cfg(target_os = "ios")'.dependencies]
 # `protected` is the data protection keychain, the only one whose items can be
 # kept to this device alone.

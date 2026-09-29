@@ -466,7 +466,7 @@ fn socket(document: &DidDocument) -> Option<String> {
 /// The URL to actually use: HTTPS as it is, and plain HTTP only for this
 /// machine in a debug build. A `did:web` document URL for a loopback host is
 /// turned into HTTP there, because that is what a local mediator serves.
-fn transport(url: &str) -> Result<String, MessagingError> {
+pub(crate) fn transport(url: &str) -> Result<String, MessagingError> {
     let parsed = Url::parse(url).map_err(|_| MessagingError::MediatorUnreachable)?;
     let local = cfg!(debug_assertions) && is_loopback(&parsed);
 
@@ -491,7 +491,7 @@ fn is_loopback(url: &Url) -> bool {
 /// One HTTP client for the process: Rustls with `ring` and the Mozilla roots,
 /// no redirects (a mediator that moves is a mediator to look up again, not one
 /// to follow), and a timeout.
-fn client() -> Result<&'static reqwest::Client, MessagingError> {
+pub(crate) fn client() -> Result<&'static reqwest::Client, MessagingError> {
     static CLIENT: OnceLock<Option<reqwest::Client>> = OnceLock::new();
 
     CLIENT
@@ -511,15 +511,24 @@ fn client() -> Result<&'static reqwest::Client, MessagingError> {
         .ok_or(MessagingError::MediatorUnreachable)
 }
 
-/// The TLS every connection to a mediator is made with: Rustls with `ring` and
-/// the Mozilla roots, the same for HTTPS and for the WebSocket.
+/// The TLS every connection to a mediator (and a registry) is made with:
+/// Rustls with `ring` and the Mozilla roots, the same for HTTPS and for the
+/// WebSocket. A debug build on a computer also trusts the system's roots, so a
+/// development service behind a locally trusted CA can be reached; a release
+/// build never does.
 pub fn tls() -> Result<Arc<rustls::ClientConfig>, MessagingError> {
     static TLS: OnceLock<Option<Arc<rustls::ClientConfig>>> = OnceLock::new();
 
     TLS.get_or_init(|| {
-        let roots = rustls::RootCertStore {
+        #[allow(unused_mut)]
+        let mut roots = rustls::RootCertStore {
             roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
         };
+        #[cfg(all(debug_assertions, not(any(target_os = "android", target_os = "ios"))))]
+        for cert in rustls_native_certs::load_native_certs().certs {
+            // One the store cannot parse is left out, not fatal.
+            let _ = roots.add(cert);
+        }
         let config = rustls::ClientConfig::builder_with_provider(Arc::new(
             rustls::crypto::ring::default_provider(),
         ))

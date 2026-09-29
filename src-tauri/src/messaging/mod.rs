@@ -32,7 +32,7 @@ mod chat;
 mod contacts;
 mod conversation;
 pub mod live;
-mod mediator;
+pub(crate) mod mediator;
 mod peer;
 mod photo;
 mod push;
@@ -391,11 +391,13 @@ pub async fn invitation_show<R: Runtime>(
 }
 
 /// What a link or a scanned code is, as far as this wallet can tell without
-/// acting on it: somebody's invitation, a mediator's, or neither. Nothing is
-/// opened or sent; the screen it leads to asks first.
+/// acting on it: somebody's invitation, a mediator's, a registry's request, or
+/// none of them. Nothing is opened or sent; the screen it leads to asks first.
 #[tauri::command]
 pub fn invitation_kind(input: String) -> &'static str {
-    if contacts::read(&input).is_ok() {
+    if crate::registry::is_request(&input) {
+        "registry"
+    } else if contacts::read(&input).is_ok() {
         "contact"
     } else if mediator::target(&input).is_ok_and(|target| target.invitation.is_some()) {
         "mediator"

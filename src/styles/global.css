@@ -2417,7 +2417,11 @@ html[data-camera-preview="true"] .app::before {
 }
 
 .detail-list__mono {
+  /* A DID is one long word: it wraps anywhere rather than leave the sheet. */
+  min-width: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 /* ---------------------------------------------------------- conversation */
