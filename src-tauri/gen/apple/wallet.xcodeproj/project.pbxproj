@@ -308,7 +308,7 @@
 					"$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME)",
 					"$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = network.almena.wallet;
+				PRODUCT_BUNDLE_IDENTIFIER = id.almena.wallet;
 				PRODUCT_NAME = "Almena Wallet";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -352,7 +352,7 @@
 					"$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME)",
 					"$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = network.almena.wallet;
+				PRODUCT_BUNDLE_IDENTIFIER = id.almena.wallet;
 				PRODUCT_NAME = "Almena Wallet";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";

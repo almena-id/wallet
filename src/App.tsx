@@ -341,7 +341,12 @@ export default function App() {
           <ScanScreen
             onBack={() => setRoute("home")}
             onPreviewChange={setCameraPreview}
-            onInvitation={(content) => void openLink(content, "qr")}
+            onInvitation={(content) => {
+              // The scanner has done its part: the sheet is put over the home
+              // screen, and whatever the answer is, that is where it leaves.
+              setRoute("home");
+              void openLink(content, "qr");
+            }}
           />
         ) : null}
         {route === "profile" ? (

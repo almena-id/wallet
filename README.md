@@ -133,7 +133,7 @@ mediator's `docs/didcomm.md` §5. On the wallet's side:
   `src-tauri/gen/android/app/` (not committed). Without it the app builds and
   simply receives no pushes.
 - **iOS** needs an App ID with the Push Notifications capability for
-  `network.almena.wallet`; the entitlement is already in the project.
+  `id.almena.wallet`; the entitlement is already in the project.
 
 The words of the notification are in `src-tauri/push/`, in the app's own
 strings, so the phone shows them in its language. `task init:android` and

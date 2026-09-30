@@ -35,7 +35,7 @@ Voice and video calls between the two wallets of a relationship, one to one. The
 
 | Protocol | PIURI | Messages |
 |---|---|---|
-| Call 1.0 | `https://almena.network/protocols/call/1.0` | `offer`, `answer`, `hangup` |
+| Call 1.0 | `https://almena.id/protocols/call/1.0` | `offer`, `answer`, `hangup` |
 
 The PIURI is a fixed name, the same in every environment.
 
@@ -54,7 +54,7 @@ A call is a thread: the `offer`'s `id` is the call's id, and `answer` and `hangu
 
 ```json
 {
-  "type": "https://almena.network/protocols/call/1.0/offer",
+  "type": "https://almena.id/protocols/call/1.0/offer",
   "id": "<call id>",
   "created_time": 1760000000,
   "expires_time": 1760000060,
@@ -69,7 +69,7 @@ A call is a thread: the `offer`'s `id` is the call's id, and `answer` and `hangu
 **`answer`** — the callee accepts.
 
 ```json
-{ "type": "https://almena.network/protocols/call/1.0/answer", "thid": "<call id>", "body": { "sdp": "v=0\r\n…" } }
+{ "type": "https://almena.id/protocols/call/1.0/answer", "thid": "<call id>", "body": { "sdp": "v=0\r\n…" } }
 ```
 
 `sdp` is the complete answer, gathered in full like the offer.
@@ -77,7 +77,7 @@ A call is a thread: the `offer`'s `id` is the call's id, and `answer` and `hangu
 **`hangup`** — either side ends the call, or declines it before it starts.
 
 ```json
-{ "type": "https://almena.network/protocols/call/1.0/hangup", "thid": "<call id>", "body": { "reason": "declined" } }
+{ "type": "https://almena.id/protocols/call/1.0/hangup", "thid": "<call id>", "body": { "reason": "declined" } }
 ```
 
 | `reason` | Sent by | When |

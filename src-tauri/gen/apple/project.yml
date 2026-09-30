@@ -1,6 +1,6 @@
 name: wallet
 options:
-  bundleIdPrefix: network.almena.wallet
+  bundleIdPrefix: id.almena.wallet
   deploymentTarget:
     iOS: 15.0
 fileGroups: [../../src]
@@ -11,7 +11,7 @@ settingGroups:
   app:
     base:
       PRODUCT_NAME: Almena Wallet
-      PRODUCT_BUNDLE_IDENTIFIER: network.almena.wallet
+      PRODUCT_BUNDLE_IDENTIFIER: id.almena.wallet
 targetTemplates:
   app:
     type: application

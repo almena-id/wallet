@@ -1,4 +1,4 @@
-//! Calls (`https://almena.network/protocols/call/1.0`, `SPEC.md` §3): the
+//! Calls (`https://almena.id/protocols/call/1.0`, `SPEC.md` §3): the
 //! signalling that sets up a WebRTC call between the two wallets of a
 //! relationship. The call itself — the `RTCPeerConnection`, the microphone and
 //! the camera — lives in the interface; this side carries its messages over
@@ -17,12 +17,12 @@ use super::mediator::Mediator;
 use super::peer::Peer;
 use super::MessagingError;
 
-pub const OFFER: &str = "https://almena.network/protocols/call/1.0/offer";
-pub const ANSWER: &str = "https://almena.network/protocols/call/1.0/answer";
-pub const HANGUP: &str = "https://almena.network/protocols/call/1.0/hangup";
+pub const OFFER: &str = "https://almena.id/protocols/call/1.0/offer";
+pub const ANSWER: &str = "https://almena.id/protocols/call/1.0/answer";
+pub const HANGUP: &str = "https://almena.id/protocols/call/1.0/hangup";
 
-const CREDENTIALS_REQUEST: &str = "https://almena.network/protocols/turn/1.0/credentials-request";
-const CREDENTIALS: &str = "https://almena.network/protocols/turn/1.0/credentials";
+const CREDENTIALS_REQUEST: &str = "https://almena.id/protocols/turn/1.0/credentials-request";
+const CREDENTIALS: &str = "https://almena.id/protocols/turn/1.0/credentials";
 
 /// The event the interface listens to: an [`Incoming`].
 pub const SIGNAL: &str = "call-signal";

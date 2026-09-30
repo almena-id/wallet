@@ -34,14 +34,14 @@ version: "3"
 #                           — or its SHA-1 from that list, when two certificates
 #                           share the name (a revoked one and its replacement).
 #   MACOS_DEV_PROFILE       the macOS development provisioning profile for
-#                           network.almena.wallet, with this Mac in it.
+#                           id.almena.wallet, with this Mac in it.
 #
 #   `task release:macos` — the bundle to hand out: Developer ID, hardened
 #   runtime, notarized by Apple and stapled, so Gatekeeper opens it anywhere:
 #
 #   MACOS_RELEASE_IDENTITY  the "Developer ID Application: …" certificate.
 #   MACOS_RELEASE_PROFILE   the Developer ID provisioning profile for
-#                           network.almena.wallet: without one, macOS keeps a
+#                           id.almena.wallet: without one, macOS keeps a
 #                           distributed build out of the data protection keychain.
 #   NOTARY_API_KEY          the App Store Connect API key ID,
 #   NOTARY_API_ISSUER       its issuer ID,
@@ -167,7 +167,7 @@ tasks:
           place the device key can be held behind Touch ID.
 
           Make a {{.PROFILE_KIND}} profile for the macOS App ID
-          network.almena.wallet at developer.apple.com, download it, and name it
+          id.almena.wallet at developer.apple.com, download it, and name it
           in wallet/.env.local:
 
             {{.PROFILE_VAR}}=/absolute/path/to/wallet.provisionprofile
@@ -193,12 +193,12 @@ tasks:
         <plist version="1.0">
         <dict>
           <key>com.apple.application-identifier</key>
-          <string>$APPLE_DEVELOPMENT_TEAM.network.almena.wallet</string>
+          <string>$APPLE_DEVELOPMENT_TEAM.id.almena.wallet</string>
           <key>com.apple.developer.team-identifier</key>
           <string>$APPLE_DEVELOPMENT_TEAM</string>
           <key>keychain-access-groups</key>
           <array>
-            <string>$APPLE_DEVELOPMENT_TEAM.network.almena.wallet</string>
+            <string>$APPLE_DEVELOPMENT_TEAM.id.almena.wallet</string>
           </array>
           <!-- Calls: the hardened runtime keeps the microphone and the camera
                from any application whose entitlements do not name them. -->

@@ -101,7 +101,7 @@ const FILE: &str = "vault.json";
 
 /// The service every item is filed under. The bundle identifier, so the items
 /// are recognisably this wallet's wherever somebody looks at them.
-const SERVICE: &str = "network.almena.wallet";
+const SERVICE: &str = "id.almena.wallet";
 const RECORD: &str = "vault";
 const DEVICE_KEY: &str = "device-key";
 

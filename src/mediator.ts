@@ -29,7 +29,7 @@ export type Waiting = {
  */
 export const suggestedMediator: string =
   (import.meta.env.DEV ? import.meta.env.VITE_MEDIATOR : undefined) ??
-  "https://mediator.almena.network";
+  "https://mediator.almena.id";
 
 export function readMediator(): Promise<MediatorStatus> {
   return invoke<MediatorStatus>("mediator_status");

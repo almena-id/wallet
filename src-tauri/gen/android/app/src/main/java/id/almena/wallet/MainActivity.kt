@@ -1,4 +1,4 @@
-package network.almena.wallet
+package id.almena.wallet
 
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge
