@@ -19,12 +19,26 @@ import { AppearanceSettings } from "./settings/AppearanceSettings";
 import { MessagingSettings } from "./settings/MessagingSettings";
 import { NotificationsSettings } from "./settings/NotificationsSettings";
 import { ProfileSettings } from "./settings/ProfileSettings";
+import { CredentialsSettings } from "./settings/CredentialsSettings";
 import { SecuritySettings } from "./settings/SecuritySettings";
 
 /** Where the profile leads, and the list that leads there. */
-type Section = "profile" | "appearance" | "notifications" | "messaging" | "security";
+type Section =
+  | "credentials"
+  | "profile"
+  | "appearance"
+  | "notifications"
+  | "messaging"
+  | "security";
 
-const SECTIONS: Section[] = ["profile", "appearance", "notifications", "messaging", "security"];
+const SECTIONS: Section[] = [
+  "credentials",
+  "profile",
+  "appearance",
+  "notifications",
+  "messaging",
+  "security",
+];
 
 /** A screen a section sends somebody to, and comes back from. */
 type Aside = "connect" | "pin" | "device" | "invite";
@@ -152,6 +166,7 @@ export function ProfileScreen({
           </h1>
         </header>
 
+        {section === "credentials" ? <CredentialsSettings /> : null}
         {section === "profile" ? <ProfileSettings /> : null}
         {section === "appearance" ? (
           <AppearanceSettings

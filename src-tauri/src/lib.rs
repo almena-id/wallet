@@ -41,9 +41,11 @@
 //! relationships it has through it.
 
 mod backdrop;
+mod credentials;
 mod identity;
 mod messaging;
 mod notify;
+mod presentation;
 mod registry;
 #[cfg(target_os = "ios")]
 mod scene;
@@ -216,6 +218,7 @@ pub fn run() {
             messaging::push_unregister,
             registry::registry_request,
             registry::registry_answer,
+            credentials::credentials_list,
         ])
         .build(tauri::generate_context!())
         .expect("error while building the Almena Wallet")

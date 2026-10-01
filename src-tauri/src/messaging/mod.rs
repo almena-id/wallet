@@ -36,7 +36,7 @@ pub(crate) mod mediator;
 mod peer;
 mod photo;
 mod push;
-mod state;
+pub(crate) mod state;
 
 use almena_didcomm::{unpack, InMemorySecrets, Message};
 use serde::{Serialize, Serializer};
@@ -762,6 +762,7 @@ pub fn clear<R: Runtime>(app: &tauri::AppHandle<R>) {
     }
     state::clear(app);
     conversation::clear(app);
+    crate::credentials::clear(app);
     photo::clear(app);
 }
 

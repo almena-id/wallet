@@ -95,7 +95,9 @@
         "registry_unreachable": "No se puede contactar con el registro. Inténtalo de nuevo en un momento.",
         "registry_expired": "Esta solicitud ha caducado. Pide un código nuevo.",
         "registry_refused": "El registro no aceptó la respuesta.",
-        "registry_not_a_signer": "Este wallet no es de los que pueden firmarlo."
+        "registry_not_a_signer": "Este wallet no es de los que pueden firmarlo.",
+        "registry_not_the_holder": "Esta solicitud se empezó con otro wallet.",
+        "registry_nothing_to_present": "Este wallet todavía no guarda credenciales."
       },
       "signTitle": "Firmar {identity}",
       "signFirstLead": "Esto crea su DID. El registro lo publica con tu firma.",
@@ -109,7 +111,28 @@
       "validUntil": "Válida hasta",
       "publish": "Publicar",
       "endorseTitle": "Publicar {identity}",
-      "endorseLead": "Tu organización lo avala durante un año, con tu firma."
+      "endorseLead": "Tu organización lo avala durante un año, con tu firma.",
+      "issuer": "Emisor",
+      "credential": "Credencial",
+      "verified": "verificado por una credencial",
+      "pairTitle": "Solicitar a {issuer}",
+      "pairLead": "Aquí empieza tu solicitud a {issuer}. Apareces con una clave que este wallet guarda solo para {issuer}.",
+      "pair": "Empezar",
+      "presentTitle": "Presentar credenciales a {issuer}",
+      "presentLead": "{issuer} pide ver credenciales de este wallet. Solo se comparten los datos de abajo, cada uno ligado a la clave con la que la guardas.",
+      "nothingHeld": "Este wallet no guarda ninguna de las credenciales que se piden: vuelve al formulario y escribe tus datos.",
+      "present": "Presentar",
+      "submitTitle": "Envía tu solicitud a {issuer}",
+      "submitLead": "Esto es todo lo que envías a {issuer}. Al firmarlo se envía, y {issuer} puede comprobar que viene de ti.",
+      "submit": "Firmar y enviar",
+      "issueTitle": "Emitir una credencial como {identity}",
+      "issueLead": "La firmas como emisor: el titular que la solicitó la recibe con lo que dice abajo.",
+      "issue": "Firmar y emitir",
+      "receiveTitle": "Tu credencial de {issuer}",
+      "receiveLead": "{issuer} ha emitido la credencial que solicitaste. Se guarda en este wallet, ligada a la clave con la que la pediste.",
+      "receive": "Guardarla",
+      "presents": "Credencial",
+      "someMissing": "Algunas credenciales que pide el formulario no están en este wallet: escribe esos datos en el formulario."
     }
   },
   "messages": {
@@ -125,6 +148,10 @@
   "settings": {
     "title": "Ajustes",
     "sections": {
+      "credentials": {
+        "title": "Credenciales",
+        "hint": "Lo que los emisores te han otorgado"
+      },
       "profile": {
         "title": "Perfil",
         "hint": "Tu foto y tu nombre"
@@ -237,6 +264,13 @@
       "check": "Buscar mensajes",
       "checking": "Buscando…",
       "disconnect": "Desconectar"
+    },
+    "credentials": {
+      "none": "Todavía no tienes credenciales. Solicita una en el catálogo de credenciales de un registro de Almena.",
+      "issuer": "La expide",
+      "validUntil": "Válida hasta",
+      "expired": "Caducó el",
+      "unreadable": "No se han podido leer las credenciales."
     }
   },
   "onboarding": {

@@ -95,7 +95,9 @@
         "registry_unreachable": "The registry cannot be reached. Try again in a moment.",
         "registry_expired": "This request has expired. Ask for a new code.",
         "registry_refused": "The registry did not accept the answer.",
-        "registry_not_a_signer": "This wallet is not one of those that may sign it."
+        "registry_not_a_signer": "This wallet is not one of those that may sign it.",
+        "registry_not_the_holder": "This application was started with another wallet.",
+        "registry_nothing_to_present": "This wallet holds no credentials yet."
       },
       "signTitle": "Sign {identity}",
       "signFirstLead": "This creates its DID. The registry publishes it with your signature.",
@@ -109,7 +111,28 @@
       "validUntil": "Valid until",
       "publish": "Publish",
       "endorseTitle": "Publish {identity}",
-      "endorseLead": "Your organisation vouches for it for a year, with your signature."
+      "endorseLead": "Your organisation vouches for it for a year, with your signature.",
+      "issuer": "Issuer",
+      "credential": "Credential",
+      "verified": "verified by a credential",
+      "pairTitle": "Apply to {issuer}",
+      "pairLead": "Your application to {issuer} starts here. You appear under a key this wallet keeps for {issuer} only.",
+      "pair": "Start",
+      "presentTitle": "Present credentials to {issuer}",
+      "presentLead": "{issuer} asks to see credentials from this wallet. Only the details below are shared, each bound to the key you hold it with.",
+      "nothingHeld": "This wallet holds none of the credentials asked for: go back to the form and type your details instead.",
+      "present": "Present",
+      "submitTitle": "Send your application to {issuer}",
+      "submitLead": "This is everything you send to {issuer}. Signing it sends it, and {issuer} can check it came from you.",
+      "submit": "Sign and send",
+      "issueTitle": "Issue a credential as {identity}",
+      "issueLead": "You sign it as the issuer: the holder who applied receives it with what it says below.",
+      "issue": "Sign and issue",
+      "receiveTitle": "Your credential from {issuer}",
+      "receiveLead": "{issuer} issued the credential you applied for. It is kept in this wallet, bound to the key you applied with.",
+      "receive": "Keep it",
+      "presents": "Credential",
+      "someMissing": "Some credentials the form needs are not in this wallet: type those details in the form."
     }
   },
   "messages": {
@@ -125,6 +148,10 @@
   "settings": {
     "title": "Settings",
     "sections": {
+      "credentials": {
+        "title": "Credentials",
+        "hint": "What issuers have granted you"
+      },
       "profile": {
         "title": "Profile",
         "hint": "Your photo and your name"
@@ -237,6 +264,13 @@
       "check": "Check for messages",
       "checking": "Checking…",
       "disconnect": "Disconnect"
+    },
+    "credentials": {
+      "none": "No credentials yet. Apply for one from an Almena registry's catalogue of credentials.",
+      "issuer": "Issued by",
+      "validUntil": "Valid until",
+      "expired": "Expired on",
+      "unreadable": "The credentials could not be read."
     }
   },
   "onboarding": {

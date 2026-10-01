@@ -54,7 +54,7 @@ export type RegistryRequest = {
   portal: string;
   /** The host the answer goes to. */
   answerTo: string;
-  purpose: "sign_in" | "link" | "sign";
+  purpose: "sign_in" | "link" | "sign" | "pair" | "present" | "submit" | "receive";
   /** The DID this wallet is known by at that portal. */
   did: string;
   /** `sign`: what is signed. */
@@ -63,7 +63,7 @@ export type RegistryRequest = {
      * `did_log_entry`: a version of an identity's DID; `endorsement`: an
      * organisation vouching for one of its issuers, verifiers or mediators.
      */
-    kind: "did_log_entry" | "endorsement";
+    kind: "did_log_entry" | "endorsement" | "credential";
     /** The identity's or the item's name. */
     identity: string;
     tenant: string | null;
@@ -73,6 +73,35 @@ export type RegistryRequest = {
     validUntil: string | null;
     /** This wallet's key may sign it. */
     signer: boolean;
+    /** `credential`: what it says, claim by claim. */
+    claims: { name: string; value: string }[];
+  } | null;
+  /**
+   * `pair`, `present`, `submit`: an application to one of the registry's
+   * issuers, under the key this wallet keeps for that issuer (`did`).
+   */
+  applying: {
+    issuer: string;
+    issuerDid: string;
+    /** The credential applied for, by language. */
+    credential: Record<string, string>;
+    /** `submit`: what is signed, every answer by language. */
+    answers: {
+      label: Record<string, string>;
+      text: Record<string, string>;
+      /** It came from a credential the issuer verified. */
+      verified: boolean;
+    }[];
+    /** `present`: how many credentials are asked for. */
+    asked: number;
+    /** `present`: what this wallet would present; only these claims go. */
+    presenting: {
+      credential: Record<string, string>;
+      issuer: string;
+      claims: { name: string; value: string }[];
+    }[];
+    /** `present`: every credential the form requires is among them. */
+    complete: boolean;
   } | null;
 };
 
@@ -83,7 +112,9 @@ export type RegistryErrorCode =
   | "registry_unreachable"
   | "registry_expired"
   | "registry_refused"
-  | "registry_not_a_signer";
+  | "registry_not_a_signer"
+  | "registry_not_the_holder"
+  | "registry_nothing_to_present";
 
 export function registryRequest(input: string): Promise<RegistryRequest> {
   return invoke<RegistryRequest>("registry_request", { input });
@@ -103,6 +134,8 @@ export function registryErrorCode(error: unknown): RegistryErrorCode {
     "registry_expired",
     "registry_refused",
     "registry_not_a_signer",
+    "registry_not_the_holder",
+    "registry_nothing_to_present",
   ];
   return typeof error === "string" && (codes as string[]).includes(error)
     ? (error as RegistryErrorCode)

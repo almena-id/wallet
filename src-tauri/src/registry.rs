@@ -32,6 +32,32 @@
 //! entry, and refuses when its key is not one of the signers. What the sheet
 //! shows about it (the DID, the version, the name, until when) must be what
 //! the document says, or the request is refused.
+//!
+//! **Applying for a credential.** A holder applies to one of the registry's
+//! issuers from the portal, in three kinds of request that name the issuer:
+//! `pair` (an `id_token`, as for signing in), `present` (an OpenID4VP request
+//! with a DCQL query, answered with a `vp_token`) and `submit` (a JWS over the
+//! application). Each issuer gets a key of its own, derived like the
+//! registry's but from the registry's origin *and* the issuer's DID, so two
+//! issuers cannot tell they see the same person; pairing and submitting use
+//! the same one. `submit` carries the application's content — every answer,
+//! readable — and its digest (SHA-256 of its JCS): the wallet recomputes the
+//! digest before showing anything, shows that content, and signs the digest
+//! with the application's id, so what is signed is what was shown. `present`
+//! answers the request's DCQL query with the credentials this wallet holds
+//! (`presentation.rs`): the sheet shows each one and only the claims that would
+//! go, and Accept sends that same choice as a `vp_token`.
+//!
+//! **Issuing.** The issuer's signer signs the credential an application ends
+//! in the same way (`purpose: "sign"`, kind `credential`): the request carries
+//! an SD-JWT VC's header, payload and disclosures; the sheet shows the claims
+//! (each disclosure checked against the payload's `_sd`, all of them shown),
+//! the issuer and until when, and Accept answers with a JWS over that header
+//! and payload by this wallet's registry key — the one the issuer's DID lists.
+//! The holder then takes it (`purpose: "receive"`): an `id_token` by the key
+//! paired with that issuer, answered with the credential, which is checked —
+//! bound to that key, from that issuer, every disclosure listed — and kept
+//! sealed (`credentials.rs`).
 
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -72,6 +98,10 @@ pub enum RegistryError {
     Refused,
     /// Asked to sign with a key that is not one of the signers.
     NotASigner,
+    /// Asked to submit an application paired with another key.
+    NotTheHolder,
+    /// Asked to present credentials this wallet does not hold.
+    NothingToPresent,
 }
 
 impl RegistryError {
@@ -84,6 +114,8 @@ impl RegistryError {
             Self::Expired => "registry_expired",
             Self::Refused => "registry_refused",
             Self::NotASigner => "registry_not_a_signer",
+            Self::NotTheHolder => "registry_not_the_holder",
+            Self::NothingToPresent => "registry_nothing_to_present",
         }
     }
 }
@@ -106,7 +138,44 @@ struct Request {
     purpose: String,
     #[serde(default)]
     sign: Option<Sign>,
+    /// `pair`, `present`, `submit`: the issuer applied to.
+    #[serde(default)]
+    issuer: Option<IssuerRef>,
+    /// The credential applied for: its id and names.
+    #[serde(default)]
+    credential_type: Option<CredentialTypeRef>,
+    /// The DID the application was paired with, once it was.
+    #[serde(default)]
+    holder: Option<String>,
+    /// `present`: the OpenID4VP DCQL query.
+    #[serde(default)]
+    dcql_query: Option<serde_json::Value>,
+    /// `submit`: what is signed.
+    #[serde(default)]
+    submission: Option<Submission>,
 }
+
+#[derive(Deserialize, Clone)]
+struct IssuerRef {
+    did: String,
+    name: String,
+}
+
+#[derive(Deserialize, Clone)]
+struct CredentialTypeRef {
+    id: String,
+    #[serde(default)]
+    labels: std::collections::BTreeMap<String, String>,
+}
+
+/// `submit`: the application's content and its digest.
+#[derive(Deserialize, Clone)]
+struct Submission {
+    content: serde_json::Value,
+    digest: String,
+}
+
+const APPLYING: [&str; 4] = ["pair", "present", "submit", "receive"];
 
 /// `sign`: what to sign, and what it belongs to.
 #[derive(Deserialize, Clone)]
@@ -135,7 +204,7 @@ struct Sign {
     presentation: Option<serde_json::Value>,
 }
 
-const SIGN_KINDS: [&str; 2] = ["did_log_entry", "endorsement"];
+const SIGN_KINDS: [&str; 3] = ["did_log_entry", "endorsement", "credential"];
 
 /// What the confirmation sheet shows: who asks, for what, and as whom this
 /// wallet would answer.
@@ -154,6 +223,71 @@ pub struct RegistryRequest {
     did: String,
     /// `sign`: what is signed.
     signing: Option<Signing>,
+    /// `pair`, `present`, `submit`: the application.
+    applying: Option<Applying>,
+}
+
+/// An application, as the sheet shows it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Applying {
+    issuer: String,
+    issuer_did: String,
+    /// The credential applied for, by language.
+    credential: std::collections::BTreeMap<String, String>,
+    /// `submit`: every answer, by language, and whether a credential vouched for it.
+    answers: Vec<Answer>,
+    /// `present`: how many credentials are asked for.
+    asked: usize,
+    /// `present`: what this wallet would present, credential by credential.
+    presenting: Vec<Presenting>,
+    /// `present`: every credential the form requires is among them.
+    complete: bool,
+}
+
+/// One credential to present, as the sheet shows it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Presenting {
+    /// Its type's names, by language.
+    credential: std::collections::BTreeMap<String, String>,
+    issuer: String,
+    /// The claims that would be disclosed; nothing else of it goes.
+    claims: Vec<Claim>,
+}
+
+/// What this wallet would present for a request, from the credentials it holds.
+fn presentable<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    seed: &[u8; 64],
+    request: &Request,
+) -> (Vec<crate::presentation::Chosen>, bool) {
+    let held = crate::credentials::all(app, seed).unwrap_or_default();
+    request
+        .dcql_query
+        .as_ref()
+        .map(|query| crate::presentation::choose(query, &held, now()))
+        .unwrap_or((Vec::new(), false))
+}
+
+fn claim(name: &str, value: &serde_json::Value) -> Claim {
+    Claim {
+        name: name.to_owned(),
+        value: value
+            .as_str()
+            .map_or_else(|| value.to_string(), str::to_owned)
+            .chars()
+            .take(500)
+            .collect(),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Answer {
+    label: std::collections::BTreeMap<String, String>,
+    text: std::collections::BTreeMap<String, String>,
+    verified: bool,
 }
 
 /// What a signature request is for, as the sheet shows it.
@@ -172,6 +306,46 @@ pub struct Signing {
     valid_until: Option<String>,
     /// This wallet's key is one of those that may sign it.
     signer: bool,
+    /// `credential`: what it says, claim by claim.
+    claims: Vec<Claim>,
+}
+
+/// One claim of a credential to sign, as the sheet shows it.
+#[derive(Serialize)]
+pub struct Claim {
+    name: String,
+    /// A string as it is; anything else as JSON.
+    value: String,
+}
+
+/// A credential's disclosures, decoded: `[salt, name, value]` each, every one
+/// listed in the payload's `_sd` and every listed one there.
+fn disclosed(document: &serde_json::Value) -> Option<Vec<(String, serde_json::Value)>> {
+    let listed: Vec<&str> = document["payload"]["_sd"]
+        .as_array()?
+        .iter()
+        .filter_map(|item| item.as_str())
+        .collect();
+    let disclosures = document["disclosures"].as_array()?;
+    if disclosures.len() != listed.len() {
+        return None;
+    }
+    let mut claims: Vec<(String, serde_json::Value)> = Vec::with_capacity(disclosures.len());
+    for disclosure in disclosures {
+        let text = disclosure.as_str()?;
+        let digest = URL_SAFE_NO_PAD.encode(Sha256::digest(text.as_bytes()));
+        if !listed.contains(&digest.as_str()) {
+            return None;
+        }
+        let decoded: serde_json::Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(text).ok()?).ok()?;
+        let name = decoded[1].as_str()?.to_owned();
+        if decoded.as_array()?.len() != 3 || claims.iter().any(|(seen, _)| *seen == name) {
+            return None;
+        }
+        claims.push((name, decoded[2].clone()));
+    }
+    Some(claims)
 }
 
 /// Is `input` a registry request (`almena://auth?request_uri=…`)? Read only.
@@ -218,10 +392,21 @@ async fn fetch(input: &str) -> Result<(Url, Request), RegistryError> {
         .await
         .map_err(|_| RegistryError::Unreadable)?;
     let signing = request.purpose == "sign";
-    if request.response_type != if signing { "proof" } else { "id_token" }
+    let expected = match request.purpose.as_str() {
+        "sign" => "proof",
+        "present" => "vp_token",
+        "submit" => "signature",
+        "receive" => "credential",
+        _ => "id_token",
+    };
+    if request.response_type != expected
         || request.response_mode != "direct_post"
-        || !matches!(request.purpose.as_str(), "sign_in" | "link" | "sign")
+        || !matches!(
+            request.purpose.as_str(),
+            "sign_in" | "link" | "sign" | "pair" | "present" | "submit" | "receive"
+        )
         || request.nonce.is_empty()
+        || !applies_as_it_says(&request)
         || signing
             != request
                 .sign
@@ -248,6 +433,49 @@ async fn fetch(input: &str) -> Result<(Url, Request), RegistryError> {
         return Err(RegistryError::Unreadable);
     }
     Ok((uri, request))
+}
+
+/// Does an application's request hold together? It names its issuer;
+/// `present` brings its query; `submit` its content, whose digest is the
+/// one the wallet would sign and whose issuer is the one named. Any other
+/// request names none of it.
+fn applies_as_it_says(request: &Request) -> bool {
+    let applying = APPLYING.contains(&request.purpose.as_str());
+    if !applying {
+        return request.issuer.is_none()
+            && request.submission.is_none()
+            && request.dcql_query.is_none();
+    }
+    let Some(issuer) = &request.issuer else {
+        return false;
+    };
+    if issuer.did.is_empty() || request.credential_type.is_none() {
+        return false;
+    }
+    match request.purpose.as_str() {
+        "present" => request.dcql_query.is_some(),
+        "submit" => request.submission.as_ref().is_some_and(|submission| {
+            let content = &submission.content;
+            content["application"]
+                .as_str()
+                .is_some_and(|id| !id.is_empty())
+                && content["issuer"].as_str() == Some(issuer.did.as_str())
+                && digest_of(content).as_deref() == Some(submission.digest.as_str())
+        }),
+        "receive" => request.response_type == "credential",
+        _ => true,
+    }
+}
+
+/// The digest an application is signed by: SHA-256 of its JCS, in hex.
+fn digest_of(content: &serde_json::Value) -> Option<String> {
+    let canonical = jcs(content).ok()?;
+    Some(
+        Sha256::digest(canonical.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+    )
 }
 
 /// Is `portal` the registry's own, as seen from where its request was read?
@@ -309,6 +537,29 @@ fn told_as_it_is(sign: &Sign) -> bool {
                 && sign.valid_until.is_some()
                 && text(&document["validUntil"]) == sign.valid_until
         }
+        // An issuer's credential: signed as a key of its DID, every claim
+        // shown, valid until when the sheet says.
+        "credential" => {
+            let header = &document["header"];
+            let payload = &document["payload"];
+            let issuer = sign.verification_method.clone().unwrap_or_default();
+            let kid = text(&header["kid"]).unwrap_or_default();
+            sign.presentation.is_none()
+                && sign.proof_purpose == "assertionMethod"
+                && !issuer.is_empty()
+                && sign.did.as_deref() == Some(issuer.as_str())
+                && text(&payload["iss"]).as_deref() == Some(issuer.as_str())
+                && text(&header["alg"]).as_deref() == Some("EdDSA")
+                && text(&header["typ"]).as_deref() == Some("dc+sd-jwt")
+                && sign
+                    .signers
+                    .iter()
+                    .any(|key| kid == format!("{issuer}#{key}"))
+                && payload["exp"]
+                    .as_u64()
+                    .is_some_and(|exp| sign.valid_until.as_deref() == Some(timestamp(exp).as_str()))
+                && disclosed(document).is_some()
+        }
         _ => false,
     }
 }
@@ -339,11 +590,25 @@ fn did_of(key: &SigningKey) -> String {
 }
 
 /// The key and DID for the registry at `uri`'s origin: where the request was
-/// read from, not what it says about itself.
-fn identity_for(seed: &[u8; 64], uri: &Url) -> (SigningKey, String) {
-    let key = signing_key(seed, &uri.origin().ascii_serialization(), GENERATION);
+/// read from, not what it says about itself. Applying to one of its issuers,
+/// one of the issuer's own: the origin and the issuer's DID together.
+fn identity_for(seed: &[u8; 64], uri: &Url, issuer: Option<&str>) -> (SigningKey, String) {
+    let origin = uri.origin().ascii_serialization();
+    let scope = match issuer {
+        Some(did) => format!("{origin} {did}"),
+        None => origin,
+    };
+    let key = signing_key(seed, &scope, GENERATION);
     let did = did_of(&key);
     (key, did)
+}
+
+/// The issuer a request applies to, if it applies to one.
+fn issuer_of(request: &Request) -> Option<&str> {
+    APPLYING
+        .contains(&request.purpose.as_str())
+        .then(|| request.issuer.as_ref().map(|issuer| issuer.did.as_str()))
+        .flatten()
 }
 
 /// A compact JWS, `EdDSA`, over `claims`.
@@ -387,13 +652,14 @@ pub fn manage<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
 /// Accept. Sends nothing.
 #[tauri::command]
 pub async fn registry_request(
+    app: tauri::AppHandle,
     held: State<'_, Held>,
     shown: State<'_, Shown>,
     input: String,
 ) -> Result<RegistryRequest, RegistryError> {
     let seed = seed(&held)?;
     let (uri, request) = fetch(&input).await?;
-    let (_, did) = identity_for(&seed, &uri);
+    let (_, did) = identity_for(&seed, &uri, issuer_of(&request));
     // Refused before anything is kept: the portal must at least be a web one.
     let portal = portal(&request.client_id)?;
     if let Ok(mut kept) = shown.0.lock() {
@@ -407,9 +673,70 @@ pub async fn registry_request(
         version: sign.version,
         valid_until: sign.valid_until.clone(),
         signer: sign.signers.iter().any(|key| key == multikey(&did)),
+        claims: if sign.kind == "credential" {
+            disclosed(&sign.document)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(name, value)| Claim {
+                    name,
+                    value: value
+                        .as_str()
+                        .map_or_else(|| value.to_string(), str::to_owned)
+                        .chars()
+                        .take(500)
+                        .collect(),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        },
+    });
+    let (chosen, complete) = if request.purpose == "present" {
+        presentable(&app, &seed, &request)
+    } else {
+        (Vec::new(), true)
+    };
+    let applying = request.issuer.as_ref().map(|issuer| Applying {
+        presenting: chosen
+            .iter()
+            .map(|one| Presenting {
+                credential: one.credential.type_labels.clone(),
+                issuer: one.credential.issuer_name.clone(),
+                claims: one
+                    .claims
+                    .iter()
+                    .map(|(name, value)| claim(name, value))
+                    .collect(),
+            })
+            .collect(),
+        complete,
+        issuer: issuer.name.chars().take(200).collect(),
+        issuer_did: issuer.did.clone(),
+        credential: request
+            .credential_type
+            .as_ref()
+            .map(|kind| {
+                if kind.labels.is_empty() {
+                    std::collections::BTreeMap::from([("en".to_owned(), kind.id.clone())])
+                } else {
+                    kind.labels.clone()
+                }
+            })
+            .unwrap_or_default(),
+        answers: request
+            .submission
+            .as_ref()
+            .map(|submission| answers(&submission.content))
+            .unwrap_or_default(),
+        asked: request
+            .dcql_query
+            .as_ref()
+            .and_then(|query| query["credential_sets"].as_array().map(Vec::len))
+            .unwrap_or(0),
     });
     Ok(RegistryRequest {
         signing,
+        applying,
         name: request.client_name.chars().take(80).collect(),
         portal: portal.host_str().unwrap_or_default().to_owned(),
         answer_to: uri.host_str().unwrap_or_default().to_owned(),
@@ -418,11 +745,42 @@ pub async fn registry_request(
     })
 }
 
+/// An application's answers as the sheet shows them: label and text by language.
+fn answers(content: &serde_json::Value) -> Vec<Answer> {
+    let by_language = |value: &serde_json::Value| {
+        value
+            .as_object()
+            .map(|map| {
+                map.iter()
+                    .filter_map(|(lang, text)| {
+                        text.as_str()
+                            .map(|text| (lang.clone(), text.chars().take(500).collect()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    content["answers"]
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| Answer {
+                    label: by_language(&item["label"]),
+                    text: by_language(&item["text"]),
+                    verified: item["verified"].as_bool().unwrap_or(false),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Answers the registry request the sheet showed: what Accept does. The
 /// request is not read again, so what is signed is what was shown; it is
 /// kept until it is answered, so Accept can be tried again after a failure.
 #[tauri::command]
 pub async fn registry_answer(
+    app: tauri::AppHandle,
     held: State<'_, Held>,
     shown: State<'_, Shown>,
     input: String,
@@ -437,7 +795,30 @@ pub async fn registry_answer(
     let Some((_, uri, request)) = kept else {
         return Err(RegistryError::Unreadable);
     };
-    answer(&seed, &uri, &request).await?;
+    if request.purpose == "receive" {
+        let received = receive(&seed, &uri, &request).await?;
+        crate::credentials::keep(&app, &seed, received).map_err(|_| RegistryError::Refused)?;
+    } else if request.purpose == "present" {
+        // The same choice the sheet showed, from the same credentials.
+        let (chosen, _) = presentable(&app, &seed, &request);
+        if chosen.is_empty() {
+            return Err(RegistryError::NothingToPresent);
+        }
+        let token = crate::presentation::vp_token(
+            &chosen,
+            |scope| signing_key(&seed, scope, GENERATION),
+            &request.client_id,
+            &request.nonce,
+            now(),
+        );
+        post(
+            &request.response_uri,
+            Body::Json(json!({ "vp_token": token })),
+        )
+        .await?;
+    } else {
+        answer(&seed, &uri, &request).await?;
+    }
     if let Ok(mut kept) = shown.0.lock() {
         if kept.as_ref().is_some_and(|(link, _, _)| *link == input) {
             *kept = None;
@@ -447,10 +828,48 @@ pub async fn registry_answer(
 }
 
 async fn answer(seed: &[u8; 64], uri: &Url, request: &Request) -> Result<(), RegistryError> {
-    let (key, did) = identity_for(seed, uri);
+    let (key, did) = identity_for(seed, uri, issuer_of(request));
+    match request.purpose.as_str() {
+        // Presenting needs the held credentials: `registry_answer` does it.
+        // Without them there is nothing to present.
+        "present" => return Err(RegistryError::NothingToPresent),
+        "submit" => {
+            let submission = request
+                .submission
+                .as_ref()
+                .ok_or(RegistryError::Unreadable)?;
+            if request.holder.as_deref() != Some(did.as_str()) {
+                return Err(RegistryError::NotTheHolder);
+            }
+            let issued = now();
+            let token = id_token(
+                &key,
+                &did,
+                json!({
+                    "iss": did,
+                    "aud": request.client_id,
+                    "nonce": request.nonce,
+                    "iat": issued,
+                    "exp": issued + TOKEN_LIFETIME,
+                    "application": submission.content["application"],
+                    "digest": submission.digest,
+                }),
+            );
+            return post(
+                &request.response_uri,
+                Body::Json(json!({ "signature": token })),
+            )
+            .await;
+        }
+        _ => {}
+    }
     if let Some(sign) = &request.sign {
         if !sign.signers.iter().any(|signer| signer == multikey(&did)) {
             return Err(RegistryError::NotASigner);
+        }
+        if sign.kind == "credential" {
+            let jws = compact(&key, &sign.document["header"], &sign.document["payload"]);
+            return post(&request.response_uri, Body::Json(json!({ "jws": jws }))).await;
         }
         let named = sign.verification_method.as_deref().unwrap_or(&did);
         let created = timestamp(now());
@@ -482,6 +901,94 @@ async fn answer(seed: &[u8; 64], uri: &Url, request: &Request) -> Result<(), Reg
         .append_pair("id_token", &token)
         .finish();
     post(&request.response_uri, Body::Form(body)).await
+}
+
+/// A compact JWS, `EdDSA`, over the header and payload given.
+fn compact(key: &SigningKey, header: &serde_json::Value, payload: &serde_json::Value) -> String {
+    let signing_input = format!(
+        "{}.{}",
+        URL_SAFE_NO_PAD.encode(header.to_string()),
+        URL_SAFE_NO_PAD.encode(payload.to_string())
+    );
+    let signature = key.sign(signing_input.as_bytes());
+    format!(
+        "{signing_input}.{}",
+        URL_SAFE_NO_PAD.encode(signature.to_bytes())
+    )
+}
+
+/// What the registry answers a `receive` with.
+#[derive(Deserialize)]
+struct Received {
+    format: String,
+    credential: String,
+    issuer: IssuerRef,
+    credential_type: CredentialTypeRef,
+}
+
+/// Takes the credential the holder applied for: proves the key it is bound to
+/// (the one paired with the issuer), and checks what comes back before it is
+/// kept.
+async fn receive(
+    seed: &[u8; 64],
+    uri: &Url,
+    request: &Request,
+) -> Result<crate::credentials::Credential, RegistryError> {
+    let issuer = request.issuer.as_ref().ok_or(RegistryError::Unreadable)?;
+    let (key, did) = identity_for(seed, uri, Some(&issuer.did));
+    if request.holder.as_deref() != Some(did.as_str()) {
+        return Err(RegistryError::NotTheHolder);
+    }
+    let issued = now();
+    let token = id_token(
+        &key,
+        &did,
+        json!({
+            "iss": did, "sub": did, "aud": request.client_id, "nonce": request.nonce,
+            "iat": issued, "exp": issued + TOKEN_LIFETIME,
+        }),
+    );
+    let body = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("id_token", &token)
+        .finish();
+    let answer_to = Url::parse(&request.response_uri).map_err(|_| RegistryError::Unreadable)?;
+    let response = client()
+        .map_err(|_| RegistryError::Unreachable)?
+        .post(reachable(&answer_to)?)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(body)
+        .send()
+        .await
+        .map_err(|_| RegistryError::Unreachable)?;
+    match response.status().as_u16() {
+        200 => {}
+        404 | 409 | 410 => return Err(RegistryError::Expired),
+        _ => return Err(RegistryError::Refused),
+    }
+    let received: Received = response
+        .json()
+        .await
+        .map_err(|_| RegistryError::Unreadable)?;
+    if received.format != "dc+sd-jwt" || received.issuer.did != issuer.did {
+        return Err(RegistryError::Unreadable);
+    }
+    let (claims, issued_at, valid_until) =
+        crate::credentials::read(&received.credential, &did, &issuer.did, None)
+            .map_err(|_| RegistryError::Unreadable)?;
+    Ok(crate::credentials::Credential {
+        id: crate::credentials::id_of(&received.credential),
+        format: received.format,
+        credential: received.credential,
+        issuer_did: issuer.did.clone(),
+        issuer_name: received.issuer.name.chars().take(200).collect(),
+        type_id: received.credential_type.id,
+        type_labels: received.credential_type.labels,
+        claims,
+        issued_at,
+        valid_until,
+        received_at: now(),
+        scope: format!("{} {}", uri.origin().ascii_serialization(), issuer.did),
+    })
 }
 
 enum Body {
@@ -732,7 +1239,7 @@ mod tests {
 
     #[test]
     fn each_registry_sees_its_own_did_and_always_the_same() {
-        let at = |uri: &str| identity_for(&SEED, &Url::parse(uri).unwrap()).1;
+        let at = |uri: &str| identity_for(&SEED, &Url::parse(uri).unwrap(), None).1;
         let one = at("https://api.almena.id/api/v1/auth/wallet/requests/a");
         let again = at("https://api.almena.id/api/v1/auth/wallet/requests/b");
         let other = at("https://registry.example.org/api/v1/auth/wallet/requests/a");
@@ -749,7 +1256,7 @@ mod tests {
 
     #[test]
     fn the_token_verifies_with_the_did_it_names() {
-        let (key, did) = identity_for(&SEED, &api());
+        let (key, did) = identity_for(&SEED, &api(), None);
         let token = id_token(&key, &did, json!({"sub": did, "nonce": "n"}));
         let parts: Vec<&str> = token.split('.').collect();
         assert_eq!(parts.len(), 3);
@@ -884,7 +1391,7 @@ mod tests {
 
     #[test]
     fn the_proof_verifies_over_the_canonical_entry() {
-        let (key, did) = identity_for(&SEED, &api());
+        let (key, did) = identity_for(&SEED, &api(), None);
         let entry = json!({"versionId": "1-Qm", "state": {"id": "did:webvh:Qm:almena.id"}});
         let proof = proof(
             &key,
@@ -911,7 +1418,7 @@ mod tests {
 
     #[test]
     fn a_document_is_signed_as_a_key_of_the_did_it_signs_for() {
-        let (key, did) = identity_for(&SEED, &api());
+        let (key, did) = identity_for(&SEED, &api(), None);
         let credential = json!({
             "@context": ["https://www.w3.org/ns/credentials/v2"],
             "type": ["VerifiableCredential"],
@@ -937,7 +1444,7 @@ mod tests {
 
     #[test]
     fn an_endorsement_presents_the_credential_just_signed() {
-        let (key, _) = identity_for(&SEED, &api());
+        let (key, _) = identity_for(&SEED, &api(), None);
         let tenant = "did:webvh:Qm:almena.id:ids:idn_t";
         let credential = json!({"@context": ["https://www.w3.org/ns/credentials/v2"], "id": "x"});
         let template = json!({
@@ -983,5 +1490,185 @@ mod tests {
         assert!(portal("https://registry.almena.id").is_ok());
         assert!(portal("almena://auth").is_err());
         assert!(portal("not a url").is_err());
+    }
+
+    fn application(purpose: &str, content: Option<serde_json::Value>) -> Request {
+        let submission = content.map(|content| Submission {
+            digest: digest_of(&content).unwrap(),
+            content,
+        });
+        Request {
+            response_type: match purpose {
+                "present" => "vp_token",
+                "submit" => "signature",
+                _ => "id_token",
+            }
+            .into(),
+            response_mode: "direct_post".into(),
+            client_id: "https://registry.almena.id".into(),
+            client_name: "Club".into(),
+            response_uri: "https://api.almena.id/api/v1/applications/a/request/response".into(),
+            nonce: "n".into(),
+            purpose: purpose.into(),
+            sign: None,
+            issuer: Some(IssuerRef {
+                did: "did:webvh:Qm:almena.id:ids:idn_club".into(),
+                name: "Club".into(),
+            }),
+            credential_type: Some(CredentialTypeRef {
+                id: "membership".into(),
+                labels: Default::default(),
+            }),
+            holder: None,
+            dcql_query: (purpose == "present").then(|| json!({"credential_sets": [{}]})),
+            submission,
+        }
+    }
+
+    fn content() -> serde_json::Value {
+        json!({
+            "application": "app_x",
+            "issuer": "did:webvh:Qm:almena.id:ids:idn_club",
+            "answers": [{"key": "given_name", "label": {"en": "Given name"},
+                         "text": {"en": "Lucía"}, "verified": false}],
+        })
+    }
+
+    #[test]
+    fn each_issuer_sees_its_own_did_and_pairing_and_signing_share_it() {
+        let club = Some("did:webvh:Qm:almena.id:ids:idn_club");
+        let gym = Some("did:webvh:Qm:almena.id:ids:idn_gym");
+        let (_, as_registry) = identity_for(&SEED, &api(), None);
+        let (_, at_club) = identity_for(&SEED, &api(), club);
+        assert_ne!(as_registry, at_club);
+        assert_ne!(at_club, identity_for(&SEED, &api(), gym).1);
+        assert_eq!(at_club, identity_for(&SEED, &api(), club).1);
+        let pair = application("pair", None);
+        let submit = application("submit", Some(content()));
+        assert_eq!(issuer_of(&pair), issuer_of(&submit));
+        assert_eq!(issuer_of(&pair), club);
+    }
+
+    #[test]
+    fn an_application_holds_together_or_is_refused() {
+        assert!(applies_as_it_says(&application("pair", None)));
+        assert!(applies_as_it_says(&application("present", None)));
+        assert!(applies_as_it_says(&application("submit", Some(content()))));
+        // What is shown must be what the digest covers.
+        let mut tampered = application("submit", Some(content()));
+        tampered.submission.as_mut().unwrap().content["answers"][0]["text"]["en"] = json!("Eve");
+        assert!(!applies_as_it_says(&tampered));
+        // For another issuer than the one named.
+        let mut elsewhere = application("submit", Some(content()));
+        elsewhere.issuer.as_mut().unwrap().did = "did:webvh:Qm:almena.id:ids:idn_gym".into();
+        assert!(!applies_as_it_says(&elsewhere));
+        assert!(!applies_as_it_says(&application("submit", None)));
+        let mut unnamed = application("pair", None);
+        unnamed.issuer = None;
+        assert!(!applies_as_it_says(&unnamed));
+        // A sign-in names no issuer.
+        let mut sign_in = application("pair", None);
+        sign_in.purpose = "sign_in".into();
+        assert!(!applies_as_it_says(&sign_in));
+        sign_in.issuer = None;
+        sign_in.credential_type = None;
+        assert!(applies_as_it_says(&sign_in));
+    }
+
+    #[test]
+    fn the_sheet_reads_the_answers_by_language() {
+        let shown = answers(&content());
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].text["en"], "Lucía");
+        assert!(!shown[0].verified);
+    }
+
+    #[tokio::test]
+    async fn nothing_is_presented_and_only_the_paired_key_submits() {
+        let present = application("present", None);
+        assert!(matches!(
+            answer(&SEED, &api(), &present).await,
+            Err(RegistryError::NothingToPresent)
+        ));
+        let mut submit = application("submit", Some(content()));
+        submit.holder = Some("did:key:z6MkOther".into());
+        assert!(matches!(
+            answer(&SEED, &api(), &submit).await,
+            Err(RegistryError::NotTheHolder)
+        ));
+    }
+
+    fn credential_to_sign() -> Sign {
+        let issuer = "did:webvh:Qm:almena.id:ids:idn_club";
+        let disclosure =
+            URL_SAFE_NO_PAD.encode(json!(["salt", "member_number", "0042"]).to_string());
+        let digest = URL_SAFE_NO_PAD.encode(Sha256::digest(disclosure.as_bytes()));
+        Sign {
+            kind: "credential".into(),
+            identity: "Club".into(),
+            tenant: Some("Club".into()),
+            did: Some(issuer.into()),
+            version: None,
+            valid_until: Some(timestamp(1_924_991_999)),
+            signers: vec!["z6MkSigner".into()],
+            verification_method: Some(issuer.into()),
+            proof_purpose: "assertionMethod".into(),
+            document: json!({
+                "header": {"alg": "EdDSA", "typ": "dc+sd-jwt", "kid": format!("{issuer}#z6MkSigner")},
+                "payload": {"iss": issuer, "exp": 1_924_991_999u64, "_sd": [digest],
+                            "cnf": {"kid": "did:key:zHolder"}},
+                "disclosures": [disclosure],
+            }),
+            presentation: None,
+        }
+    }
+
+    #[test]
+    fn a_credential_is_signed_only_as_it_is_shown() {
+        let sign = credential_to_sign();
+        assert!(told_as_it_is(&sign));
+        let claims = disclosed(&sign.document).expect("claims");
+        assert_eq!(claims, vec![("member_number".to_owned(), json!("0042"))]);
+        // A claim the sheet would not show, or one shown that is not signed.
+        let mut hidden = credential_to_sign();
+        hidden.document["payload"]["_sd"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!("another"));
+        assert!(!told_as_it_is(&hidden));
+        let mut stray = credential_to_sign();
+        stray.document["disclosures"] =
+            json!([URL_SAFE_NO_PAD.encode(json!(["salt", "role", "admin"]).to_string())]);
+        assert!(!told_as_it_is(&stray));
+        // Another issuer's name in the payload, another key, another date.
+        let mut elsewhere = credential_to_sign();
+        elsewhere.document["payload"]["iss"] = json!("did:web:else");
+        assert!(!told_as_it_is(&elsewhere));
+        let mut unlisted = credential_to_sign();
+        unlisted.signers = vec!["z6MkOther".into()];
+        assert!(!told_as_it_is(&unlisted));
+        let mut later = credential_to_sign();
+        later.valid_until = Some(timestamp(1_924_992_000));
+        assert!(!told_as_it_is(&later));
+    }
+
+    #[test]
+    fn the_credential_jws_verifies_over_what_was_sent() {
+        let (key, _) = identity_for(&SEED, &api(), None);
+        let sign = credential_to_sign();
+        let jws = compact(&key, &sign.document["header"], &sign.document["payload"]);
+        let mut parts = jws.split('.');
+        let header = parts.next().unwrap();
+        let payload = parts.next().unwrap();
+        let signature = URL_SAFE_NO_PAD.decode(parts.next().unwrap()).unwrap();
+        let sent: serde_json::Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(payload).unwrap()).unwrap();
+        assert_eq!(sent, sign.document["payload"]);
+        key.verifying_key()
+            .verify(
+                format!("{header}.{payload}").as_bytes(),
+                &Signature::from_slice(&signature).unwrap(),
+            )
+            .expect("verifies");
     }
 }
