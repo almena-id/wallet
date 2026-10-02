@@ -1,0 +1,606 @@
+# Builds Almena Wallet for every platform whenever something is merged into
+# main: the desktop installers become a GitHub release of almena-id/wallet,
+# and the phone builds go to Google Play and App Store Connect.
+#
+#   Linux x86_64          .deb and .AppImage (Ubuntu 24.04+)   GitHub release
+#   Windows x86_64        .exe (NSIS) and .msi, Authenticode    GitHub release
+#   macOS Apple silicon   .dmg, Developer ID, notarized         GitHub release
+#   Android               .aab, upload key                      Google Play
+#   iOS                   .ipa, Apple Distribution              App Store Connect
+#
+# Versions are year.month.sequence (e.g. 2026.10.1), as in the mediator: the
+# sequence starts at 1 each month and goes up by one per publication. It is
+# worked out from the git tags v<year>.<month>.<n>. Runs queue up (never in
+# parallel), so two merges cannot take the same number. Each platform is given
+# the version in the shape it accepts: see .github/scripts/stamp-version.mjs.
+#
+# The GitHub release (and its tag) is created once every platform has built,
+# so a failed build does not use up a number. The stores come after it: their
+# uploads are the only steps that cannot be undone (a store never takes the
+# same build number twice), so if one fails, re-run that job alone — the
+# builds are kept for a week — rather than merging again.
+#
+# What the release carries, besides the installers:
+#
+#   SHA256SUMS       the checksum of every file
+#   SHA256SUMS.asc   its detached OpenPGP signature, by the Almena release key
+#
+# Every secret and variable below is described, with how to obtain it, in
+# docs/releasing.md.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  NODE_VERSION: 24
+  PNPM_VERSION: 12
+
+jobs:
+  version:
+    name: Work out the version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Next year.month.sequence
+        id: next
+        run: |
+          month=$(date -u +%Y.%m)
+          last=$(git tag --list "v${month}.*" | sed "s/^v${month}\.//" | grep -E '^[0-9]+$' | sort -n | tail -n 1)
+          version="${month}.$(( ${last:-0} + 1 ))"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version: $version"
+
+  check:
+    name: Lint and test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Linux libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: TypeScript
+        run: pnpm exec tsc --noEmit
+
+      - name: Formatting
+        working-directory: src-tauri
+        run: cargo fmt --check
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Tests
+        working-directory: src-tauri
+        run: cargo test --locked
+
+  # ----- Desktop ---------------------------------------------------------------
+
+  linux:
+    name: Build Linux x86_64
+    needs: [version, check]
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Linux libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev xdg-utils
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: linux
+
+      - name: Stamp the version
+        run: node .github/scripts/stamp-version.mjs "$VERSION"
+
+      - name: Build
+        # linuxdeploy's strip cannot read the .relr.dyn sections Ubuntu 24.04's
+        # toolchain writes; the release profile has stripped the binary already.
+        env:
+          NO_STRIP: "true"
+        run: pnpm tauri build --bundles deb,appimage
+
+      - name: Package
+        run: |
+          bundle=src-tauri/target/release/bundle
+          mkdir -p dist
+          cp "$(ls "$bundle"/deb/*.deb | head -n 1)" "dist/almena-wallet-${VERSION}-linux-amd64.deb"
+          cp "$(ls "$bundle"/appimage/*.AppImage | head -n 1)" "dist/almena-wallet-${VERSION}-linux-amd64.AppImage"
+          ls -l dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-linux
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    name: Build Windows x86_64
+    needs: [version, check]
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: windows
+
+      - name: Stamp the version
+        run: node .github/scripts/stamp-version.mjs "$VERSION"
+
+      - name: Signing tool
+        run: cargo install trusted-signing-cli --locked
+
+      - name: Signing configuration
+        # Tauri runs this command on the wallet's executable and on both
+        # installers. The certificate never leaves Azure: Trusted Signing signs
+        # the digest and stamps it with Microsoft's timestamp service.
+        env:
+          ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+        run: |
+          test -n "$ENDPOINT" && test -n "$ACCOUNT" && test -n "$PROFILE" || {
+            echo "AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT and AZURE_SIGNING_PROFILE must be set." >&2
+            exit 1
+          }
+          # The object form: the string form is split on spaces, and the
+          # description has one.
+          cat > src-tauri/tauri.signing.conf.json <<CONF
+          {
+            "bundle": {
+              "windows": {
+                "signCommand": {
+                  "cmd": "trusted-signing-cli",
+                  "args": ["-e", "$ENDPOINT", "-a", "$ACCOUNT", "-c", "$PROFILE", "-d", "Almena Wallet", "%1"]
+                }
+              }
+            }
+          }
+          CONF
+
+      - name: Build
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: pnpm tauri build --bundles nsis,msi --config src-tauri/tauri.signing.conf.json
+
+      - name: Package
+        run: |
+          bundle=src-tauri/target/release/bundle
+          mkdir -p dist
+          cp "$(ls "$bundle"/nsis/*.exe | head -n 1)" "dist/almena-wallet-${VERSION}-windows-x64-setup.exe"
+          cp "$(ls "$bundle"/msi/*.msi | head -n 1)" "dist/almena-wallet-${VERSION}-windows-x64.msi"
+          ls -l dist
+
+      - name: Check the signatures
+        shell: pwsh
+        run: |
+          Get-ChildItem dist | ForEach-Object {
+            $signature = Get-AuthenticodeSignature $_.FullName
+            "{0}: {1} ({2})" -f $_.Name, $signature.Status, $signature.SignerCertificate.Subject
+            if ($signature.Status -ne 'Valid') { exit 1 }
+          }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-windows
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  macos:
+    name: Build macOS Apple silicon
+    needs: [version, check]
+    runs-on: macos-26
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: macos
+
+      - uses: go-task/setup-task@v1
+
+      - name: Stamp the version
+        run: node .github/scripts/stamp-version.mjs "$VERSION"
+
+      - name: Signing keychain
+        # A keychain of its own for this run, holding the Developer ID
+        # Application certificate and the intermediate it chains to, first in
+        # the search list so codesign finds the identity by name.
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password=$(openssl rand -base64 24)
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+
+          echo "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/productbuild
+          curl -fsSL https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer -o "$RUNNER_TEMP/DeveloperIDG2CA.cer"
+          security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$keychain"
+          rm -f "$RUNNER_TEMP/developer-id.p12"
+
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+
+          identity=$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -n 1)
+          test -n "$identity" || { echo "No Developer ID Application identity in MACOS_CERTIFICATE_P12." >&2; exit 1; }
+          echo "MACOS_RELEASE_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "Signing as: $identity"
+
+      - name: Profile and notary key
+        env:
+          PROFILE: ${{ secrets.MACOS_PROVISION_PROFILE }}
+          NOTARY_KEY: ${{ secrets.ASC_API_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ vars.ASC_API_KEY_ID }}
+        run: |
+          echo "$PROFILE" | base64 --decode > "$RUNNER_TEMP/wallet.provisionprofile"
+          printf '%s\n' "$NOTARY_KEY" > "$RUNNER_TEMP/AuthKey_${NOTARY_KEY_ID}.p8"
+          echo "MACOS_RELEASE_PROFILE=$RUNNER_TEMP/wallet.provisionprofile" >> "$GITHUB_ENV"
+          echo "NOTARY_API_KEY_PATH=$RUNNER_TEMP/AuthKey_${NOTARY_KEY_ID}.p8" >> "$GITHUB_ENV"
+
+      - name: Build, sign, notarize and staple
+        # The same task a person runs by hand: Developer ID, hardened runtime,
+        # the entitlements and the profile, the .app and the .dmg notarized,
+        # stapled and assessed by Gatekeeper. See Taskfile.yml.
+        env:
+          APPLE_DEVELOPMENT_TEAM: ${{ vars.APPLE_TEAM_ID }}
+          NOTARY_API_KEY: ${{ vars.ASC_API_KEY_ID }}
+          NOTARY_API_ISSUER: ${{ vars.ASC_API_ISSUER_ID }}
+        run: task release:macos
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp "$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -n 1)" "dist/almena-wallet-${VERSION}-macos-arm64.dmg"
+          ls -l dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-macos
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  # ----- Phones ----------------------------------------------------------------
+
+  android:
+    name: Build Android
+    needs: [version, check]
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Gradle 8 runs on 17 to 24; 17 is what the project builds Kotlin for.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: android
+
+      - name: Stamp the version
+        run: node .github/scripts/stamp-version.mjs "$VERSION"
+
+      - name: Firebase project
+        # Push: without it the app builds and gets no token, which is not a
+        # build to publish.
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          test -n "$GOOGLE_SERVICES_JSON" || { echo "GOOGLE_SERVICES_JSON is not set." >&2; exit 1; }
+          printf '%s' "$GOOGLE_SERVICES_JSON" > src-tauri/gen/android/app/google-services.json
+
+      - name: Build
+        # 64-bit ARM (every current phone), 32-bit ARM (older ones) and x86_64
+        # (Chromebooks, emulators), in one bundle Google Play splits per device.
+        run: |
+          export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          pnpm tauri android build --aab --target aarch64 armv7 x86_64
+
+      - name: Sign with the upload key
+        # Google Play re-signs what it delivers with the app signing key it
+        # keeps; this signature only proves the upload is ours.
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_UPLOAD_KEYSTORE }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ vars.ANDROID_UPLOAD_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/upload.jks"
+          outputs=src-tauri/gen/android/app/build/outputs
+          aab=$(find "$outputs/bundle" -name '*-release.aab' | head -n 1)
+          test -n "$aab" || { echo "No release bundle was produced." >&2; exit 1; }
+          mkdir -p dist
+          cp "$aab" "dist/almena-wallet-${VERSION}.aab"
+          jarsigner -keystore "$RUNNER_TEMP/upload.jks" -storepass "$KEYSTORE_PASSWORD" \
+            -keypass "$KEY_PASSWORD" -sigalg SHA256withRSA -digestalg SHA-256 \
+            "dist/almena-wallet-${VERSION}.aab" "$KEY_ALIAS"
+          jarsigner -verify "dist/almena-wallet-${VERSION}.aab"
+          rm -f "$RUNNER_TEMP/upload.jks"
+          # R8's map from the shrunk names back to the real ones, for Play's
+          # crash reports.
+          mapping=$(find "$outputs/mapping" -name mapping.txt 2>/dev/null | head -n 1)
+          if [ -n "$mapping" ]; then cp "$mapping" dist/mapping.txt; fi
+          ls -l dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  ios:
+    name: Build iOS
+    needs: [version, check]
+    runs-on: macos-26
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ios
+
+      - name: Stamp the version
+        run: node .github/scripts/stamp-version.mjs "$VERSION"
+
+      - name: Production push
+        # The committed entitlement says development, which is what a build
+        # from Xcode on a cable needs. An App Store profile grants production
+        # only, and a build whose entitlements ask for more is refused.
+        run: plutil -replace aps-environment -string production src-tauri/gen/apple/wallet_iOS/wallet_iOS.entitlements
+
+      - name: Build and export for App Store Connect
+        # Tauri imports the certificate into a keychain of its own and installs
+        # the profile, then archives and exports with manual signing.
+        env:
+          APPLE_DEVELOPMENT_TEAM: ${{ vars.APPLE_TEAM_ID }}
+          IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE_P12 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_MOBILE_PROVISION: ${{ secrets.IOS_PROVISION_PROFILE }}
+        run: pnpm tauri ios build --export-method app-store-connect
+
+      - name: Package
+        run: |
+          ipa=$(find src-tauri/gen/apple/build -maxdepth 2 -name '*.ipa' | head -n 1)
+          test -n "$ipa" || { echo "No .ipa was produced." >&2; exit 1; }
+          mkdir -p dist
+          cp "$ipa" "dist/almena-wallet-${VERSION}.ipa"
+          ls -l dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ios
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  # ----- Publication -----------------------------------------------------------
+
+  release:
+    name: Release ${{ needs.version.outputs.version }}
+    needs: [version, linux, windows, macos, android, ios]
+    runs-on: ubuntu-24.04
+    permissions:
+      # The release and its version tag.
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          pattern: desktop-*
+          merge-multiple: true
+
+      - name: Checksums and their signature
+        working-directory: dist
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.RELEASE_GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.RELEASE_GPG_PASSPHRASE }}
+        run: |
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --batch --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
+            --armor --detach-sign --output SHA256SUMS.asc SHA256SUMS
+          gpg --batch --verify SHA256SUMS.asc SHA256SUMS
+          rm -rf "$GNUPGHOME"
+
+      - name: Create the release and tag the commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Almena Wallet $VERSION" \
+            --generate-notes
+
+  google-play:
+    name: Google Play
+    needs: [version, release]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: android
+          path: dist
+
+      - name: Upload
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: id.almena.wallet
+          releaseFiles: dist/almena-wallet-${{ needs.version.outputs.version }}.aab
+          releaseName: ${{ needs.version.outputs.version }}
+          mappingFile: ${{ hashFiles('dist/mapping.txt') != '' && 'dist/mapping.txt' || '' }}
+          # internal, alpha (closed), beta (open) or production; promoted
+          # further by hand in Play Console.
+          track: ${{ vars.PLAY_TRACK || 'internal' }}
+          # draft while the app has never been reviewed: Play refuses anything
+          # else until then.
+          status: ${{ vars.PLAY_RELEASE_STATUS || 'completed' }}
+
+  app-store:
+    name: App Store Connect
+    needs: [version, release]
+    runs-on: macos-26
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ios
+          path: dist
+
+      - name: Upload to TestFlight
+        # The build lands in App Store Connect and TestFlight; sending it to
+        # review, with its notes and screenshots, is done there by hand.
+        env:
+          KEY: ${{ secrets.ASC_API_KEY_P8 }}
+          KEY_ID: ${{ vars.ASC_API_KEY_ID }}
+          ISSUER_ID: ${{ vars.ASC_API_ISSUER_ID }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          printf '%s\n' "$KEY" > ~/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8
+          xcrun altool --upload-app --type ios --file "dist/almena-wallet-${VERSION}.ipa" \
+            --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID"
+          rm -f ~/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8

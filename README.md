@@ -158,6 +158,15 @@ they are layered and drawn by hand, and only ever copied forward.
 [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) for the code
 layout.
 
+## Releases
+
+Every merge into `main` builds the wallet for every platform, with a
+`year.month.sequence` version (e.g. `2026.10.1`): the Linux, Windows and macOS
+installers, signed (and notarized on macOS), become a GitHub release with
+signed checksums; the Android and iOS builds are uploaded to Google Play and
+App Store Connect. The secrets it needs, and how each one is obtained, are in
+[docs/releasing.md](docs/releasing.md).
+
 ## Publishing to the stores
 
 What the App Store and Google Play require — review guidelines, privacy
