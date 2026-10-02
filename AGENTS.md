@@ -20,6 +20,8 @@ This project is independent: it has its own tooling and shares nothing with `../
 - `src-tauri/gen/android`, `src-tauri/gen/apple` — native projects from `tauri android|ios init`; regenerated, so settings that must survive live in `src-tauri/Info.ios.plist`, `src-tauri/push/` (applied by `push/sync.sh`, which the init tasks run; it patches the Xcode project instead of running xcodegen, whose output differs from Tauri's) and the Taskfile. `google-services.json` is the publisher's and is not committed.
 - `assets/branding/` — source artwork; `task icons` regenerates `src-tauri/icons` and `public/brand`. Android launcher icons under `src-tauri/icons/android` are hand-drawn.
 - `src/styles/global.css` — the only place a colour is written; palettes keyed by `data-theme` and `data-accent` on the root.
+- The identity colour is the person's choice, in Profile → Appearance (`src/appearance.ts`, `data-accent` on the root picks the palette in `global.css`): orange `#eb7229` (the default), blue `#2f6fed`, red `#e0413a`, yellow `#f2b705`, green `#1f9d55`. The identity colours across Almena: status cyan `#3fe0ff`, catalog blue `#2563eb`, registry green `#1f9d55`, mediator blue `#2f6fed`, landing orange `#eb7229`, docu yellow `#f2b705`, the wallet this choice.
+- Typefaces, as in the portals, bundled with the app (it works offline) from Fontsource packages imported in `src/main.tsx`: Chakra Petch (`--font-brand`: headings), Inter (`--font-sans`: the interface), JetBrains Mono (`--font-mono`: DIDs, the phrase, codes). Never load them from the network.
 
 The look follows the previous Almena ID wallet (github.com/almena-id/wallet, branch `develop`).
 
