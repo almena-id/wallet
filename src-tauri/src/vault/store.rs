@@ -69,6 +69,7 @@
 //! there is no identity. Writing goes to one place and clears the other, so
 //! there is never a second, older copy to find.
 
+#[cfg(any(target_os = "ios", target_os = "macos"))]
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write as _;
@@ -103,6 +104,7 @@ const FILE: &str = "vault.json";
 /// are recognisably this wallet's wherever somebody looks at them.
 const SERVICE: &str = "id.almena.wallet";
 const RECORD: &str = "vault";
+#[cfg(any(target_os = "ios", target_os = "macos"))]
 const DEVICE_KEY: &str = "device-key";
 
 /// The account the macOS probe writes to and takes straight back out.

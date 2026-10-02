@@ -22,6 +22,8 @@ use tauri::{Runtime, State};
 
 /// One message that arrived: who it is from, as the wallet calls them, and
 /// what it says.
+// Read only where notifications are shown, on a computer.
+#[cfg_attr(not(desktop), allow(dead_code))]
 pub struct Fresh {
     pub from: String,
     pub content: String,
@@ -46,6 +48,8 @@ pub enum Privacy {
 pub struct Notices(Mutex<Config>);
 
 #[derive(Default)]
+// Read only where notifications are shown, on a computer.
+#[cfg_attr(not(desktop), allow(dead_code))]
 struct Config {
     privacy: Privacy,
     /// "New message", in the language the interface is read in.
@@ -75,6 +79,8 @@ pub fn notifications_configure(
 
 /// What to show for `fresh`, as `(title, body)` pairs: one per message, or a
 /// single one that names nobody.
+// Read only where notifications are shown, on a computer.
+#[cfg_attr(not(desktop), allow(dead_code))]
 fn notices(config: &Config, fresh: &[Fresh]) -> Vec<(String, String)> {
     if fresh.is_empty() || config.new_message.is_empty() {
         return Vec::new();
