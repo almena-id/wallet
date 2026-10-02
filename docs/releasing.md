@@ -24,7 +24,9 @@ in Play Console and App Store Connect.
 ## Secrets and variables
 
 Set in the repository (Settings → Secrets and variables → Actions), or in the
-organization when another repository needs the same value (marked *org*).
+organization when another repository needs the same value (marked *org*: the
+`almena` CLI's release signs and notarizes with them too, and an organization
+secret must be granted to each repository that reads it).
 Variables are not secret; secrets are never shown again once saved.
 
 | Name | Kind | Used by | |
@@ -33,8 +35,8 @@ Variables are not secret; secrets are never shown again once saved.
 | `ASC_API_KEY_ID` | variable, *org* | macOS (notary), App Store | App Store Connect API key ID |
 | `ASC_API_ISSUER_ID` | variable, *org* | macOS (notary), App Store | its issuer ID |
 | `ASC_API_KEY_P8` | secret, *org* | macOS (notary), App Store | the `AuthKey_….p8`, as text |
-| `MACOS_CERTIFICATE_P12` | secret | macOS | Developer ID Application `.p12`, base64 |
-| `MACOS_CERTIFICATE_PASSWORD` | secret | macOS | its password |
+| `MACOS_CERTIFICATE_P12` | secret, *org* | macOS | Developer ID Application `.p12`, base64 |
+| `MACOS_CERTIFICATE_PASSWORD` | secret, *org* | macOS | its password |
 | `MACOS_PROVISION_PROFILE` | secret | macOS | Developer ID profile, base64 |
 | `IOS_CERTIFICATE_P12` | secret | iOS | Apple Distribution `.p12`, base64 |
 | `IOS_CERTIFICATE_PASSWORD` | secret | iOS | its password |
