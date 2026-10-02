@@ -136,6 +136,16 @@
   --brand-glow-dark: rgba(214, 51, 132, 0.22);
 }
 
+/* The agent's colour. */
+[data-accent="teal"] {
+  --brand: #0fa3a3;
+  --brand-ink: #ffffff;
+  --brand-soft: rgba(15, 163, 163, 0.14);
+  --brand-shadow: rgba(15, 163, 163, 0.8);
+  --brand-glow: rgba(15, 163, 163, 0.18);
+  --brand-glow-dark: rgba(15, 163, 163, 0.22);
+}
+
 /* The catalog portal's colour. */
 [data-accent="blue"] {
   --brand: #2563eb;

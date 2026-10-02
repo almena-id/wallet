@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from "react";
  * root element: this side only says which one, so a colour is a set of tokens
  * and never a value hardcoded in a component.
  */
-export const accents = ["orange", "blue", "red", "yellow", "green", "cyan", "magenta"] as const;
+export const accents = ["orange", "blue", "red", "yellow", "green", "cyan", "magenta", "teal"] as const;
 
 export type Accent = (typeof accents)[number];
 

@@ -185,7 +185,8 @@
         "yellow": "Yellow",
         "green": "Green",
         "cyan": "Cyan",
-        "magenta": "Magenta"
+        "magenta": "Magenta",
+        "teal": "Teal"
       },
       "default": "Default",
       "theme": {
