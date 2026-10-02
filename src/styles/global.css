@@ -68,10 +68,11 @@
 /* ------------------------------------------------------- identity colour */
 
 /*
- * Five palettes, one per colour somebody can pick in Appearance. Each names the
- * whole set rather than a hue to derive from: `color-mix` is younger than the
- * webviews this has to run in, and yellow needs dark ink where the rest take
- * white, which no derivation would have guessed.
+ * One palette per colour somebody can pick in Appearance — the identity colours
+ * of the Almena portals, plus red. Each names the whole set rather than a hue to
+ * derive from: `color-mix` is younger than the webviews this has to run in, and
+ * yellow and cyan need dark ink where the rest take white, which no derivation
+ * would have guessed.
  */
 
 /* Orange is what `:root` already carries, but a swatch offering it needs the
@@ -84,15 +85,6 @@
   --brand-shadow: rgba(235, 114, 41, 0.8);
   --brand-glow: rgba(235, 114, 41, 0.18);
   --brand-glow-dark: rgba(235, 114, 41, 0.22);
-}
-
-[data-accent="blue"] {
-  --brand: #2f6fed;
-  --brand-ink: #ffffff;
-  --brand-soft: rgba(47, 111, 237, 0.14);
-  --brand-shadow: rgba(47, 111, 237, 0.8);
-  --brand-glow: rgba(47, 111, 237, 0.18);
-  --brand-glow-dark: rgba(47, 111, 237, 0.22);
 }
 
 [data-accent="red"] {
@@ -121,6 +113,37 @@
   --brand-shadow: rgba(31, 157, 85, 0.8);
   --brand-glow: rgba(31, 157, 85, 0.18);
   --brand-glow-dark: rgba(31, 157, 85, 0.22);
+}
+
+/* The status portal's colour. */
+[data-accent="cyan"] {
+  --brand: #3fe0ff;
+  /* Dark ink, as on yellow: white on a colour this light does not read. */
+  --brand-ink: #17181c;
+  --brand-soft: rgba(63, 224, 255, 0.18);
+  --brand-shadow: rgba(63, 224, 255, 0.8);
+  --brand-glow: rgba(63, 224, 255, 0.2);
+  --brand-glow-dark: rgba(63, 224, 255, 0.24);
+}
+
+/* The mediator's colour. */
+[data-accent="magenta"] {
+  --brand: #d63384;
+  --brand-ink: #ffffff;
+  --brand-soft: rgba(214, 51, 132, 0.14);
+  --brand-shadow: rgba(214, 51, 132, 0.8);
+  --brand-glow: rgba(214, 51, 132, 0.18);
+  --brand-glow-dark: rgba(214, 51, 132, 0.22);
+}
+
+/* The catalog portal's colour. */
+[data-accent="blue"] {
+  --brand: #2563eb;
+  --brand-ink: #ffffff;
+  --brand-soft: rgba(37, 99, 235, 0.14);
+  --brand-shadow: rgba(37, 99, 235, 0.8);
+  --brand-glow: rgba(37, 99, 235, 0.18);
+  --brand-glow-dark: rgba(37, 99, 235, 0.22);
 }
 
 /*
@@ -1753,7 +1776,7 @@ body {
 
 /* The colours are the control: a row of the things being chosen, each wearing
    its own palette, and the chosen one wearing a tick in its own ink — which is
-   dark on yellow and white on the rest without anything here saying so. */
+   dark on yellow and cyan and white on the rest without anything here saying so. */
 .swatches {
   display: flex;
   flex-wrap: wrap;

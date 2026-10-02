@@ -183,7 +183,9 @@
         "blue": "Azul",
         "red": "Rojo",
         "yellow": "Amarillo",
-        "green": "Verde"
+        "green": "Verde",
+        "cyan": "Cian",
+        "magenta": "Magenta"
       },
       "default": "Por defecto",
       "theme": {
