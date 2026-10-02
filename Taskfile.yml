@@ -337,10 +337,13 @@ tasks:
       - cd src-tauri && cargo clean
 
   clean:all:
-    desc: clean, plus node_modules
+    desc: Leave the repository as cloned — clean, plus node_modules, .env.local, the signing scratch, the native projects' build output and the Task checksums (the Android keystore properties are kept)
     cmds:
       - task: clean
-      - rm -rf node_modules
+      - rm -rf node_modules .task src-tauri/.signing src-tauri/gen/schemas
+      - rm -rf src-tauri/gen/android/.gradle src-tauri/gen/android/build src-tauri/gen/android/app/build src-tauri/gen/android/.cxx src-tauri/gen/android/app/.cxx src-tauri/gen/android/local.properties
+      - rm -rf src-tauri/gen/apple/build src-tauri/gen/apple/Externals
+      - find . -maxdepth 1 -name '.env*' ! -name '.env.example' -exec rm -f {} +
 
   # ----- Branding ------------------------------------------------------------
 
