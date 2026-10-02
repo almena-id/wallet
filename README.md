@@ -1,8 +1,8 @@
 # Almena Wallet
 
-The wallet of Almena Network: the app people use to hold their identity and
+The wallet of Almena ID: the app people use to hold their identity and
 exchange [DIDComm Messaging v2.0](https://identity.foundation/didcomm-messaging/spec/v2.0/)
-messages through an Almena [mediator](https://github.com/almena-network/mediator).
+messages through an Almena [mediator](https://github.com/almena-id/mediator).
 One code base, built with Tauri v2, Vite and React, runs on Android, iOS,
 macOS, Linux and Windows.
 

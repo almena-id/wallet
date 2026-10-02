@@ -2,7 +2,7 @@
 name = "wallet"
 version = "0.1.0"
 description = "Almena Wallet"
-authors = ["Almena Network"]
+authors = ["Almena ID"]
 license = "Apache-2.0"
 edition = "2021"
 
@@ -50,7 +50,7 @@ keyring-core = "1"
 # Messaging: DIDComm v2.0 messages, envelopes and DID resolution, from the
 # mediator's own repository — the same code the mediator answers with. Pinned
 # to a release tag; see `docs/didcomm.md` there.
-almena-didcomm = { git = "https://github.com/almena-network/mediator", tag = "v2026.09.1" }
+almena-didcomm = { git = "https://github.com/almena-id/mediator", tag = "v2026.09.1" }
 url = "2.5"
 # Reaching a mediator. Rustls with `ring` and the Mozilla roots rather than the
 # platform verifier: the verifier needs a JNI hand-off on Android and aws-lc-rs

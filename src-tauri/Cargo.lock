@@ -90,7 +90,7 @@ dependencies = [
 [[package]]
 name = "almena-didcomm"
 version = "0.1.0"
-source = "git+https://github.com/almena-network/mediator?tag=v2026.09.1#4abf94fd44d110539115b278faa72fcdd99e7b42"
+source = "git+https://github.com/almena-id/mediator?tag=v2026.09.1#4abf94fd44d110539115b278faa72fcdd99e7b42"
 dependencies = [
  "aes",
  "aes-gcm",

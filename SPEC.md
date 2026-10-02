@@ -2,7 +2,7 @@
 
 Version: draft 1 (2026-09-25) · Status: describes `wallet` as implemented.
 
-This document specifies the protocols Almena wallets speak **to each other**, on top of [DIDComm Messaging v2.0][didcomm]. What a wallet says to its mediator, and what the mediator requires of it, is the mediator's specification (`SPEC.md` in [almena-network/mediator][mediator]); this one does not restate it.
+This document specifies the protocols Almena wallets speak **to each other**, on top of [DIDComm Messaging v2.0][didcomm]. What a wallet says to its mediator, and what the mediator requires of it, is the mediator's specification (`SPEC.md` in [almena-id/mediator][mediator]); this one does not restate it.
 
 For now it holds one protocol, calls (§3). The others the wallet speaks — the handshake that opens a relationship, Basic Message 2.0, User Profile 1.0 — are described in `AGENTS.md` until they are written down here.
 
@@ -106,7 +106,7 @@ An unknown `reason` is read as `ended`. A `hangup` or `answer` for a call that i
 - The mediators see only `forward`s: they do not learn that a call took place.
 
 [didcomm]: https://identity.foundation/didcomm-messaging/spec/v2.0/
-[mediator]: https://github.com/almena-network/mediator
+[mediator]: https://github.com/almena-id/mediator
 [webrtc]: https://www.w3.org/TR/webrtc/
 [rfc2119]: https://www.rfc-editor.org/rfc/rfc2119
 [rfc8174]: https://www.rfc-editor.org/rfc/rfc8174

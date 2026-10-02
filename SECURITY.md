@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Please report vulnerabilities privately through GitHub: on
-[almena-network/wallet](https://github.com/almena-network/wallet), open the
+[almena-id/wallet](https://github.com/almena-id/wallet), open the
 **Security** tab and choose **Report a vulnerability**. Do not open a public
 issue, pull request or discussion about it.
 
@@ -43,5 +43,5 @@ Out of scope:
 - anything that needs the device already unlocked and in hand;
 - rooted or jailbroken devices, and debug builds installed deliberately;
 - the mediator, which has its own policy in
-  [almena-network/mediator](https://github.com/almena-network/mediator);
+  [almena-id/mediator](https://github.com/almena-id/mediator);
 - automated scanner output with no reachable consequence attached.
