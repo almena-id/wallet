@@ -2,8 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- APNs. "development" for the builds Xcode signs here; exporting for
-	     distribution re-signs it as "production". -->
 	<key>aps-environment</key>
 	<string>development</string>
 </dict>

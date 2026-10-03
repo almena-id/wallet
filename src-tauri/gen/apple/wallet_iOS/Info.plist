@@ -72,5 +72,9 @@
 	<string>Almena Wallet uses Face ID to open without the PIN.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Almena Wallet uses the microphone for calls.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>voip</string>
+	</array>
 </dict>
 </plist>
