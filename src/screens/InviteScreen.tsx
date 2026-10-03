@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
-import { CheckIcon, ChevronLeftIcon, CopyIcon } from "../components/icons";
+import { CheckIcon, CopyIcon } from "../components/icons";
 import { QrCode } from "../components/QrCode";
 import { useTranslations } from "../i18n";
 import { showInvitation } from "../contacts";
 import { errorCode } from "../mediator";
+import { BackButton } from "../components/BackButton";
 
 type InviteScreenProps = {
   onBack: () => void;
@@ -55,9 +56,7 @@ export function InviteScreen({ onBack }: InviteScreenProps) {
   return (
     <div className="screen">
       <header className="screen__header screen__header--compact">
-        <button type="button" className="icon-button" onClick={onBack} aria-label={t.nav.back}>
-          <ChevronLeftIcon />
-        </button>
+        <BackButton onBack={onBack} />
         <h1 className="screen__title screen__title--compact">{t.conversations.invite.title}</h1>
       </header>
 

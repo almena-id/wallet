@@ -73,9 +73,11 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tauri::{Manager, Runtime};
+
+use zeroize::Zeroizing;
 
 use super::VaultError;
 
@@ -86,6 +88,9 @@ pub enum Home {
     Store,
     /// A file in the application's private directory.
     File,
+    /// That file, sealed again under a key in the Android Keystore.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    Keystore,
 }
 
 impl Home {
@@ -93,12 +98,18 @@ impl Home {
         match self {
             Self::Store => "store",
             Self::File => "file",
+            Self::Keystore => "keystore",
         }
     }
 }
 
 /// The file the record falls back to, inside the application's own directory.
 const FILE: &str = "vault.json";
+
+/// What a file sealed under the Android Keystore starts with. A record itself
+/// is JSON and starts with `{`, so the two cannot be mistaken for each other.
+#[cfg(target_os = "android")]
+const SEALED: &[u8] = b"almena-keystore/1\n";
 
 /// The service every item is filed under. The bundle identifier, so the items
 /// are recognisably this wallet's wherever somebody looks at them.
@@ -234,11 +245,29 @@ pub fn read<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Option<(Vec<u8>, Ho
     }
 
     let path = file(app)?;
-    match fs::read(&path) {
-        Ok(bytes) => Ok(Some((bytes, Home::File))),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(_) => Err(VaultError::Storage),
+    let bytes = match fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(VaultError::Storage),
+    };
+
+    #[cfg(target_os = "android")]
+    {
+        if let Some(sealed) = bytes.strip_prefix(SEALED) {
+            // A key the Keystore no longer has — the file came back from a
+            // backup, which never carries it — opens nothing: the phrase is
+            // the way back, as for a lost phone.
+            let record = almena_keystore::open(app, sealed).map_err(|_| VaultError::Unreadable)?;
+            return Ok(Some((record, Home::Keystore)));
+        }
+        // Written before the Keystore was used: sealed now, so the copy that
+        // could be guessed at offline does not stay on the phone.
+        let home = write(app, &bytes).unwrap_or(Home::File);
+        return Ok(Some((bytes, home)));
     }
+
+    #[cfg(not(target_os = "android"))]
+    Ok(Some((bytes, Home::File)))
 }
 
 /// Writes the record, and clears whatever copy the other place was holding.
@@ -274,9 +303,25 @@ pub fn write<R: Runtime>(app: &tauri::AppHandle<R>, bytes: &[u8]) -> Result<Home
     // move is a rename and not a copy across filesystems. A wallet interrupted
     // halfway through a PIN change is left with the record it had rather than
     // half of a new one.
+    // **On Android, sealed under the Keystore's key** (`almena-keystore`): the
+    // record is already encrypted under the PIN, but a copy of it taken off the
+    // phone could be tried against every PIN at leisure, and its count of wrong
+    // ones edited back to zero. Under a key that never leaves the phone's
+    // secure hardware, it is nothing anywhere else. Should the Keystore refuse,
+    // the file is written as before and the Security screen says so.
+    #[cfg(target_os = "android")]
+    let (written, home) = match almena_keystore::seal(app, bytes) {
+        Ok(sealed) => ([SEALED, &sealed].concat(), Home::Keystore),
+        Err(_) => (bytes.to_vec(), Home::File),
+    };
+    #[cfg(not(target_os = "android"))]
+    let (written, home) = (bytes.to_vec(), Home::File);
+
     let temporary = path.with_extension("json.writing");
-    let mut handle = fs::File::create(&temporary).map_err(|_| VaultError::Storage)?;
-    handle.write_all(bytes).map_err(|_| VaultError::Storage)?;
+    let mut handle = create_private(&temporary).map_err(|_| VaultError::Storage)?;
+    handle
+        .write_all(&written)
+        .map_err(|_| VaultError::Storage)?;
     handle.sync_all().map_err(|_| VaultError::Storage)?;
     drop(handle);
     fs::rename(&temporary, &path).map_err(|_| VaultError::Storage)?;
@@ -289,7 +334,25 @@ pub fn write<R: Runtime>(app: &tauri::AppHandle<R>, bytes: &[u8]) -> Result<Home
         let _ = entry.delete_credential();
     }
 
-    Ok(Home::File)
+    Ok(home)
+}
+
+/// Creates `path` for writing, readable by this user alone (`0600` where the
+/// system has modes). A file left at `path` by an interrupted write is removed
+/// first: truncating it would keep whatever mode it was created with.
+pub(crate) fn create_private(path: &Path) -> std::io::Result<fs::File> {
+    match fs::remove_file(path) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error),
+        _ => {}
+    }
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(0o600);
+    }
+    options.open(path)
 }
 
 /// Removes the record and the device key, wherever either of them is.
@@ -320,10 +383,10 @@ pub fn clear<R: Runtime>(app: &tauri::AppHandle<R>) {
 /// [`VaultError::DeviceRefused`] when something is and the system would not
 /// hand it over — a face not recognised, a prompt dismissed. The two are told
 /// apart because only the first means the key is gone.
-pub fn device_key() -> Result<Vec<u8>, VaultError> {
+pub fn device_key() -> Result<Zeroizing<Vec<u8>>, VaultError> {
     let entry = device_entry().map_err(|_| VaultError::NoDeviceKey)?;
     match entry.get_secret() {
-        Ok(bytes) => Ok(bytes),
+        Ok(bytes) => Ok(Zeroizing::new(bytes)),
         Err(keyring_core::Error::NoEntry) => Err(VaultError::NoDeviceKey),
         Err(_) => Err(VaultError::DeviceRefused),
     }

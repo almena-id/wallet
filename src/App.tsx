@@ -5,18 +5,17 @@ import { LiquidTabBar, type TabDefinition } from "./components/LiquidTabBar";
 import { HomeIcon, MessagesIcon, ProfileIcon, QrIcon } from "./components/icons";
 import { useI18n } from "./i18n";
 import { plural } from "./i18n/format";
-import { useAccent } from "./appearance";
-import { useAutoLock, useIdle } from "./autolock";
+import { useIdle } from "./autolock";
 import { useBackdrop } from "./backdrop";
 import { invitationKind, useDeepLinks } from "./links";
 import { useLive } from "./live";
+import { useRung, useRungCalls } from "./ring";
 import { calls, useCall } from "./call";
-import { useNotificationPrivacy } from "./notify";
 import { useBackInSight } from "./lock";
 import { usePlatform } from "./platform";
+import { PreferencesProvider, useDevicePreferences } from "./preferences";
 import { registerPush, unregisterPush } from "./push";
 import { forgetIdentity, type Identity } from "./identity";
-import { useTheme } from "./theme";
 import { useTray } from "./tray";
 import {
   destroyVault,
@@ -43,12 +42,10 @@ type Link = { url: string; origin: LinkOrigin };
 
 export default function App() {
   const { t, locale } = useI18n();
-  // Applied for the tokens they put on the root element, and chosen in
-  // Profile → Appearance.
-  const { accent, setAccent } = useAccent();
-  const { theme, setTheme } = useTheme();
-  const { autoLock, setAutoLock } = useAutoLock();
-  const { privacy, setPrivacy } = useNotificationPrivacy();
+  // Applied here for the tokens they put on the root element, and chosen in
+  // Profile (`preferences.tsx`).
+  const preferences = useDevicePreferences();
+  const { theme, autoLock } = preferences;
   const platform = usePlatform();
   // On a computer, the wallet on the system tray: closing the window puts it
   // away rather than ending it, and the tray's menu is where it is quit.
@@ -94,6 +91,9 @@ export default function App() {
   const call = useCall();
   const inCall = call !== null && call.phase !== "ended";
   useEffect(() => (identity !== null ? calls.attach() : undefined), [identity]);
+  // A call the phone rang while the wallet was closed; the lock says so.
+  useRungCalls();
+  const rung = useRung();
   // Messages arrive live while an identity is open and the wallet is seen —
   // and during a call even when it is not, or its hang-up would not arrive.
   useLive(identity !== null, inCall);
@@ -247,6 +247,7 @@ export default function App() {
       <div className="app">
         <main className="app__view app__view--plain">
           <DeviceLockScreen
+            calling={rung !== null}
             error={unlockError}
             busy={unlockBusy}
             onUnlock={() => {
@@ -275,7 +276,7 @@ export default function App() {
         <main className="app__view app__view--plain">
           <PinScreen
             title={t.pin.unlockTitle}
-            subtitle={t.pin.unlockSubtitle}
+            subtitle={rung ? t.pin.callSubtitle : t.pin.unlockSubtitle}
             digits={vault.status.digits ?? 4}
             error={unlockError}
             busy={unlockBusy}
@@ -333,62 +334,62 @@ export default function App() {
   };
 
   return (
-    <div className={cameraPreview ? "app app--camera" : "app"}>
-      <main className={keypad ? "app__view app__view--plain" : "app__view"} key={`${route}-${visit}`}>
-        {route === "home" ? <HomeScreen /> : null}
-        {route === "messages" ? <MessagesTab initialConversation={conversation} /> : null}
-        {route === "scan" ? (
-          <ScanScreen
-            onBack={() => setRoute("home")}
-            onPreviewChange={setCameraPreview}
-            onInvitation={(content) => {
-              // The scanner has done its part: the sheet is put over the home
-              // screen, and whatever the answer is, that is where it leaves.
-              setRoute("home");
-              void openLink(content, "qr");
+    <PreferencesProvider value={preferences}>
+      <div className={cameraPreview ? "app app--camera" : "app"}>
+        <main className={keypad ? "app__view app__view--plain" : "app__view"} key={`${route}-${visit}`}>
+          {route === "home" ? <HomeScreen /> : null}
+          {route === "messages" ? <MessagesTab
+              initialConversation={conversation}
+              onLink={(url) => void openLink(url, "link")}
+            /> : null}
+          {route === "scan" ? (
+            <ScanScreen
+              onBack={() => setRoute("home")}
+              onPreviewChange={setCameraPreview}
+              onInvitation={(content) => {
+                // The scanner has done its part: the sheet is put over the home
+                // screen, and whatever the answer is, that is where it leaves.
+                setRoute("home");
+                void openLink(content, "qr");
+              }}
+            />
+          ) : null}
+          {route === "profile" ? (
+            <ProfileScreen
+              vault={vault}
+              onKeypad={setKeypad}
+              onSignOut={() => setSignOutAsked(true)}
+            />
+          ) : null}
+        </main>
+
+        {keypad || cameraPreview ? null : (
+          <LiquidTabBar label={t.nav.label} tabs={tabs} active={route} onSelect={select} />
+        )}
+
+        {call ? <CallScreen view={call} /> : null}
+
+        {link ? (
+          <LinkSheet
+            key={link.url}
+            url={link.url}
+            origin={link.origin}
+            onClose={closeLink}
+            onConversation={(id) => {
+              setLink(null);
+              setConversation(id);
+              setRoute("messages");
+              // The tab reads which conversation to open only when it is
+              // mounted: already showing, it has to be opened afresh.
+              setVisit((count) => count + 1);
+            }}
+            onMediatorConnected={() => {
+              setLink(null);
+              void registerPush();
             }}
           />
         ) : null}
-        {route === "profile" ? (
-          <ProfileScreen
-            vault={vault}
-            accent={accent}
-            onAccentChange={setAccent}
-            theme={theme}
-            onThemeChange={setTheme}
-            autoLock={autoLock}
-            onAutoLockChange={setAutoLock}
-            privacy={privacy}
-            onPrivacyChange={setPrivacy}
-            onKeypad={setKeypad}
-            onSignOut={() => setSignOutAsked(true)}
-          />
-        ) : null}
-      </main>
-
-      {keypad || cameraPreview ? null : (
-        <LiquidTabBar label={t.nav.label} tabs={tabs} active={route} onSelect={select} />
-      )}
-
-      {call ? <CallScreen view={call} /> : null}
-
-      {link ? (
-        <LinkSheet
-          key={link.url}
-          url={link.url}
-          origin={link.origin}
-          onClose={closeLink}
-          onConversation={(id) => {
-            setLink(null);
-            setConversation(id);
-            setRoute("messages");
-          }}
-          onMediatorConnected={() => {
-            setLink(null);
-            void registerPush();
-          }}
-        />
-      ) : null}
-    </div>
+      </div>
+    </PreferencesProvider>
   );
 }

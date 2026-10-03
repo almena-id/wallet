@@ -20,6 +20,7 @@
 		D0D97D2F8024B4F897A49895 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BCEC9FBCE6F168B60BDA3851 /* WebKit.framework */; };
 		EF70A1B4BDC2E982738DF2B7 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = BAE7A51EDF9FE007BA53A4A2 /* assets */; };
 		A1A1E0000000000000000001 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = A1A1E0000000000000000002 /* Localizable.strings */; };
+		A1A1E0000000000000000005 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1A1E0000000000000000006 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,6 +46,7 @@
 		FED4CAFC7735E737EC5E97DB /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		A1A1E0000000000000000003 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		A1A1E0000000000000000004 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/Localizable.strings; sourceTree = "<group>"; };
+		A1A1E0000000000000000006 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -86,6 +88,7 @@
 			children = (
 				05FDD96F75AEDEB86559E3A1 /* Info.plist */,
 				6309B9B8963D919F1E42A61E /* wallet_iOS.entitlements */,
+				A1A1E0000000000000000006 /* PrivacyInfo.xcprivacy */,
 				A1A1E0000000000000000002 /* Localizable.strings */,
 			);
 			path = wallet_iOS;
@@ -215,6 +218,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1A1E0000000000000000005 /* PrivacyInfo.xcprivacy in Resources */,
 				A1A1E0000000000000000001 /* Localizable.strings in Resources */,
 				4D5BC986E9FC27669B801E04 /* Assets.xcassets in Resources */,
 				7B3D4E3FAA47EC9FAD860DF5 /* LaunchScreen.storyboard in Resources */,

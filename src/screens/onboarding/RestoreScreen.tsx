@@ -1,7 +1,7 @@
 import { useState } from "react";
 
-import { ChevronLeftIcon } from "../../components/icons";
 import { useTranslations } from "../../i18n";
+import { BackButton } from "../../components/BackButton";
 
 type RestoreScreenProps = {
   /** Shown when the phrase was refused, already in the right language. */
@@ -19,9 +19,7 @@ export function RestoreScreen({ error, busy, onBack, onSubmit }: RestoreScreenPr
   return (
     <div className="screen">
       <header className="screen__header screen__header--compact">
-        <button type="button" className="icon-button" onClick={onBack} aria-label={t.nav.back}>
-          <ChevronLeftIcon />
-        </button>
+        <BackButton onBack={onBack} />
         <h1 className="screen__title screen__title--compact">{t.onboarding.restore.title}</h1>
       </header>
 

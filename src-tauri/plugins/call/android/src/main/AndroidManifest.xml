@@ -1,0 +1,21 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- An incoming call takes the screen, also over the lock screen. Google
+         Play grants it to calling apps; see docs/store-publishing.md. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+    <application>
+        <!-- Ahead of the notifications plugin's service (priority 0): a call
+             push is shown here, everything else is passed to it. -->
+        <service
+            android:name="id.almena.call.CallMessagingService"
+            android:exported="false">
+            <intent-filter android:priority="10">
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <receiver
+            android:name="id.almena.call.DeclineReceiver"
+            android:exported="false" />
+    </application>
+</manifest>

@@ -1,7 +1,6 @@
 import { useState } from "react";
 
 import { BrandSpinner } from "../components/BrandSpinner";
-import { ChevronLeftIcon } from "../components/icons";
 import { useTranslations } from "../i18n";
 import {
   connectMediator,
@@ -9,6 +8,7 @@ import {
   suggestedMediator,
   type MediatorStatus,
 } from "../mediator";
+import { BackButton } from "../components/BackButton";
 
 type MediatorConnectScreenProps = {
   onBack: () => void;
@@ -43,9 +43,7 @@ export function MediatorConnectScreen({ onBack, onConnected }: MediatorConnectSc
   return (
     <div className="screen">
       <header className="screen__header screen__header--compact">
-        <button type="button" className="icon-button" onClick={onBack} aria-label={t.nav.back}>
-          <ChevronLeftIcon />
-        </button>
+        <BackButton onBack={onBack} />
         <h1 className="screen__title screen__title--compact">{t.mediator.title}</h1>
       </header>
 

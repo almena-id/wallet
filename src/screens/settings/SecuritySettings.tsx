@@ -134,7 +134,9 @@ export function SecuritySettings({
             <dd>
               {status.home === "store"
                 ? t.settings.security.keptInStore
-                : t.settings.security.keptInFile}
+                : status.home === "keystore"
+                  ? t.settings.security.keptInKeystore
+                  : t.settings.security.keptInFile}
             </dd>
           </div>
         </dl>

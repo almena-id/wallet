@@ -88,9 +88,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "almena-call"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+]
+
+[[package]]
 name = "almena-didcomm"
 version = "0.1.0"
-source = "git+https://github.com/almena-id/mediator?tag=v2026.09.1#4abf94fd44d110539115b278faa72fcdd99e7b42"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -115,6 +123,16 @@ dependencies = [
  "uuid",
  "x25519-dalek",
  "zeroize",
+]
+
+[[package]]
+name = "almena-keystore"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "serde",
+ "tauri",
+ "tauri-plugin",
 ]
 
 [[package]]
@@ -2557,25 +2575,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
 
 [[package]]
-name = "is-docker"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "928bae27f42bc99b60d9ac7334e3a21d10ad8f1835a4e12ec3ec0464765ed1b3"
-dependencies = [
- "once_cell",
-]
-
-[[package]]
-name = "is-wsl"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "173609498df190136aa7dea1a91db051746d339e18476eed5ca40521f02d7aa5"
-dependencies = [
- "is-docker",
- "once_cell",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3392,17 +3391,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
-name = "open"
-version = "5.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa576c76302b7b808eecc68061e67336c47833ef9d22caa74dda10fa9675eebc"
-dependencies = [
- "dunce",
- "is-wsl",
- "libc",
-]
-
-[[package]]
 name = "openssl-probe"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3892,6 +3880,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "psl"
+version = "2.1.239"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5736f71353f867ae262bd123b86ddb161f50a2db0300ab762c8f4a0e659635d3"
+dependencies = [
+ "psl-types",
+]
+
+[[package]]
+name = "psl-types"
+version = "2.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac"
+
+[[package]]
 name = "pxfm"
 version = "0.1.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4129,6 +4132,30 @@ checksum = "b4a459cddafb3fe76b31fd8f1108007566c40301feb64dc7b54656eb7388172b"
 dependencies = [
  "crypto-bigint",
  "hmac 0.13.0",
+]
+
+[[package]]
+name = "rfd"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a15ad77d9e70a92437d8f74c35d99b4e4691128df018833e99f90bcd36152672"
+dependencies = [
+ "block2",
+ "dispatch2",
+ "glib-sys",
+ "gobject-sys",
+ "gtk-sys",
+ "js-sys",
+ "log",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-core-foundation",
+ "objc2-foundation",
+ "raw-window-handle",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5192,6 +5219,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-dialog"
+version = "2.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "61854a36651aa48381e5e209f69a01273b77f3f9f91f0c430b1b98d33bd47229"
+dependencies = [
+ "log",
+ "raw-window-handle",
+ "rfd",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "tauri-plugin-fs",
+ "thiserror 2.0.20",
+ "url",
+]
+
+[[package]]
+name = "tauri-plugin-fs"
+version = "2.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de22eef34fd78c0da050e748710edd50bf127e651d02ea1b2bfada1523cc5c51"
+dependencies = [
+ "anyhow",
+ "dunce",
+ "glob",
+ "log",
+ "objc2-foundation",
+ "percent-encoding",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "serde_repr",
+ "tauri",
+ "tauri-plugin",
+ "tauri-utils",
+ "thiserror 2.0.20",
+ "toml 1.1.6+spec-1.1.0",
+ "url",
+]
+
+[[package]]
 name = "tauri-plugin-notification"
 version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5234,28 +5303,6 @@ dependencies = [
  "uuid",
  "windows",
  "windows-core 0.61.2",
- "zbus",
-]
-
-[[package]]
-name = "tauri-plugin-opener"
-version = "2.5.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60d60366174b745b4ef5824b8bbc1c457fd08f0ce101ff643c0a49181a9f4e91"
-dependencies = [
- "dunce",
- "glob",
- "objc2-app-kit",
- "objc2-foundation",
- "open",
- "schemars 0.8.22",
- "serde",
- "serde_json",
- "tauri",
- "tauri-plugin",
- "thiserror 2.0.20",
- "url",
- "windows",
  "zbus",
 ]
 
@@ -6054,7 +6101,9 @@ dependencies = [
 name = "wallet"
 version = "0.1.0"
 dependencies = [
+ "almena-call",
  "almena-didcomm",
+ "almena-keystore",
  "apple-native-keyring-store",
  "argon2",
  "async-trait",
@@ -6064,12 +6113,14 @@ dependencies = [
  "chacha20poly1305 0.10.1",
  "ed25519-dalek 2.2.0",
  "futures-util",
- "getrandom 0.2.17",
+ "getrandom 0.4.3",
  "hmac 0.12.1",
  "keyring-core",
+ "miniz_oxide 0.8.9",
  "objc2",
  "objc2-local-authentication",
  "objc2-ui-kit",
+ "psl",
  "reqwest",
  "rustls",
  "rustls-native-certs",
@@ -6083,9 +6134,10 @@ dependencies = [
  "tauri-plugin-barcode-scanner",
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-deep-link",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
  "tauri-plugin-notification",
  "tauri-plugin-notifications",
- "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tauri-plugin-window-state",
  "tokio",
@@ -7043,9 +7095,9 @@ dependencies = [
 
 [[package]]
 name = "yoke-derive"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33811428bee40dbceb6d545e95754741d17a6aef9a4849f0fd62e2ba4f412a78"
+checksum = "ec8ebde2db3681e8c9980cc27822030e68752690ddfa9473e739aeb4dbde6d71"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7182,6 +7234,7 @@ version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
 dependencies = [
+ "serde",
  "zeroize_derive",
 ]
 

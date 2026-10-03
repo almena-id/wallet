@@ -95,7 +95,7 @@ fn walk(seed: &[u8], path: &[u32]) -> [u8; 32] {
     // whoever holds them derives every key these words will ever produce, so
     // each pair is wiped as the walk leaves it behind.
     let master = Zeroizing::new(hmac_sha512(MASTER_KEY, &[seed]));
-    let (mut key, mut chain) = split(*master);
+    let (mut key, mut chain) = split(&master);
 
     for index in path {
         // SLIP-0010 hardened child: 0x00 || key || (index + 2^31), big endian.
@@ -107,7 +107,7 @@ fn walk(seed: &[u8], path: &[u32]) -> [u8; 32] {
 
         key.zeroize();
         chain.zeroize();
-        (key, chain) = split(*stepped);
+        (key, chain) = split(&stepped);
     }
 
     chain.zeroize();
@@ -125,7 +125,9 @@ fn hmac_sha512(key: &[u8], parts: &[&[u8]]) -> [u8; 64] {
 }
 
 /// SLIP-0010 splits every 64 byte result into a key and a chain code.
-fn split(bytes: [u8; 64]) -> ([u8; 32], [u8; 32]) {
+/// Borrowed rather than taken: an array passed by value is a copy on the
+/// stack that nothing would wipe.
+fn split(bytes: &[u8; 64]) -> ([u8; 32], [u8; 32]) {
     let mut key = [0u8; 32];
     let mut chain = [0u8; 32];
     key.copy_from_slice(&bytes[..32]);

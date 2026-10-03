@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 
+import { useSystemBack } from "../back";
+
 /** One line of what is being confirmed: what it is, and its value. */
 export type ConfirmDetail = {
   label: string;
@@ -54,25 +56,62 @@ export function ConfirmSheet({
 }: ConfirmSheetProps) {
   const titleId = useId();
   const cancel = useRef<HTMLButtonElement>(null);
+  const sheet = useRef<HTMLElement>(null);
   const latest = useRef(onCancel);
   latest.current = onCancel;
+  // Read when a key is pressed, so Escape cannot cancel what Accept started.
+  const working = useRef(busy);
+  working.current = busy;
+  // Android's back is Cancel too. While Accept is under way it does nothing,
+  // rather than reaching the screen underneath.
+  useSystemBack(() => {
+    if (!working.current) {
+      latest.current();
+    }
+  });
 
-  // Focus lands on the safe answer, and Escape is Cancel.
+  // Focus lands on the safe answer, Escape is Cancel, Tab stays inside the
+  // sheet, and focus goes back where it was once the sheet is gone.
   useEffect(() => {
+    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     cancel.current?.focus();
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !working.current) {
         latest.current();
+        return;
+      }
+      if (event.key !== "Tab" || !sheet.current) {
+        return;
+      }
+      const focusable = Array.from(
+        sheet.current.querySelectorAll<HTMLElement>("button:not([disabled]), [href], [tabindex]:not([tabindex='-1'])"),
+      );
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const inside = sheet.current.contains(document.activeElement);
+      if (event.shiftKey && (document.activeElement === first || !inside)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !inside)) {
+        event.preventDefault();
+        first.focus();
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      before?.focus();
+    };
   }, []);
 
   return (
     <div className="sheet-layer">
       <div className="sheet-backdrop" onClick={busy ? undefined : onCancel} aria-hidden="true" />
-      <section className="sheet" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <section ref={sheet} className="sheet" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <span className="sheet__grip" aria-hidden="true" />
         <span className="sheet__icon" aria-hidden="true">
           {icon}

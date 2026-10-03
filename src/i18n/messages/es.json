@@ -97,7 +97,8 @@
         "registry_refused": "El registro no aceptó la respuesta.",
         "registry_not_a_signer": "Este wallet no es de los que pueden firmarlo.",
         "registry_not_the_holder": "Esta solicitud se empezó con otro wallet.",
-        "registry_nothing_to_present": "Este wallet todavía no guarda credenciales."
+        "registry_nothing_to_present": "Este wallet todavía no guarda credenciales.",
+        "registry_issuer_unverified": "La credencial no está firmada con una clave que liste el DID de su emisor: no se ha guardado."
       },
       "signTitle": "Firmar {identity}",
       "signFirstLead": "Esto crea su DID. El registro lo publica con tu firma.",
@@ -128,11 +129,29 @@
       "issueTitle": "Emitir una credencial como {identity}",
       "issueLead": "La firmas como emisor: el titular que la solicitó la recibe con lo que dice abajo.",
       "issue": "Firmar y emitir",
+      "statusTitle": "Firmar la lista de estado de {identity}",
+      "statusLead": "Los verificadores leen esta lista para saber si las credenciales de {identity} siguen valiendo. La firmas como emisor; no cambia nada más.",
+      "statusChangeLead": "Los verificadores leen esta lista para saber si las credenciales de {identity} siguen valiendo. Al firmarla, la credencial de abajo pasa a su nuevo estado.",
+      "statusSign": "Firmar la lista",
+      "credentialStatus": "Nuevo estado",
+      "holder": "Titular",
+      "entry": "Entrada",
+      "statuses": {
+        "valid": "Válida (rehabilitada)",
+        "suspended": "Suspendida",
+        "revoked": "Revocada, para siempre"
+      },
       "receiveTitle": "Tu credencial de {issuer}",
       "receiveLead": "{issuer} ha emitido la credencial que solicitaste. Se guarda en este wallet, ligada a la clave con la que la pediste.",
       "receive": "Guardarla",
       "presents": "Credencial",
-      "someMissing": "Algunas credenciales que pide el formulario no están en este wallet: escribe esos datos en el formulario."
+      "someMissing": "Algunas credenciales que pide el formulario no están en este wallet: escribe esos datos en el formulario.",
+      "verifyTitle": "Presentar credenciales a {verifier}",
+      "verifyLead": "{verifier} pide ver credenciales de este wallet. Solo se comparten los datos de abajo, cada uno vinculado a la clave con la que lo guardas.",
+      "verifier": "Verificador",
+      "verifierDid": "Su DID",
+      "asks": "Para",
+      "verifyNote": "Acepta solo si estás ante {verifier} y esperas que te lo pida."
     }
   },
   "messages": {
@@ -167,6 +186,10 @@
       "messaging": {
         "title": "Mensajería",
         "hint": "Dónde esperan tus mensajes"
+      },
+      "backup": {
+        "title": "Copia de seguridad",
+        "hint": "Lo que tus palabras no recuperan"
       },
       "security": {
         "title": "Seguridad",
@@ -224,6 +247,7 @@
       "keptLabel": "Guardada en",
       "keptInStore": "El almacén de secretos del propio dispositivo",
       "keptInFile": "El almacenamiento privado de esta aplicación",
+      "keptInKeystore": "El almacenamiento privado de esta aplicación, sellado por el hardware seguro de este dispositivo",
       "lockTitle": "Bloqueo de la cartera",
       "pinChange": "Cambiarlo",
       "biometricsLabel": "Biometría",
@@ -273,7 +297,47 @@
       "issuer": "La expide",
       "validUntil": "Válida hasta",
       "expired": "Caducó el",
-      "unreadable": "No se han podido leer las credenciales."
+      "unreadable": "No se han podido leer las credenciales.",
+      "remove": "Quitar de esta cartera",
+      "removeQuestion": "¿Quitarla para siempre? No queda ninguna copia: solo {issuer} puede volver a concederla.",
+      "removeConfirm": "Quitar",
+      "removeKeep": "Conservarla",
+      "removeFailed": "No se ha podido quitar. Inténtalo de nuevo.",
+      "status": "Estado",
+      "statuses": {
+        "valid": "Válida",
+        "suspended": "Suspendida",
+        "revoked": "Revocada"
+      },
+      "unchecked": {
+        "pending": "Comprobando…",
+        "noList": "No se puede comprobar",
+        "unreachable": "Sin comprobar: no se puede contactar con el emisor",
+        "untrusted": "Sin comprobar: no se puede confiar en la lista de su emisor",
+        "signature": "No válida: el DID de su emisor ya no lista la clave que la firmó"
+      },
+      "checkedAt": "Comprobado el {when}",
+      "checkedOffline": "Según lo comprobado el {when}: ahora no se puede contactar con el emisor",
+      "notice": {
+        "suspended": "{issuer} ha suspendido esta credencial: los verificadores la rechazan por ahora y este wallet no la ofrece.",
+        "revoked": "{issuer} ha revocado esta credencial: los verificadores ya no la aceptan y este wallet no la ofrece."
+      }
+    },
+    "backup": {
+      "exportTitle": "Hacer una copia",
+      "exportBody": "Un fichero con tus contactos, conversaciones, credenciales, nombre y foto, sellado para que solo tus palabras lo abran. Guárdalo donde quieras: sin tus palabras no le sirve a nadie.",
+      "export": "Guardar una copia",
+      "exported": "La copia se ha guardado.",
+      "importTitle": "Restaurar una copia",
+      "importBody": "Añade lo que tiene una copia de esta identidad a lo que hay en este dispositivo. No se cambia ni se borra nada de lo que ya hay.",
+      "import": "Elegir una copia",
+      "imported": "Restaurado: {contacts} contactos, {messages} mensajes y {credentials} credenciales que faltaban.",
+      "errors": {
+        "backup_locked": "Desbloquea primero la cartera.",
+        "backup_file": "No se ha podido guardar o leer el fichero ahí. Prueba en otro sitio.",
+        "backup_not_this_identity": "Ese fichero no es una copia de esta identidad.",
+        "backup_storage": "No se ha podido leer o escribir lo que guarda este dispositivo."
+      }
     }
   },
   "onboarding": {
@@ -342,7 +406,9 @@
     "repeatSubtitle": "Para que un desliz no se convierta en un candado que nadie abre.",
     "unlockTitle": "Tu PIN",
     "unlockSubtitle": "La cartera está bloqueada.",
+    "callSubtitle": "Te están llamando. Desbloquea la cartera para contestar.",
     "mismatch": "Esos dos no coinciden. Empieza de nuevo.",
+    "progress": "{typed} de {digits} dígitos escritos",
     "delete": "Borrar",
     "attemptsLeft": {
       "one": "Queda {count} intento. Cuando se acabe, la identidad se retira de este dispositivo y tu frase es la vuelta atrás.",
@@ -481,6 +547,19 @@
       "aliasLabel": "Nombre",
       "save": "Guardar",
       "clear": "Usar su nombre"
+    },
+    "notice": {
+      "accepted": "{issuer} aceptó tu solicitud de {credential}.",
+      "rejected": "{issuer} no aceptó tu solicitud de {credential}.",
+      "issued": "{issuer} emitió tu {credential}. Recógela para guardarla en este wallet.",
+      "note": "Su nota",
+      "collect": "Recoger",
+      "collecting": "Pidiéndola…",
+      "preview": {
+        "accepted": "Solicitud aceptada",
+        "rejected": "Solicitud no aceptada",
+        "issued": "Credencial lista para recoger"
+      }
     }
   },
   "calls": {

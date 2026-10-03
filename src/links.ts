@@ -54,7 +54,15 @@ export type RegistryRequest = {
   portal: string;
   /** The host the answer goes to. */
   answerTo: string;
-  purpose: "sign_in" | "link" | "sign" | "pair" | "present" | "submit" | "receive";
+  purpose:
+    | "sign_in"
+    | "link"
+    | "sign"
+    | "pair"
+    | "present"
+    | "submit"
+    | "receive"
+    | "verify";
   /** The DID this wallet is known by at that portal. */
   did: string;
   /** `sign`: what is signed. */
@@ -63,7 +71,7 @@ export type RegistryRequest = {
      * `did_log_entry`: a version of an identity's DID; `endorsement`: an
      * organisation vouching for one of its issuers, verifiers or mediators.
      */
-    kind: "did_log_entry" | "endorsement" | "credential";
+    kind: "did_log_entry" | "endorsement" | "credential" | "status_list";
     /** The identity's or the item's name. */
     identity: string;
     tenant: string | null;
@@ -75,6 +83,15 @@ export type RegistryRequest = {
     signer: boolean;
     /** `credential`: what it says, claim by claim. */
     claims: { name: string; value: string }[];
+    /** `credential`: its type (`vct`) and the holder it is bound to (`cnf.kid`). */
+    credentialType: string | null;
+    holder: string | null;
+    /** `status_list`: the entry whose status it changes, as the list says it. */
+    change: {
+      index: number;
+      status: "valid" | "suspended" | "revoked";
+      holder: string | null;
+    } | null;
   } | null;
   /**
    * `pair`, `present`, `submit`: an application to one of the registry's
@@ -103,6 +120,22 @@ export type RegistryRequest = {
     /** `present`: every credential the form requires is among them. */
     complete: boolean;
   } | null;
+  /** `verify`: a verifier asking this wallet to present credentials. */
+  verifying: {
+    verifier: string;
+    verifierDid: string;
+    /** What it asks for: its form's name, by language. */
+    form: Record<string, string>;
+    asked: number;
+    /** What this wallet would present; only these claims go. */
+    presenting: {
+      credential: Record<string, string>;
+      issuer: string;
+      claims: { name: string; value: string }[];
+    }[];
+    /** Every credential it requires is among them. */
+    complete: boolean;
+  } | null;
 };
 
 export type RegistryErrorCode =
@@ -114,7 +147,8 @@ export type RegistryErrorCode =
   | "registry_refused"
   | "registry_not_a_signer"
   | "registry_not_the_holder"
-  | "registry_nothing_to_present";
+  | "registry_nothing_to_present"
+  | "registry_issuer_unverified";
 
 export function registryRequest(input: string): Promise<RegistryRequest> {
   return invoke<RegistryRequest>("registry_request", { input });
@@ -136,6 +170,7 @@ export function registryErrorCode(error: unknown): RegistryErrorCode {
     "registry_not_a_signer",
     "registry_not_the_holder",
     "registry_nothing_to_present",
+    "registry_issuer_unverified",
   ];
   return typeof error === "string" && (codes as string[]).includes(error)
     ? (error as RegistryErrorCode)

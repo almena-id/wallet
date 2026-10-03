@@ -11,10 +11,15 @@
 //! `did:key` this wallet derives for that issuer at that registry, which is
 //! derived again from the seed and `scope` whenever it is presented.
 //!
-//! Nothing here checks the issuer's signature: the credential came over HTTPS
-//! from the registry the application was made at. What is checked is that it
-//! is bound to this wallet's key for that issuer, is the type applied for, and
-//! that every disclosure is one the issuer's payload lists.
+//! Each one's status — valid, suspended or revoked — is read from its
+//! issuer's status list when the Credentials screen asks
+//! (`credentials_check`), and kept with it (`status.rs`).
+//!
+//! `read` checks that a credential is bound to this wallet's key for that
+//! issuer, is the type applied for, and that every disclosure is one the
+//! issuer's payload lists; the issuer's signature is checked against its DID
+//! document (`issuers.rs`) when it is received (`registry.rs`) and again with
+//! each status check, since a key the issuer drops leaves it unverifiable.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -28,6 +33,7 @@ use tauri::{Runtime, State};
 use crate::identity::Held;
 use crate::messaging::state::{directory, load, store};
 use crate::messaging::MessagingError;
+use crate::status::{self, Checked};
 
 const FILE: &str = "credentials.json";
 const AAD: &[u8] = b"almena-wallet/credentials/1";
@@ -55,6 +61,9 @@ pub struct Credential {
     pub received_at: u64,
     /// What its key is derived from: the registry's origin and the issuer's DID.
     pub scope: String,
+    /// Its status, as its issuer's status list last said it (`status.rs`).
+    #[serde(default)]
+    pub checked: Checked,
 }
 
 /// What a credential sent to this wallet must hold to be kept.
@@ -94,6 +103,16 @@ pub fn read(
         || vct.is_some_and(|vct| payload["vct"].as_str() != Some(vct))
     {
         return Err(Refusal::WrongType);
+    }
+    // Without an `exp` it would be kept as expired in 1970 and never be
+    // presentable; the digests are SHA-256, as `_sd` is checked with.
+    if payload["exp"].as_u64().is_none()
+        || !matches!(
+            payload.get("_sd_alg").map(|alg| alg.as_str()),
+            None | Some(Some("sha-256"))
+        )
+    {
+        return Err(Refusal::Unreadable);
     }
     let listed: Vec<&str> = payload["_sd"]
         .as_array()
@@ -147,6 +166,46 @@ pub fn keep<R: Runtime>(
     store(&file(app)?, seed, AAD, &held)
 }
 
+/// Writes the credentials held as `list`, whatever they were: for a restore
+/// (`messaging::backup`), which merged them first.
+pub fn replace<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    seed: &[u8; 64],
+    list: &[Credential],
+) -> Result<(), MessagingError> {
+    store(&file(app)?, seed, AAD, &list)
+}
+
+/// `held` without the credential `id`, or `None` when it holds no such one.
+fn without(mut held: Vec<Credential>, id: &str) -> Option<Vec<Credential>> {
+    let before = held.len();
+    held.retain(|kept| kept.id != id);
+    (held.len() < before).then_some(held)
+}
+
+/// Removes one credential from the wallet, for good: nothing keeps a copy, and
+/// only its issuer can grant it again. Returns the rest, as `credentials_list`
+/// does.
+#[tauri::command]
+pub fn credentials_remove<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    held: State<'_, Held>,
+    id: String,
+) -> Result<Vec<Credential>, MessagingError> {
+    let seed = held.seed().ok_or(MessagingError::Locked)?;
+    let all = all(&app, &seed)?;
+    let mut list = match without(all.clone(), &id) {
+        Some(rest) => {
+            store(&file(&app)?, &seed, AAD, &rest)?;
+            rest
+        }
+        // Already gone: the list as it is.
+        None => all,
+    };
+    list.sort_by_key(|credential| std::cmp::Reverse(credential.received_at));
+    Ok(list)
+}
+
 /// Forgets them all. Called when the identity leaves the device.
 pub fn clear<R: Runtime>(app: &tauri::AppHandle<R>) {
     if let Ok(path) = file(app) {
@@ -163,6 +222,34 @@ pub fn credentials_list<R: Runtime>(
 ) -> Result<Vec<Credential>, MessagingError> {
     let seed = held.seed().ok_or(MessagingError::Locked)?;
     let mut list = all(&app, &seed)?;
+    list.sort_by_key(|credential| std::cmp::Reverse(credential.received_at));
+    Ok(list)
+}
+
+/// Checks every credential's status with its issuer's list, keeps what was
+/// learnt, and returns them as `credentials_list` does.
+#[tauri::command]
+pub async fn credentials_check<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    held: State<'_, Held>,
+) -> Result<Vec<Credential>, MessagingError> {
+    let seed = held.seed().ok_or(MessagingError::Locked)?;
+    let mut learnt = Vec::new();
+    for credential in all(&app, &seed)? {
+        let outcome = status::check(&credential.credential, &credential.issuer_did).await;
+        learnt.push((
+            credential.id.clone(),
+            credential.checked.after(outcome, status::now()),
+        ));
+    }
+    // Read again before writing: one received meanwhile is kept.
+    let mut list = all(&app, &seed)?;
+    for credential in &mut list {
+        if let Some((_, checked)) = learnt.iter().find(|(id, _)| *id == credential.id) {
+            credential.checked = checked.clone();
+        }
+    }
+    store(&file(&app)?, &seed, AAD, &list)?;
     list.sort_by_key(|credential| std::cmp::Reverse(credential.received_at));
     Ok(list)
 }
@@ -194,6 +281,28 @@ mod tests {
     }
 
     #[test]
+    fn removing_takes_out_that_credential_only() {
+        let one = |id: &str| Credential {
+            id: id.into(),
+            format: "dc+sd-jwt".into(),
+            credential: String::new(),
+            issuer_did: "did:web:issuer".into(),
+            issuer_name: "Issuer".into(),
+            type_id: "membership".into(),
+            type_labels: BTreeMap::new(),
+            claims: BTreeMap::new(),
+            issued_at: 1,
+            valid_until: 2,
+            received_at: 1,
+            scope: String::new(),
+            checked: Checked::default(),
+        };
+        let rest = without(vec![one("a"), one("b")], "a").expect("held");
+        assert_eq!(rest, vec![one("b")]);
+        assert_eq!(without(rest, "a"), None);
+    }
+
+    #[test]
     fn a_credential_is_kept_only_if_it_is_bound_to_this_wallet_and_holds_together() {
         let issuer = "did:webvh:Qm:almena.id:ids:idn_club";
         let vct = Some("https://almena.id/credentials/membership/v1");
@@ -214,6 +323,45 @@ mod tests {
             ),
             Err(Refusal::WrongType)
         );
+        // No `exp`, or digests of another algorithm than the one checked.
+        let reissued = |change: &dyn Fn(&mut serde_json::Value)| {
+            let (head, rest) = issued("did:key:zMe", None)
+                .split_once('.')
+                .map(|(h, r)| (h.to_owned(), r.to_owned()))
+                .unwrap();
+            let (body, tail) = rest.split_once('.').unwrap();
+            let mut payload: serde_json::Value =
+                serde_json::from_slice(&B64.decode(body).unwrap()).unwrap();
+            change(&mut payload);
+            format!("{head}.{}.{tail}", b64(&payload))
+        };
+        assert_eq!(
+            read(
+                &reissued(&|p| {
+                    p.as_object_mut().unwrap().remove("exp");
+                }),
+                "did:key:zMe",
+                issuer,
+                vct
+            ),
+            Err(Refusal::Unreadable)
+        );
+        assert_eq!(
+            read(
+                &reissued(&|p| p["_sd_alg"] = json!("sha-512")),
+                "did:key:zMe",
+                issuer,
+                vct
+            ),
+            Err(Refusal::Unreadable)
+        );
+        assert!(read(
+            &reissued(&|p| p["_sd_alg"] = json!("sha-256")),
+            "did:key:zMe",
+            issuer,
+            vct
+        )
+        .is_ok());
         let stray = b64(&json!(["salt", "role", "admin"]));
         assert_eq!(
             read(

@@ -1,21 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
+import { BackButton } from "../components/BackButton";
 import { ChevronLeftIcon, QrIcon } from "../components/icons";
 import { ProfileHeader } from "../components/ProfileHeader";
 import { useTranslations } from "../i18n";
 import { useMediation } from "../mediator";
+import { useStack } from "../nav";
+import { usePreferences } from "../preferences";
 import { registerPush } from "../push";
-import type { Accent } from "../appearance";
-import type { AutoLock } from "../autolock";
-import type { Privacy } from "../notify";
 import { usePlatform } from "../platform";
-import type { Theme } from "../theme";
 import type { Vault } from "../vault";
 import { PinChange } from "./PinChange";
 import { PinConfirm } from "./PinConfirm";
 import { InviteScreen } from "./InviteScreen";
 import { MediatorConnectScreen } from "./MediatorConnectScreen";
 import { AppearanceSettings } from "./settings/AppearanceSettings";
+import { BackupSettings } from "./settings/BackupSettings";
 import { MessagingSettings } from "./settings/MessagingSettings";
 import { NotificationsSettings } from "./settings/NotificationsSettings";
 import { ProfileSettings } from "./settings/ProfileSettings";
@@ -29,6 +29,7 @@ type Section =
   | "appearance"
   | "notifications"
   | "messaging"
+  | "backup"
   | "security";
 
 const SECTIONS: Section[] = [
@@ -37,25 +38,26 @@ const SECTIONS: Section[] = [
   "appearance",
   "notifications",
   "messaging",
+  "backup",
   "security",
 ];
 
-/** A screen a section sends somebody to, and comes back from. */
-type Aside = "connect" | "pin" | "device" | "invite";
+/**
+ * Where the profile tab is, on a stack (`nav.ts`): the menu, a section, or a
+ * screen a section sends somebody to — choosing a mediator, replacing the PIN,
+ * arming the device, this wallet's code — each left by its own way back.
+ */
+type View =
+  | { name: "menu" }
+  | { name: "section"; section: Section }
+  | { name: "connect" }
+  | { name: "pin" }
+  | { name: "device" }
+  | { name: "invite" };
 
 type ProfileScreenProps = {
   /** What the device is keeping, which the security section describes and changes. */
   vault: Vault;
-  accent: Accent;
-  onAccentChange: (accent: Accent) => void;
-  theme: Theme;
-  onThemeChange: (theme: Theme) => void;
-  /** How long the wallet stays open with nobody using it. */
-  autoLock: AutoLock;
-  onAutoLockChange: (minutes: AutoLock) => void;
-  /** How much a system notification says about a message. */
-  privacy: Privacy;
-  onPrivacyChange: (privacy: Privacy) => void;
   /**
    * Told whether a keypad is taking the whole screen — replacing the PIN or
    * arming the device — so the tab bar steps aside for it.
@@ -71,34 +73,18 @@ type ProfileScreenProps = {
  * Almena ID wallet's settings. A section holds only what this wallet can
  * already do; one that has nothing yet is not listed.
  */
-export function ProfileScreen({
-  vault,
-  accent,
-  onAccentChange,
-  theme,
-  onThemeChange,
-  autoLock,
-  onAutoLockChange,
-  privacy,
-  onPrivacyChange,
-  onKeypad,
-  onSignOut,
-}: ProfileScreenProps) {
+export function ProfileScreen({ vault, onKeypad, onSignOut }: ProfileScreenProps) {
   const t = useTranslations();
-  const [section, setSection] = useState<Section | null>(null);
+  const preferences = usePreferences();
+  const { top, push, pop } = useStack<View>([{ name: "menu" }]);
   const mediation = useMediation();
   // Notifications are the computer's: a phone is told by push, which says
   // nothing about the message whatever is chosen here.
   const sections = usePlatform().kind === "mobile"
     ? SECTIONS.filter((name) => name !== "notifications")
     : SECTIONS;
-  // Choosing a mediator, replacing the PIN and arming the device are screens of
-  // their own, with their own way back, so the section is left for them rather
-  // than drawn under them — and returned to afterwards.
-  const [aside, setAside] = useState<Aside | null>(null);
-  const back = () => setAside(null);
 
-  const keypad = aside === "pin" || aside === "device";
+  const keypad = top.name === "pin" || top.name === "device";
   useEffect(() => {
     onKeypad(keypad);
   }, [keypad, onKeypad]);
@@ -107,60 +93,54 @@ export function ProfileScreen({
 
   // This wallet's invitation, as a code somebody in front of it scans to open a
   // relationship — each of them answered from a pairwise of their own.
-  if (aside === "invite") {
-    return <InviteScreen onBack={back} />;
+  if (top.name === "invite") {
+    return <InviteScreen onBack={pop} />;
   }
-  if (aside === "connect") {
+  if (top.name === "connect") {
     return (
       <MediatorConnectScreen
-        onBack={back}
+        onBack={pop}
         onConnected={(status) => {
           mediation.adopt(status);
-          back();
+          pop();
           void registerPush();
         }}
       />
     );
   }
-  if (aside === "pin") {
+  if (top.name === "pin") {
     return (
       <PinChange
         vault={vault}
         digits={vault.status.digits ?? 4}
-        onBack={back}
+        onBack={pop}
         onChanged={(status) => {
           vault.adopt(status);
-          back();
+          pop();
         }}
       />
     );
   }
-  if (aside === "device") {
+  if (top.name === "device") {
     return (
       <PinConfirm
         vault={vault}
         digits={vault.status.digits ?? 4}
-        onBack={back}
+        onBack={pop}
         onArmed={(status) => {
           vault.adopt(status);
-          back();
+          pop();
         }}
       />
     );
   }
 
-  if (section) {
+  if (top.name === "section") {
+    const section = top.section;
     return (
       <div className="screen">
         <header className="screen__header screen__header--compact">
-          <button
-            type="button"
-            className="icon-button"
-            onClick={() => setSection(null)}
-            aria-label={t.nav.back}
-          >
-            <ChevronLeftIcon />
-          </button>
+          <BackButton onBack={pop} />
           <h1 className="screen__title screen__title--compact">
             {t.settings.sections[section].title}
           </h1>
@@ -170,25 +150,29 @@ export function ProfileScreen({
         {section === "profile" ? <ProfileSettings /> : null}
         {section === "appearance" ? (
           <AppearanceSettings
-            accent={accent}
-            onAccentChange={onAccentChange}
-            theme={theme}
-            onThemeChange={onThemeChange}
+            accent={preferences.accent}
+            onAccentChange={preferences.setAccent}
+            theme={preferences.theme}
+            onThemeChange={preferences.setTheme}
           />
         ) : null}
         {section === "notifications" ? (
-          <NotificationsSettings privacy={privacy} onPrivacyChange={onPrivacyChange} />
+          <NotificationsSettings
+            privacy={preferences.privacy}
+            onPrivacyChange={preferences.setPrivacy}
+          />
         ) : null}
         {section === "messaging" ? (
-          <MessagingSettings mediation={mediation} onConnect={() => setAside("connect")} />
+          <MessagingSettings mediation={mediation} onConnect={() => push({ name: "connect" })} />
         ) : null}
+        {section === "backup" ? <BackupSettings /> : null}
         {section === "security" ? (
           <SecuritySettings
             vault={vault}
-            autoLock={autoLock}
-            onAutoLockChange={onAutoLockChange}
-            onChangePin={() => setAside("pin")}
-            onArmDevice={() => setAside("device")}
+            autoLock={preferences.autoLock}
+            onAutoLockChange={preferences.setAutoLock}
+            onChangePin={() => push({ name: "pin" })}
+            onArmDevice={() => push({ name: "device" })}
             onSignOut={onSignOut}
           />
         ) : null}
@@ -202,7 +186,7 @@ export function ProfileScreen({
         <button
           type="button"
           className="icon-button"
-          onClick={() => setAside("invite")}
+          onClick={() => push({ name: "invite" })}
           aria-label={t.profile.showCode}
         >
           <QrIcon />
@@ -213,7 +197,12 @@ export function ProfileScreen({
 
       <nav className="menu" aria-label={t.settings.title}>
         {sections.map((name) => (
-          <button key={name} type="button" className="menu__item" onClick={() => setSection(name)}>
+          <button
+            key={name}
+            type="button"
+            className="menu__item"
+            onClick={() => push({ name: "section", section: name })}
+          >
             <span className="menu__text">
               <span className="menu__title">{t.settings.sections[name].title}</span>
               <span className="menu__hint">{t.settings.sections[name].hint}</span>

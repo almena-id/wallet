@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 
-import { ChevronLeftIcon } from "../../components/icons";
 import { useI18n } from "../../i18n";
 import { plural } from "../../i18n/format";
 import { PHRASE_LENGTHS, type PhraseLength } from "../../identity";
+import { BackButton } from "../../components/BackButton";
 
 type PhraseScreenProps = {
   words: string[];
@@ -63,9 +63,7 @@ export function PhraseScreen({
   return (
     <div className="screen">
       <header className="screen__header screen__header--compact">
-        <button type="button" className="icon-button" onClick={onBack} aria-label={t.nav.back}>
-          <ChevronLeftIcon />
-        </button>
+        <BackButton onBack={onBack} />
         <h1 className="screen__title screen__title--compact">
           {plural(t.onboarding.phrase.title, shown, locale)}
         </h1>

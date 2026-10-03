@@ -91,9 +91,17 @@ fn notices(config: &Config, fresh: &[Fresh]) -> Vec<(String, String)> {
             .iter()
             .map(|message| (message.from.clone(), config.new_message.clone()))
             .collect(),
+        // A notice has no text of its own to show: it says something arrived.
         Privacy::Full => fresh
             .iter()
-            .map(|message| (message.from.clone(), message.content.clone()))
+            .map(|message| {
+                let body = if message.content.is_empty() {
+                    &config.new_message
+                } else {
+                    &message.content
+                };
+                (message.from.clone(), body.clone())
+            })
             .collect(),
     }
 }

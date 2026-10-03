@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12 and later: what the system copies to the cloud backup and to a new
+  phone. The vault's record is left out of both: it is sealed under a key in
+  this phone's Keystore, which never travels, so a copy anywhere else could not
+  be opened — and would only stand between somebody and restoring from their
+  phrase. Everything else the wallet writes is sealed under the seed and comes
+  back once the phrase does. Copied into gen/android by push/sync.sh.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="vault.json" />
+        <exclude domain="root" path="vault.json.writing" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="vault.json" />
+        <exclude domain="root" path="vault.json.writing" />
+    </device-transfer>
+</data-extraction-rules>

@@ -164,7 +164,10 @@ pub fn identity_create(
 /// [`IdentityError::WordCount`] or [`IdentityError::Checksum`], depending on what
 /// is wrong with what they wrote.
 #[tauri::command]
-pub fn identity_restore(input: String, held: State<'_, Held>) -> Result<Identity, IdentityError> {
+pub fn identity_restore(
+    input: Zeroizing<String>,
+    held: State<'_, Held>,
+) -> Result<Identity, IdentityError> {
     restore(&input, &held)
 }
 

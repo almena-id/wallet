@@ -1,0 +1,120 @@
+# What must pass before anything is merged: the same lint and tests the
+# release runs (`task check`), and the Rust the phone builds compile, which a
+# check on the host never sees (`task check:mobile`). Runs on every pull
+# request and on every push to a branch other than main, which the release
+# workflow checks itself.
+
+name: Check
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  NODE_VERSION: 24
+  PNPM_VERSION: 12
+
+jobs:
+  check:
+    name: Lint and test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Linux libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: TypeScript
+        run: pnpm exec tsc --noEmit
+
+      - name: ESLint
+        run: pnpm lint
+
+      - name: Front-end tests
+        run: pnpm test
+
+      - name: Formatting
+        working-directory: src-tauri
+        run: cargo fmt --check
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Tests
+        working-directory: src-tauri
+        run: cargo test --locked
+
+  android:
+    name: Check the Android Rust
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: android
+
+      # `ring` compiles C, so the check needs the NDK's clang — the runner
+      # carries an NDK (ANDROID_NDK_LATEST_HOME).
+      - name: cargo check
+        working-directory: src-tauri
+        run: |
+          bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CC_aarch64_linux_android="$(ls "$bin"/aarch64-linux-android*-clang | sort -V | tail -1)"
+          export AR_aarch64_linux_android="$bin/llvm-ar"
+          cargo check --locked --target aarch64-linux-android
+
+  ios:
+    name: Check the iOS Rust
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ios
+
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check --locked --target aarch64-apple-ios-sim

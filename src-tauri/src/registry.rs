@@ -58,6 +58,11 @@
 //! paired with that issuer, answered with the credential, which is checked —
 //! bound to that key, from that issuer, every disclosure listed — and kept
 //! sealed (`credentials.rs`).
+//!
+//! **Status lists.** The issuer's signer also signs its status list (kind
+//! `status_list`, a `statuslist+jwt`): before its first credential, and each
+//! time one is suspended, reinstated or revoked. The sheet shows the status a
+//! credential is given only after reading it from the list that is signed.
 
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -102,6 +107,9 @@ pub enum RegistryError {
     NotTheHolder,
     /// Asked to present credentials this wallet does not hold.
     NothingToPresent,
+    /// Given a credential its issuer's DID does not vouch for: not signed by
+    /// a key the issuer's document lists.
+    IssuerUnverified,
 }
 
 impl RegistryError {
@@ -116,6 +124,7 @@ impl RegistryError {
             Self::NotASigner => "registry_not_a_signer",
             Self::NotTheHolder => "registry_not_the_holder",
             Self::NothingToPresent => "registry_nothing_to_present",
+            Self::IssuerUnverified => "registry_issuer_unverified",
         }
     }
 }
@@ -153,6 +162,19 @@ struct Request {
     /// `submit`: what is signed.
     #[serde(default)]
     submission: Option<Submission>,
+    /// `verify`: the verifier asking, by DID and name.
+    #[serde(default)]
+    verifier: Option<IssuerRef>,
+    /// `verify`: what it asks for, its name by language.
+    #[serde(default)]
+    form: Option<FormRef>,
+}
+
+/// `verify`: the form a verifier asks to be answered, by its name.
+#[derive(Deserialize, Clone)]
+struct FormRef {
+    #[serde(default)]
+    name: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -202,9 +224,24 @@ struct Sign {
     /// `verifiableCredential` takes the credential just signed.
     #[serde(default)]
     presentation: Option<serde_json::Value>,
+    /// `status_list`: the entry whose status the list changes, and to what;
+    /// `None` when it is signed as it is.
+    #[serde(default)]
+    status_change: Option<StatusChange>,
 }
 
-const SIGN_KINDS: [&str; 3] = ["did_log_entry", "endorsement", "credential"];
+/// An entry of an issuer's status list, and the status it is given.
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+pub struct StatusChange {
+    index: u64,
+    /// `valid`, `suspended` or `revoked`.
+    status: String,
+    /// The credential's holder, as the issuer knows them.
+    #[serde(default)]
+    holder: Option<String>,
+}
+
+const SIGN_KINDS: [&str; 4] = ["did_log_entry", "endorsement", "credential", "status_list"];
 
 /// What the confirmation sheet shows: who asks, for what, and as whom this
 /// wallet would answer.
@@ -225,6 +262,24 @@ pub struct RegistryRequest {
     signing: Option<Signing>,
     /// `pair`, `present`, `submit`: the application.
     applying: Option<Applying>,
+    /// `verify`: the verifier, and what would be presented to it.
+    verifying: Option<Verifying>,
+}
+
+/// A verifier asking for credentials, as the sheet shows it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Verifying {
+    verifier: String,
+    verifier_did: String,
+    /// What it asks for: its form's name, by language.
+    form: std::collections::BTreeMap<String, String>,
+    /// How many credentials are asked for.
+    asked: usize,
+    /// What this wallet would present, credential by credential.
+    presenting: Vec<Presenting>,
+    /// Every credential it requires is among them.
+    complete: bool,
 }
 
 /// An application, as the sheet shows it.
@@ -308,6 +363,12 @@ pub struct Signing {
     signer: bool,
     /// `credential`: what it says, claim by claim.
     claims: Vec<Claim>,
+    /// `credential`: its type (`vct`) and the holder it is bound to
+    /// (`cnf.kid`).
+    credential_type: Option<String>,
+    holder: Option<String>,
+    /// `status_list`: the status it changes, as the list says it.
+    change: Option<StatusChange>,
 }
 
 /// One claim of a credential to sign, as the sheet shows it.
@@ -394,7 +455,7 @@ async fn fetch(input: &str) -> Result<(Url, Request), RegistryError> {
     let signing = request.purpose == "sign";
     let expected = match request.purpose.as_str() {
         "sign" => "proof",
-        "present" => "vp_token",
+        "present" | "verify" => "vp_token",
         "submit" => "signature",
         "receive" => "credential",
         _ => "id_token",
@@ -403,7 +464,7 @@ async fn fetch(input: &str) -> Result<(Url, Request), RegistryError> {
         || request.response_mode != "direct_post"
         || !matches!(
             request.purpose.as_str(),
-            "sign_in" | "link" | "sign" | "pair" | "present" | "submit" | "receive"
+            "sign_in" | "link" | "sign" | "pair" | "present" | "submit" | "receive" | "verify"
         )
         || request.nonce.is_empty()
         || !applies_as_it_says(&request)
@@ -435,11 +496,26 @@ async fn fetch(input: &str) -> Result<(Url, Request), RegistryError> {
     Ok((uri, request))
 }
 
-/// Does an application's request hold together? It names its issuer;
+/// Does an application's request hold together? A verifier's (`verify`)
+/// names the verifier and its query. An application's names its issuer;
 /// `present` brings its query; `submit` its content, whose digest is the
 /// one the wallet would sign and whose issuer is the one named. Any other
 /// request names none of it.
 fn applies_as_it_says(request: &Request) -> bool {
+    // A verifier asking: it names itself and its query, and nothing of an
+    // application.
+    if request.purpose == "verify" {
+        return request
+            .verifier
+            .as_ref()
+            .is_some_and(|verifier| !verifier.did.is_empty())
+            && request.dcql_query.is_some()
+            && request.issuer.is_none()
+            && request.submission.is_none();
+    }
+    if request.verifier.is_some() {
+        return false;
+    }
     let applying = APPLYING.contains(&request.purpose.as_str());
     if !applying {
         return request.issuer.is_none()
@@ -480,8 +556,10 @@ fn digest_of(content: &serde_json::Value) -> Option<String> {
 
 /// Is `portal` the registry's own, as seen from where its request was read?
 /// The same host (`localhost` in development), or hosts one label under the
-/// same parent — `registry.almena.id` and `api.almena.id`. A parent must have
-/// a dot of its own, so `a.id` and `b.id` are strangers.
+/// same parent — `registry.almena.id` and `api.almena.id`. The parent must be
+/// somebody's domain and not a public suffix (the Public Suffix List, private
+/// section included), so `a.id` and `b.id` are strangers, and so are
+/// `evil.github.io` and `victim.github.io` or `a.co.uk` and `b.co.uk`.
 fn vouched(portal: &Url, read_from: &Url) -> bool {
     let (Some(portal), Some(read_from)) = (portal.host(), read_from.host()) else {
         return false;
@@ -494,7 +572,7 @@ fn vouched(portal: &Url, read_from: &Url) -> bool {
     };
     let parent = |host: &str| host.split_once('.').map(|(_, rest)| rest.to_owned());
     parent(portal)
-        .filter(|rest| rest.contains('.'))
+        .filter(|rest| psl::domain(rest.as_bytes()).is_some())
         .is_some_and(|rest| parent(read_from).as_ref() == Some(&rest))
 }
 
@@ -559,9 +637,90 @@ fn told_as_it_is(sign: &Sign) -> bool {
                     .as_u64()
                     .is_some_and(|exp| sign.valid_until.as_deref() == Some(timestamp(exp).as_str()))
                 && disclosed(document).is_some()
+                && nothing_unshown(document)
+        }
+        // An issuer's status list: signed as a key of its DID, saying what
+        // the sheet says it changes.
+        "status_list" => {
+            let header = &document["header"];
+            let issuer = sign.verification_method.clone().unwrap_or_default();
+            let kid = text(&header["kid"]).unwrap_or_default();
+            let changed = match &sign.status_change {
+                Some(change) => {
+                    let value = match change.status.as_str() {
+                        "valid" => Some(0),
+                        "revoked" => Some(1),
+                        "suspended" => Some(2),
+                        _ => None,
+                    };
+                    value.is_some() && status_at(document, change.index) == value
+                }
+                None => status_at(document, 0).is_some(),
+            };
+            sign.presentation.is_none()
+                && sign.proof_purpose == "assertionMethod"
+                && !issuer.is_empty()
+                && sign.did.as_deref() == Some(issuer.as_str())
+                && text(&header["alg"]).as_deref() == Some("EdDSA")
+                && text(&header["typ"]).as_deref() == Some("statuslist+jwt")
+                && sign
+                    .signers
+                    .iter()
+                    .any(|key| kid == format!("{issuer}#{key}"))
+                && text(&document["payload"]["sub"])
+                    .and_then(|sub| Url::parse(&sub).ok())
+                    .is_some_and(|sub| reachable(&sub).is_ok())
+                && changed
         }
         _ => false,
     }
+}
+
+/// Does a credential to sign say nothing beyond what the sheet shows or the
+/// wallet checks? Every claim travels as a disclosure, listed in `_sd` and
+/// shown one by one; what else the payload may carry is fixed: the issuer, the
+/// times, the type (`vct`) and the holder (`cnf.kid`), both shown, the digest
+/// algorithm, and the entry in the issuer's status list. A claim written in
+/// the clear, a key bound some other way or one header field more is refused:
+/// it would be signed without anybody having seen it.
+fn nothing_unshown(document: &serde_json::Value) -> bool {
+    let only = |value: &serde_json::Value, allowed: &[&str]| {
+        value
+            .as_object()
+            .is_some_and(|map| map.keys().all(|key| allowed.contains(&key.as_str())))
+    };
+    let header = &document["header"];
+    let payload = &document["payload"];
+    let status = &payload["status"];
+    only(header, &["alg", "typ", "kid"])
+        && only(
+            payload,
+            &[
+                "iss", "iat", "exp", "vct", "cnf", "_sd_alg", "_sd", "status",
+            ],
+        )
+        && payload["_sd_alg"].as_str() == Some("sha-256")
+        && payload["iat"]
+            .as_u64()
+            .is_some_and(|iat| payload["exp"].as_u64().is_some_and(|exp| iat < exp))
+        && payload["vct"].as_str().is_some_and(|vct| !vct.is_empty())
+        && only(&payload["cnf"], &["kid"])
+        && payload["cnf"]["kid"]
+            .as_str()
+            .is_some_and(|kid| kid.starts_with("did:"))
+        && (status.is_null()
+            || (only(status, &["status_list"])
+                && only(&status["status_list"], &["idx", "uri"])
+                && status["status_list"]["idx"].as_u64().is_some()
+                && status["status_list"]["uri"]
+                    .as_str()
+                    .and_then(|uri| Url::parse(uri).ok())
+                    .is_some_and(|uri| reachable(&uri).is_ok())))
+}
+
+/// The status at `index` of a Status List Token document's payload.
+fn status_at(document: &serde_json::Value, index: u64) -> Option<u8> {
+    crate::status::status_at(&document["payload"], index)
 }
 
 /// The portal a request names, as an origin: what the key is derived from.
@@ -690,12 +849,54 @@ pub async fn registry_request(
         } else {
             Vec::new()
         },
+        credential_type: (sign.kind == "credential")
+            .then(|| sign.document["payload"]["vct"].as_str().map(str::to_owned))
+            .flatten(),
+        holder: (sign.kind == "credential")
+            .then(|| {
+                sign.document["payload"]["cnf"]["kid"]
+                    .as_str()
+                    .map(str::to_owned)
+            })
+            .flatten(),
+        change: sign.status_change.clone(),
     });
-    let (chosen, complete) = if request.purpose == "present" {
+    let (chosen, complete) = if request.purpose == "present" || request.purpose == "verify" {
         presentable(&app, &seed, &request)
     } else {
         (Vec::new(), true)
     };
+    let presenting = || -> Vec<Presenting> {
+        chosen
+            .iter()
+            .map(|one| Presenting {
+                credential: one.credential.type_labels.clone(),
+                issuer: one.credential.issuer_name.clone(),
+                claims: one
+                    .claims
+                    .iter()
+                    .map(|(name, value)| claim(name, value))
+                    .collect(),
+            })
+            .collect()
+    };
+    let asked = request
+        .dcql_query
+        .as_ref()
+        .and_then(|query| query["credential_sets"].as_array().map(Vec::len))
+        .unwrap_or(0);
+    let verifying = request.verifier.as_ref().map(|verifier| Verifying {
+        verifier: verifier.name.chars().take(200).collect(),
+        verifier_did: verifier.did.clone(),
+        form: request
+            .form
+            .as_ref()
+            .map(|form| form.name.clone())
+            .unwrap_or_default(),
+        asked,
+        presenting: presenting(),
+        complete,
+    });
     let applying = request.issuer.as_ref().map(|issuer| Applying {
         presenting: chosen
             .iter()
@@ -737,6 +938,7 @@ pub async fn registry_request(
     Ok(RegistryRequest {
         signing,
         applying,
+        verifying,
         name: request.client_name.chars().take(80).collect(),
         portal: portal.host_str().unwrap_or_default().to_owned(),
         answer_to: uri.host_str().unwrap_or_default().to_owned(),
@@ -798,7 +1000,7 @@ pub async fn registry_answer(
     if request.purpose == "receive" {
         let received = receive(&seed, &uri, &request).await?;
         crate::credentials::keep(&app, &seed, received).map_err(|_| RegistryError::Refused)?;
-    } else if request.purpose == "present" {
+    } else if request.purpose == "present" || request.purpose == "verify" {
         // The same choice the sheet showed, from the same credentials.
         let (chosen, _) = presentable(&app, &seed, &request);
         if chosen.is_empty() {
@@ -817,7 +1019,15 @@ pub async fn registry_answer(
         )
         .await?;
     } else {
-        answer(&seed, &uri, &request).await?;
+        // Pairing with an issuer: where it may write to this wallet over
+        // DIDComm, when there is a mediator to receive at.
+        let channel = match (&request.purpose[..], &request.issuer) {
+            ("pair", Some(issuer)) => {
+                crate::messaging::issuer_channel(&app, &seed, &issuer.did, &issuer.name).await
+            }
+            _ => None,
+        };
+        answer(&seed, &uri, &request, channel.as_deref()).await?;
     }
     if let Ok(mut kept) = shown.0.lock() {
         if kept.as_ref().is_some_and(|(link, _, _)| *link == input) {
@@ -827,7 +1037,12 @@ pub async fn registry_answer(
     Ok(())
 }
 
-async fn answer(seed: &[u8; 64], uri: &Url, request: &Request) -> Result<(), RegistryError> {
+async fn answer(
+    seed: &[u8; 64],
+    uri: &Url,
+    request: &Request,
+    channel: Option<&str>,
+) -> Result<(), RegistryError> {
     let (key, did) = identity_for(seed, uri, issuer_of(request));
     match request.purpose.as_str() {
         // Presenting needs the held credentials: `registry_answer` does it.
@@ -867,7 +1082,7 @@ async fn answer(seed: &[u8; 64], uri: &Url, request: &Request) -> Result<(), Reg
         if !sign.signers.iter().any(|signer| signer == multikey(&did)) {
             return Err(RegistryError::NotASigner);
         }
-        if sign.kind == "credential" {
+        if sign.kind == "credential" || sign.kind == "status_list" {
             let jws = compact(&key, &sign.document["header"], &sign.document["payload"]);
             return post(&request.response_uri, Body::Json(json!({ "jws": jws }))).await;
         }
@@ -884,6 +1099,60 @@ async fn answer(seed: &[u8; 64], uri: &Url, request: &Request) -> Result<(), Reg
         let body = json!({ "proof": proof, "presentation_proof": presented });
         return post(&request.response_uri, Body::Json(body)).await;
     }
+    let token = id_token(&key, &did, token_claims(&did, request, channel, now()));
+    let body = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("id_token", &token)
+        .finish();
+    post(&request.response_uri, Body::Form(body)).await
+}
+
+/// The claims of an `id_token` answer. Pairing names, as `didcomm`, the
+/// pairwise the issuer may write to (`issuer_channel`); nothing else does.
+fn token_claims(
+    did: &str,
+    request: &Request,
+    channel: Option<&str>,
+    issued: u64,
+) -> serde_json::Value {
+    let mut claims = json!({
+        "iss": did,
+        "sub": did,
+        "aud": request.client_id,
+        "nonce": request.nonce,
+        "iat": issued,
+        "exp": issued + TOKEN_LIFETIME,
+    });
+    if let Some(channel) = channel.filter(|_| request.purpose == "pair") {
+        claims["didcomm"] = json!(channel);
+    }
+    claims
+}
+
+/// What collecting answers: the `receive` request to put to the person.
+#[derive(Deserialize)]
+struct Collected {
+    deep_link: String,
+}
+
+/// Asks the issuer of an `issued` notice (`messaging/notice.rs`) for the
+/// credential: an `id_token` by the key this wallet paired with that issuer —
+/// derived again from the `collect` address's origin and the issuer's DID —
+/// for that address, with the application's id as nonce. The registry
+/// answers with a `receive` request, returned as its `almena://` link for the
+/// sheet to read and the person to accept, as the portal's third code would.
+#[tauri::command]
+pub async fn registry_collect(
+    app: tauri::AppHandle,
+    held: State<'_, Held>,
+    contact: String,
+    entry: String,
+) -> Result<String, RegistryError> {
+    let seed = seed(&held)?;
+    let (issuer, notice) = crate::messaging::notice_of(&app, &seed, &contact, &entry)
+        .map_err(|_| RegistryError::Unreadable)?;
+    let collect = notice.collect.ok_or(RegistryError::Unreadable)?;
+    let url = Url::parse(&collect).map_err(|_| RegistryError::Unreadable)?;
+    let (key, did) = identity_for(&seed, &url, Some(&issuer));
     let issued = now();
     let token = id_token(
         &key,
@@ -891,16 +1160,35 @@ async fn answer(seed: &[u8; 64], uri: &Url, request: &Request) -> Result<(), Reg
         json!({
             "iss": did,
             "sub": did,
-            "aud": request.client_id,
-            "nonce": request.nonce,
+            "aud": collect,
+            "nonce": notice.application,
             "iat": issued,
             "exp": issued + TOKEN_LIFETIME,
         }),
     );
-    let body = url::form_urlencoded::Serializer::new(String::new())
-        .append_pair("id_token", &token)
-        .finish();
-    post(&request.response_uri, Body::Form(body)).await
+    let response = client()
+        .map_err(|_| RegistryError::Unreachable)?
+        .post(reachable(&url)?)
+        .header("Content-Type", "application/json")
+        .body(json!({ "id_token": token }).to_string())
+        .send()
+        .await
+        .map_err(|_| RegistryError::Unreachable)?;
+    match response.status().as_u16() {
+        200 => {}
+        404 | 409 | 410 => return Err(RegistryError::Expired),
+        _ => return Err(RegistryError::Refused),
+    }
+    let collected: Collected = response
+        .json()
+        .await
+        .map_err(|_| RegistryError::Unreadable)?;
+    // Only a request on the same registry it was collected from.
+    let link = request_uri(&collected.deep_link)?;
+    if link.origin() != url.origin() {
+        return Err(RegistryError::Unreadable);
+    }
+    Ok(collected.deep_link)
 }
 
 /// A compact JWS, `EdDSA`, over the header and payload given.
@@ -928,7 +1216,10 @@ struct Received {
 
 /// Takes the credential the holder applied for: proves the key it is bound to
 /// (the one paired with the issuer), and checks what comes back before it is
-/// kept.
+/// kept — bound to that key, from that issuer, every disclosure listed, and
+/// signed by a key the issuer's DID document lists (`issuers.rs`). The
+/// document is read first: the registry hands a credential out once, so it is
+/// not asked for while the issuer cannot be checked.
 async fn receive(
     seed: &[u8; 64],
     uri: &Url,
@@ -939,6 +1230,13 @@ async fn receive(
     if request.holder.as_deref() != Some(did.as_str()) {
         return Err(RegistryError::NotTheHolder);
     }
+    let document =
+        crate::issuers::document(&issuer.did)
+            .await
+            .map_err(|problem| match problem {
+                crate::issuers::Unresolved::Unreachable => RegistryError::Unreachable,
+                crate::issuers::Unresolved::Unreadable => RegistryError::IssuerUnverified,
+            })?;
     let issued = now();
     let token = id_token(
         &key,
@@ -975,6 +1273,10 @@ async fn receive(
     let (claims, issued_at, valid_until) =
         crate::credentials::read(&received.credential, &did, &issuer.did, None)
             .map_err(|_| RegistryError::Unreadable)?;
+    let jws = received.credential.split('~').next().unwrap_or_default();
+    if crate::issuers::signed_by(jws, "dc+sd-jwt", &issuer.did, &document).is_none() {
+        return Err(RegistryError::IssuerUnverified);
+    }
     Ok(crate::credentials::Credential {
         id: crate::credentials::id_of(&received.credential),
         format: received.format,
@@ -988,6 +1290,7 @@ async fn receive(
         valid_until,
         received_at: now(),
         scope: format!("{} {}", uri.origin().ascii_serialization(), issuer.did),
+        checked: crate::status::Checked::default(),
     })
 }
 
@@ -1044,7 +1347,7 @@ fn multikey(did: &str) -> &str {
 /// An `eddsa-jcs-2022` Data Integrity proof over `document` by `key`:
 /// SHA-256 of the canonical proof options, then of the canonical document,
 /// signed; the signature in base58btc multibase.
-fn proof(
+pub(crate) fn proof(
     key: &SigningKey,
     named: &str,
     purpose: &str,
@@ -1080,7 +1383,7 @@ fn proof(
 
 /// RFC 8785, the JSON Canonicalization Scheme, for what log entries hold:
 /// keys sorted by UTF-16 code units, no whitespace, integers only.
-fn jcs(value: &serde_json::Value) -> Result<String, RegistryError> {
+pub(crate) fn jcs(value: &serde_json::Value) -> Result<String, RegistryError> {
     use serde_json::Value;
     Ok(match value {
         Value::Null | Value::Bool(_) | Value::String(_) => value.to_string(),
@@ -1156,6 +1459,7 @@ mod tests {
                 "state": {"id": "did:webvh:Qm:almena.id:ids:idn_a"},
             }),
             presentation: None,
+            status_change: None,
         }
     }
 
@@ -1178,6 +1482,7 @@ mod tests {
                 "credentialSubject": {"id": item, "name": "Issuer", "memberOf": {"id": tenant}},
             }),
             presentation: Some(json!({"holder": item, "verifiableCredential": []})),
+            status_change: None,
         }
     }
 
@@ -1300,7 +1605,7 @@ mod tests {
             .unwrap();
 
         let (uri, request) = fetch(asked["deep_link"].as_str().unwrap()).await.unwrap();
-        answer(&SEED, &uri, &request).await.unwrap();
+        answer(&SEED, &uri, &request, None).await.unwrap();
 
         let result: serde_json::Value = http
             .post(format!(
@@ -1317,7 +1622,7 @@ mod tests {
         assert_eq!(result["status"], "signed_in", "{result}");
 
         // A request answered once is not answered again.
-        let again = answer(&SEED, &uri, &request).await;
+        let again = answer(&SEED, &uri, &request, None).await;
         assert!(matches!(again, Err(RegistryError::Expired)));
 
         // The account the wallet signed up is its tenant's admin, and the
@@ -1351,7 +1656,7 @@ mod tests {
             .await
             .unwrap();
         let (uri, request) = fetch(asked["deep_link"].as_str().unwrap()).await.unwrap();
-        answer(&SEED, &uri, &request).await.unwrap();
+        answer(&SEED, &uri, &request, None).await.unwrap();
         let result: serde_json::Value = http
             .post(format!(
                 "{api}/api/v1/auth/wallet/requests/{}/result",
@@ -1376,6 +1681,89 @@ mod tests {
             signed["did"].as_str().unwrap().starts_with("did:webvh:"),
             "{signed}"
         );
+    }
+
+    #[test]
+    fn a_verifier_names_itself_and_its_query_and_nothing_of_an_application() {
+        let base = || Request {
+            response_type: "vp_token".into(),
+            response_mode: "direct_post".into(),
+            client_id: "https://registry.almena.id".into(),
+            client_name: "Door".into(),
+            response_uri: "https://api.almena.id/r".into(),
+            nonce: "n".into(),
+            purpose: "verify".into(),
+            sign: None,
+            issuer: None,
+            credential_type: None,
+            holder: None,
+            dcql_query: Some(json!({"credentials": []})),
+            submission: None,
+            verifier: Some(IssuerRef {
+                did: "did:webvh:x:almena.id:ids:door".into(),
+                name: "Door".into(),
+            }),
+            form: None,
+        };
+        assert!(applies_as_it_says(&base()));
+        let no_query = Request {
+            dcql_query: None,
+            ..base()
+        };
+        assert!(!applies_as_it_says(&no_query));
+        let nameless = Request {
+            verifier: Some(IssuerRef {
+                did: String::new(),
+                name: "Door".into(),
+            }),
+            ..base()
+        };
+        assert!(!applies_as_it_says(&nameless));
+        let posing = Request {
+            issuer: Some(IssuerRef {
+                did: "did:web:club".into(),
+                name: "Club".into(),
+            }),
+            ..base()
+        };
+        assert!(!applies_as_it_says(&posing));
+        // A verifier named on anything else does not hold either.
+        let signing_in = Request {
+            purpose: "sign_in".into(),
+            response_type: "id_token".into(),
+            dcql_query: None,
+            ..base()
+        };
+        assert!(!applies_as_it_says(&signing_in));
+    }
+
+    #[test]
+    fn only_pairing_names_where_the_issuer_may_write() {
+        let request = |purpose: &str| Request {
+            response_type: "id_token".into(),
+            response_mode: "direct_post".into(),
+            client_id: "https://registry.almena.id".into(),
+            client_name: "Club".into(),
+            response_uri: "https://api.almena.id/r".into(),
+            nonce: "n".into(),
+            purpose: purpose.into(),
+            sign: None,
+            issuer: None,
+            credential_type: None,
+            holder: None,
+            dcql_query: None,
+            submission: None,
+            verifier: None,
+            form: None,
+        };
+        let paired = token_claims("did:key:z", &request("pair"), Some("did:peer:2.x"), 1);
+        assert_eq!(paired["didcomm"], "did:peer:2.x");
+        assert_eq!(paired["exp"], 1 + TOKEN_LIFETIME);
+        let signed_in = token_claims("did:key:z", &request("sign_in"), Some("did:peer:2.x"), 1);
+        assert!(signed_in.get("didcomm").is_none());
+        assert!(token_claims("did:key:z", &request("pair"), None, 1)
+            .get("didcomm")
+            .is_none());
     }
 
     #[test]
@@ -1482,6 +1870,14 @@ mod tests {
             "https://api.almena.id.evil.example/x"
         ));
         assert!(!at("https://a.id", "https://b.id/x"));
+        // Siblings under a public suffix belong to different people.
+        assert!(!at("https://victim.github.io", "https://evil.github.io/x"));
+        assert!(!at("https://a.co.uk", "https://b.co.uk/x"));
+        assert!(!at("https://a.vercel.app", "https://b.vercel.app/x"));
+        assert!(at(
+            "https://registry.example.co.uk",
+            "https://api.example.co.uk/x"
+        ));
         assert!(!at("http://127.0.0.1:3000", "http://127.0.0.2:8000/x"));
     }
 
@@ -1522,6 +1918,8 @@ mod tests {
             holder: None,
             dcql_query: (purpose == "present").then(|| json!({"credential_sets": [{}]})),
             submission,
+            verifier: None,
+            form: None,
         }
     }
 
@@ -1587,13 +1985,13 @@ mod tests {
     async fn nothing_is_presented_and_only_the_paired_key_submits() {
         let present = application("present", None);
         assert!(matches!(
-            answer(&SEED, &api(), &present).await,
+            answer(&SEED, &api(), &present, None).await,
             Err(RegistryError::NothingToPresent)
         ));
         let mut submit = application("submit", Some(content()));
         submit.holder = Some("did:key:z6MkOther".into());
         assert!(matches!(
-            answer(&SEED, &api(), &submit).await,
+            answer(&SEED, &api(), &submit, None).await,
             Err(RegistryError::NotTheHolder)
         ));
     }
@@ -1615,12 +2013,73 @@ mod tests {
             proof_purpose: "assertionMethod".into(),
             document: json!({
                 "header": {"alg": "EdDSA", "typ": "dc+sd-jwt", "kid": format!("{issuer}#z6MkSigner")},
-                "payload": {"iss": issuer, "exp": 1_924_991_999u64, "_sd": [digest],
-                            "cnf": {"kid": "did:key:zHolder"}},
+                "payload": {"iss": issuer, "iat": 1_893_456_000u64, "exp": 1_924_991_999u64,
+                            "vct": "https://almena.id/credentials/membership/1",
+                            "cnf": {"kid": "did:key:zHolder"}, "_sd_alg": "sha-256",
+                            "_sd": [digest],
+                            "status": {"status_list": {"idx": 7, "uri": "https://api.almena.id/status-lists/club"}}},
                 "disclosures": [disclosure],
             }),
             presentation: None,
+            status_change: None,
         }
+    }
+
+    fn status_list_to_sign(change: Option<StatusChange>) -> Sign {
+        let issuer = "did:webvh:Qm:almena.id:ids:idn_club";
+        // 2 bits each: entry 5 suspended (bits 2-3 of byte 1), entry 6 revoked.
+        let mut list = vec![0u8; 8];
+        list[1] = 0b0001_1000;
+        let lst = URL_SAFE_NO_PAD.encode(miniz_oxide::deflate::compress_to_vec_zlib(&list, 9));
+        Sign {
+            kind: "status_list".into(),
+            identity: "Club".into(),
+            tenant: Some("Club".into()),
+            did: Some(issuer.into()),
+            version: None,
+            valid_until: None,
+            signers: vec!["z6MkSigner".into()],
+            verification_method: Some(issuer.into()),
+            proof_purpose: "assertionMethod".into(),
+            document: json!({
+                "header": {"alg": "EdDSA", "typ": "statuslist+jwt", "kid": format!("{issuer}#z6MkSigner")},
+                "payload": {"sub": "https://api.almena.id/status-lists/stl_x", "iat": 1u64,
+                            "status_list": {"bits": 2, "lst": lst}},
+            }),
+            presentation: None,
+            status_change: change,
+        }
+    }
+
+    #[test]
+    fn a_status_list_is_signed_only_saying_what_is_shown() {
+        let change = |index: u64, status: &str| {
+            Some(StatusChange {
+                index,
+                status: status.into(),
+                holder: None,
+            })
+        };
+        assert_eq!(status_at(&status_list_to_sign(None).document, 5), Some(2));
+        assert!(told_as_it_is(&status_list_to_sign(None)));
+        assert!(told_as_it_is(&status_list_to_sign(change(5, "suspended"))));
+        assert!(told_as_it_is(&status_list_to_sign(change(6, "revoked"))));
+        assert!(told_as_it_is(&status_list_to_sign(change(4, "valid"))));
+        // The sheet would say one thing and the list another.
+        assert!(!told_as_it_is(&status_list_to_sign(change(5, "revoked"))));
+        assert!(!told_as_it_is(&status_list_to_sign(change(4, "suspended"))));
+        assert!(!told_as_it_is(&status_list_to_sign(change(999, "valid"))));
+        assert!(!told_as_it_is(&status_list_to_sign(change(5, "expired"))));
+        // Another key, another kind of token, a list that does not decode.
+        let mut unlisted = status_list_to_sign(None);
+        unlisted.signers = vec!["z6MkOther".into()];
+        assert!(!told_as_it_is(&unlisted));
+        let mut other = status_list_to_sign(None);
+        other.document["header"]["typ"] = json!("dc+sd-jwt");
+        assert!(!told_as_it_is(&other));
+        let mut garbled = status_list_to_sign(None);
+        garbled.document["payload"]["status_list"]["lst"] = json!("not-zlib");
+        assert!(!told_as_it_is(&garbled));
     }
 
     #[test]
@@ -1650,6 +2109,30 @@ mod tests {
         let mut later = credential_to_sign();
         later.valid_until = Some(timestamp(1_924_992_000));
         assert!(!told_as_it_is(&later));
+        // Anything signed that the sheet does not show: a claim in the clear,
+        // a key bound some other way, a header field more, a list elsewhere.
+        let mut clear = credential_to_sign();
+        clear.document["payload"]["role"] = json!("admin");
+        assert!(!told_as_it_is(&clear));
+        let mut bound = credential_to_sign();
+        bound.document["payload"]["cnf"] = json!({"jwk": {"kty": "OKP"}});
+        assert!(!told_as_it_is(&bound));
+        let mut header = credential_to_sign();
+        header.document["header"]["jku"] = json!("https://else.example/keys");
+        assert!(!told_as_it_is(&header));
+        let mut digests = credential_to_sign();
+        digests.document["payload"]["_sd_alg"] = json!("sha-512");
+        assert!(!told_as_it_is(&digests));
+        let mut listed = credential_to_sign();
+        listed.document["payload"]["status"]["status_list"]["uri"] =
+            json!("http://else.example/list");
+        assert!(!told_as_it_is(&listed));
+        let mut unstatused = credential_to_sign();
+        unstatused.document["payload"]
+            .as_object_mut()
+            .unwrap()
+            .remove("status");
+        assert!(told_as_it_is(&unstatused));
     }
 
     #[test]

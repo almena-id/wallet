@@ -97,7 +97,7 @@ An unknown `reason` is read as `ended`. A `hangup` or `answer` for a call that i
 - **Both calling at once.** When a wallet calling a contact receives that contact's `offer` before an answer, the call whose id sorts lower (byte-wise) is kept: the wallet whose own offer has the lower id ignores the other's; the other drops its own offer, sending nothing, and rings with the incoming one.
 - **Ringing.** The callee rings until it answers or declines, the caller hangs up, or the offer expires. The caller gives up after 45 seconds with `unanswered`.
 - **Media.** Microphone and camera can be muted during the call by disabling the track; that is not signalled and needs no renegotiation. An audio call stays audio.
-- **Delivery.** Signalling goes through both mediators like any message, so a call only rings on a wallet that is receiving live (online). Waking a wallet for a call is not specified yet.
+- **Delivery.** Signalling goes through both mediators like any message. An `offer` is packed with the `forward` header `"urgency": "call"` ([Mediator] §3.4, §6.4), so the callee's mediator, when the callee is not receiving live, rings its phone with a call push instead of the ordinary wake-up: a full-screen incoming call on Android, CallKit on iOS. That mediator learns that a call is coming and when, nothing else. The phone cannot say who is calling — a closed wallet cannot read the offer — and answering opens the wallet, which, once unlocked, picks the offer up and answers it if it has not expired. `answer` and `hangup` carry no urgency.
 
 ### 3.4 Security
 

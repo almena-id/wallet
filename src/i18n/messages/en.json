@@ -97,7 +97,8 @@
         "registry_refused": "The registry did not accept the answer.",
         "registry_not_a_signer": "This wallet is not one of those that may sign it.",
         "registry_not_the_holder": "This application was started with another wallet.",
-        "registry_nothing_to_present": "This wallet holds no credentials yet."
+        "registry_nothing_to_present": "This wallet holds no credentials yet.",
+        "registry_issuer_unverified": "The credential is not signed by a key its issuer's DID lists: it was not kept."
       },
       "signTitle": "Sign {identity}",
       "signFirstLead": "This creates its DID. The registry publishes it with your signature.",
@@ -128,11 +129,29 @@
       "issueTitle": "Issue a credential as {identity}",
       "issueLead": "You sign it as the issuer: the holder who applied receives it with what it says below.",
       "issue": "Sign and issue",
+      "statusTitle": "Sign the status list of {identity}",
+      "statusLead": "Verifiers read this list to know whether {identity}'s credentials still hold. You sign it as the issuer; it changes nothing else.",
+      "statusChangeLead": "Verifiers read this list to know whether {identity}'s credentials still hold. Signing it gives the credential below its new status.",
+      "statusSign": "Sign the list",
+      "credentialStatus": "New status",
+      "holder": "Holder",
+      "entry": "Entry",
+      "statuses": {
+        "valid": "Valid (reinstated)",
+        "suspended": "Suspended",
+        "revoked": "Revoked, for good"
+      },
       "receiveTitle": "Your credential from {issuer}",
       "receiveLead": "{issuer} issued the credential you applied for. It is kept in this wallet, bound to the key you applied with.",
       "receive": "Keep it",
       "presents": "Credential",
-      "someMissing": "Some credentials the form needs are not in this wallet: type those details in the form."
+      "someMissing": "Some credentials the form needs are not in this wallet: type those details in the form.",
+      "verifyTitle": "Present credentials to {verifier}",
+      "verifyLead": "{verifier} asks to see credentials from this wallet. Only the details below are shared, each bound to the key you hold it with.",
+      "verifier": "Verifier",
+      "verifierDid": "Its DID",
+      "asks": "For",
+      "verifyNote": "Accept only if you are in front of {verifier} and expect it to ask."
     }
   },
   "messages": {
@@ -167,6 +186,10 @@
       "messaging": {
         "title": "Messaging",
         "hint": "Where your messages wait"
+      },
+      "backup": {
+        "title": "Backup",
+        "hint": "What your words do not bring back"
       },
       "security": {
         "title": "Security",
@@ -224,6 +247,7 @@
       "keptLabel": "Kept in",
       "keptInStore": "This device's own secret store",
       "keptInFile": "This application's private storage",
+      "keptInKeystore": "This application's private storage, sealed by this device's secure hardware",
       "lockTitle": "Locking the wallet",
       "pinChange": "Change it",
       "biometricsLabel": "Biometrics",
@@ -273,7 +297,47 @@
       "issuer": "Issued by",
       "validUntil": "Valid until",
       "expired": "Expired on",
-      "unreadable": "The credentials could not be read."
+      "unreadable": "The credentials could not be read.",
+      "remove": "Remove from this wallet",
+      "removeQuestion": "Remove it for good? Nothing keeps a copy: only {issuer} can grant it again.",
+      "removeConfirm": "Remove",
+      "removeKeep": "Keep it",
+      "removeFailed": "It could not be removed. Try again.",
+      "status": "Status",
+      "statuses": {
+        "valid": "Valid",
+        "suspended": "Suspended",
+        "revoked": "Revoked"
+      },
+      "unchecked": {
+        "pending": "Checking…",
+        "noList": "Cannot be checked",
+        "unreachable": "Not checked: the issuer cannot be reached",
+        "untrusted": "Not checked: its issuer's list could not be trusted",
+        "signature": "Not valid: its issuer's DID no longer lists the key that signed it"
+      },
+      "checkedAt": "Checked {when}",
+      "checkedOffline": "As of {when}: the issuer cannot be reached now",
+      "notice": {
+        "suspended": "{issuer} has suspended this credential: verifiers refuse it for now, and this wallet does not offer it.",
+        "revoked": "{issuer} has revoked this credential: verifiers no longer accept it, and this wallet does not offer it."
+      }
+    },
+    "backup": {
+      "exportTitle": "Make a backup",
+      "exportBody": "One file with your contacts, conversations, credentials, name and picture, sealed so that only your words open it. Keep it wherever you like: without your words it is nothing to anybody.",
+      "export": "Save a backup",
+      "exported": "The backup was saved.",
+      "importTitle": "Restore a backup",
+      "importBody": "Adds what a backup of this identity holds to what this device has. Nothing here is changed or removed.",
+      "import": "Choose a backup",
+      "imported": "Restored: {contacts} contacts, {messages} messages and {credentials} credentials that were missing.",
+      "errors": {
+        "backup_locked": "Unlock the wallet first.",
+        "backup_file": "The file could not be saved or read there. Try another place.",
+        "backup_not_this_identity": "That file is not a backup of this identity.",
+        "backup_storage": "What this device holds could not be read or written."
+      }
     }
   },
   "onboarding": {
@@ -342,7 +406,9 @@
     "repeatSubtitle": "So a slip does not become a lock nobody can open.",
     "unlockTitle": "Your PIN",
     "unlockSubtitle": "The wallet is locked.",
+    "callSubtitle": "Somebody is calling. Unlock the wallet to answer.",
     "mismatch": "Those two do not match. Start again.",
+    "progress": "{typed} of {digits} digits entered",
     "delete": "Delete",
     "attemptsLeft": {
       "one": "{count} attempt left. When it is gone the identity is removed from this device, and your phrase is the way back.",
@@ -481,6 +547,19 @@
       "aliasLabel": "Name",
       "save": "Save",
       "clear": "Use their name"
+    },
+    "notice": {
+      "accepted": "{issuer} accepted your application for {credential}.",
+      "rejected": "{issuer} did not accept your application for {credential}.",
+      "issued": "{issuer} issued your {credential}. Collect it to keep it in this wallet.",
+      "note": "Their note",
+      "collect": "Collect",
+      "collecting": "Asking…",
+      "preview": {
+        "accepted": "Application accepted",
+        "rejected": "Application not accepted",
+        "issued": "Credential ready to collect"
+      }
     }
   },
   "calls": {

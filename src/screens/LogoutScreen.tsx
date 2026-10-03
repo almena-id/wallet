@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 
-import { ChevronLeftIcon, CredentialIcon } from "../components/icons";
+import { CredentialIcon } from "../components/icons";
 import { SlideToConfirm } from "../components/SlideToConfirm";
 import { useTranslations } from "../i18n";
 import { fill } from "../i18n/format";
+import { BackButton } from "../components/BackButton";
 
 /** How long the page insists on being read before it will let anybody out. */
 const READ_SECONDS = 10;
@@ -36,9 +37,7 @@ export function LogoutScreen({ onBack, onConfirmed }: LogoutScreenProps) {
   return (
     <div className="screen">
       <header className="screen__header screen__header--compact">
-        <button type="button" className="icon-button" onClick={onBack} aria-label={t.nav.back}>
-          <ChevronLeftIcon />
-        </button>
+        <BackButton onBack={onBack} />
         <h1 className="screen__title screen__title--compact">{t.logout.title}</h1>
       </header>
 

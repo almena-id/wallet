@@ -1,9 +1,9 @@
 import { useState } from "react";
 
-import { ChevronLeftIcon } from "../components/icons";
 import { useTranslations } from "../i18n";
 import { fill } from "../i18n/format";
 import { PinScreen } from "./PinScreen";
+import { BackButton } from "../components/BackButton";
 
 type PinSetupProps = {
   /** What the screen is called, since it is used to choose a first PIN and to replace one. */
@@ -52,9 +52,7 @@ export function PinSetup({
       <div className="screen">
         {onBack ? (
           <header className="screen__header screen__header--compact">
-            <button type="button" className="icon-button" onClick={onBack} aria-label={t.nav.back}>
-              <ChevronLeftIcon />
-            </button>
+            <BackButton onBack={onBack} />
             <h1 className="screen__title screen__title--compact">{title}</h1>
           </header>
         ) : (

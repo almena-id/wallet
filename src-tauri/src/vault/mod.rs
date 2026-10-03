@@ -38,7 +38,7 @@
 
 mod presence;
 mod record;
-mod store;
+pub(crate) mod store;
 
 use std::sync::Mutex;
 
@@ -217,10 +217,10 @@ pub fn vault_create<R: Runtime>(
     app: tauri::AppHandle<R>,
     held: State<'_, Held>,
     gate: State<'_, Gate>,
-    pin: Option<String>,
+    pin: Option<Zeroizing<String>>,
 ) -> Result<VaultStatus, VaultError> {
     let _guard = gate.0.lock();
-    let digits = pin.as_deref().map(check).transpose()?;
+    let digits = pin.as_deref().map(|pin| check(pin)).transpose()?;
     if pin.is_none() && !store::device_lockable() {
         return Err(VaultError::NoDeviceStore);
     }
@@ -261,7 +261,7 @@ pub fn vault_open<R: Runtime>(
     app: tauri::AppHandle<R>,
     held: State<'_, Held>,
     gate: State<'_, Gate>,
-    pin: String,
+    pin: Zeroizing<String>,
 ) -> Result<Identity, VaultError> {
     let _guard = gate.0.lock();
     let (record, key) = attempt(&app, &held, &pin)?;
@@ -330,8 +330,8 @@ pub fn vault_change_pin<R: Runtime>(
     app: tauri::AppHandle<R>,
     held: State<'_, Held>,
     gate: State<'_, Gate>,
-    current: String,
-    next: String,
+    current: Zeroizing<String>,
+    next: Zeroizing<String>,
 ) -> Result<VaultStatus, VaultError> {
     let _guard = gate.0.lock();
     let digits = check(&next)?;
@@ -359,7 +359,7 @@ pub fn vault_set_device<R: Runtime>(
     held: State<'_, Held>,
     gate: State<'_, Gate>,
     enabled: bool,
-    pin: Option<String>,
+    pin: Option<Zeroizing<String>>,
 ) -> Result<VaultStatus, VaultError> {
     let _guard = gate.0.lock();
 
@@ -388,7 +388,7 @@ pub fn vault_set_device<R: Runtime>(
         // refused, a prompt dismissed, a sensor that would not answer. The key
         // goes rather than sitting there half-turned-on.
         match store::device_key() {
-            Ok(proof) if proof == *key.as_ref() => record,
+            Ok(proof) if proof.as_slice() == key.as_slice() => record,
             _ => {
                 let _ = store::set_device_key(None);
                 return Err(VaultError::DeviceUnproven);
@@ -436,38 +436,62 @@ fn attempt<R: Runtime>(
     held: &State<'_, Held>,
     pin: &str,
 ) -> Result<(Record, Zeroizing<[u8; 32]>), VaultError> {
-    let (mut record, _) = load(app)?.ok_or(VaultError::Nothing)?;
+    let (record, _) = load(app)?.ok_or(VaultError::Nothing)?;
+    counted(record, pin, |record| {
+        store::write(app, &record.write()).map(|_| ())
+    })
+    .inspect_err(|failure| {
+        if matches!(failure, VaultError::Destroyed) {
+            destroy(app, held);
+        }
+    })
+}
+
+/// The count itself, given how to write the record down: [`attempt`] without
+/// the device, so it can be tested. [`VaultError::Destroyed`] is the caller's
+/// cue to remove everything.
+fn counted(
+    mut record: Record,
+    pin: &str,
+    mut persist: impl FnMut(&Record) -> Result<(), VaultError>,
+) -> Result<(Record, Zeroizing<[u8; 32]>), VaultError> {
     // Not an answer, so not an attempt: there are no digits to get wrong.
     if !record.has_pin() {
         return Err(VaultError::NoPin);
     }
 
+    // Counted before it is tried, and written down before the slow part starts.
+    // Counting it only once Argon2 has said no would let whoever kills the
+    // wallet during the derivation — or makes the write fail — guess for free.
+    // A record that reaches here already spent is one whose last guess was
+    // never answered: it goes the way it would have gone.
+    if record.left() == 0 {
+        return Err(VaultError::Destroyed);
+    }
+    record.wrong = record.wrong.saturating_add(1);
+    persist(&record)?;
+
     let key = match record.unwrap_pin(pin) {
         Ok(key) => key,
-        Err(failure) => {
-            record.wrong = record.wrong.saturating_add(1);
-            if record.left() == 0 {
-                // The way back is the phrase, which is the same way back as a
-                // lost phone. Everything the device was holding goes, and so
-                // does anything still open in front of it.
-                store::clear(app);
-                crate::messaging::clear(app);
-                held.forget();
-                return Err(VaultError::Destroyed);
-            }
-            store::write(app, &record.write())?;
-            return Err(failure);
-        }
+        Err(_) if record.left() == 0 => return Err(VaultError::Destroyed),
+        Err(failure) => return Err(failure),
     };
 
     // A count that only ever went up would eventually destroy a record whose
     // owner has been typing it correctly for a year.
-    if record.wrong != 0 {
-        record.wrong = 0;
-        store::write(app, &record.write())?;
-    }
+    record.wrong = 0;
+    persist(&record)?;
 
     Ok((record, key))
+}
+
+/// The way back is the phrase, which is the same way back as a lost phone.
+/// Everything the device was holding goes, and so does anything still open in
+/// front of it.
+fn destroy<R: Runtime>(app: &tauri::AppHandle<R>, held: &State<'_, Held>) {
+    store::clear(app);
+    crate::messaging::clear(app);
+    held.forget();
 }
 
 /// Names the one secret store this platform has, before anything asks for it,
@@ -542,6 +566,63 @@ fn load<R: Runtime>(
 
 #[cfg(test)]
 mod tests {
+    use super::{counted, record::Record, record::ATTEMPTS, VaultError};
+
+    #[test]
+    fn every_answer_is_written_down_as_an_attempt_before_it_is_checked() {
+        let seed = [7u8; 64];
+        let (record, _) = Record::seal(&seed, "2468", 4).unwrap();
+        let mut written: Vec<u8> = Vec::new();
+
+        // A wrong PIN: counted, and written with the count before the answer.
+        let failure = counted(record.clone(), "1111", |r| {
+            written.push(r.wrong);
+            Ok(())
+        });
+        assert!(matches!(failure, Err(VaultError::WrongPin)));
+        assert_eq!(written, vec![1]);
+
+        // A write that fails is no attempt at all: nothing is checked.
+        let mut checked = false;
+        let refused = counted(record.clone(), "2468", |_| {
+            if checked {
+                return Ok(());
+            }
+            checked = true;
+            Err(VaultError::Storage)
+        });
+        assert!(matches!(refused, Err(VaultError::Storage)));
+
+        // The right one: counted, then the count goes back to zero.
+        let mut wrong = record.clone();
+        wrong.wrong = 3;
+        written.clear();
+        let (opened, _) = counted(wrong, "2468", |r| {
+            written.push(r.wrong);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(written, vec![4, 0]);
+        assert_eq!(opened.wrong, 0);
+    }
+
+    #[test]
+    fn the_last_wrong_answer_and_a_spent_record_destroy_it() {
+        let seed = [7u8; 64];
+        let (mut record, _) = Record::seal(&seed, "2468", 4).unwrap();
+        record.wrong = ATTEMPTS - 1;
+        assert!(matches!(
+            counted(record.clone(), "1111", |_| Ok(())),
+            Err(VaultError::Destroyed)
+        ));
+        // Killed during its last answer: the count says it was spent.
+        record.wrong = ATTEMPTS;
+        assert!(matches!(
+            counted(record, "2468", |_| Ok(())),
+            Err(VaultError::Destroyed)
+        ));
+    }
+
     use super::*;
 
     #[test]

@@ -40,6 +40,10 @@ pub struct Entry {
     /// Sent by this wallet and not taken by the other side's mediator.
     #[serde(default)]
     pub failed: bool,
+    /// An issuer's notice about an application (`notice.rs`): drawn from
+    /// this, translated, rather than from `content`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notice: Option<super::notice::Notice>,
 }
 
 /// The id of the conversation this wallet has as `ours`.
@@ -83,6 +87,17 @@ pub fn put<R: Runtime>(
     entries.sort_by_key(|e| e.at);
     state::store(&file(app, id)?, seed, aad(id).as_bytes(), &entries)?;
     Ok(new)
+}
+
+/// Writes the conversation `id` as `entries`, whatever it held: for a
+/// restore (`backup.rs`), which merged them first.
+pub fn replace<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    seed: &[u8; 64],
+    id: &str,
+    entries: &[Entry],
+) -> Result<(), MessagingError> {
+    state::store(&file(app, id)?, seed, aad(id).as_bytes(), &entries)
 }
 
 /// Removes the conversation `id`'s history.

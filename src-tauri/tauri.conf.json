@@ -25,7 +25,20 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self'",
+        "img-src": "'self' data: blob:",
+        "font-src": "'self' data:",
+        "media-src": "'self' blob: mediastream:",
+        "connect-src": "ipc: http://ipc.localhost",
+        "object-src": "'none'",
+        "frame-src": "'none'",
+        "base-uri": "'none'",
+        "form-action": "'none'"
+      },
+      "devCsp": null
     }
   },
   "bundle": {

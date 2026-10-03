@@ -438,7 +438,7 @@ fn key_from(bytes: &[u8]) -> Option<Zeroizing<[u8; KEY_BYTES]>> {
 
 fn random<const N: usize>() -> Result<[u8; N], VaultError> {
     let mut bytes = [0u8; N];
-    getrandom::getrandom(&mut bytes).map_err(|_| VaultError::Entropy)?;
+    getrandom::fill(&mut bytes).map_err(|_| VaultError::Entropy)?;
     Ok(bytes)
 }
 

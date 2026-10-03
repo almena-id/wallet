@@ -28,6 +28,12 @@
 			</array>
 		</dict>
 	</dict>
+	<!-- VoIP pushes: an incoming call rings through PushKit and CallKit while
+	     the wallet is closed (plugins/call). -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>voip</string>
+	</array>
 	<!-- Why the camera and the microphone are asked for, which iOS shows when
 	     it asks: the scanner reads a code, and calls carry them to the
 	     contact being called, nowhere else. -->

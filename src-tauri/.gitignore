@@ -8,3 +8,4 @@
 
 # Signing material `task build:macos` and `task release:macos` write per build
 /.signing/
+

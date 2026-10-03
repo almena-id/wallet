@@ -1,5 +1,4 @@
-import { useState } from "react";
-
+import { useStack } from "../nav";
 import { AcceptInvitationScreen } from "./AcceptInvitationScreen";
 import { ContactScreen } from "./ContactScreen";
 import { ConversationScreen } from "./ConversationScreen";
@@ -13,57 +12,62 @@ type View =
   | { name: "new" }
   | { name: "invite" }
   | { name: "accept" }
-  | { name: "conversation"; id: string; from: "inbox" | "new" }
-  | { name: "contact"; id: string; from: "inbox" | "new" };
+  | { name: "conversation"; id: string }
+  | { name: "contact"; id: string };
 
 type MessagesTabProps = {
   /** A conversation to open on, when something outside the tab led to it. */
   initialConversation?: string | null;
+  /** Puts an `almena://` link to the person (an issuer's credential to collect). */
+  onLink: (url: string) => void;
 };
 
-/** The Messages tab and the screens behind it. Each is left by its own back button. */
-export function MessagesTab({ initialConversation = null }: MessagesTabProps) {
-  const [view, setView] = useState<View>(
+/**
+ * The Messages tab and the screens behind it, on a stack (`nav.ts`): each
+ * screen's way back returns to whichever screen led to it — a conversation
+ * opened from the contacts goes back to them, one opened from the inbox to it.
+ */
+export function MessagesTab({ initialConversation = null, onLink }: MessagesTabProps) {
+  const { top, push, pop } = useStack<View>(() =>
     initialConversation
-      ? { name: "conversation", id: initialConversation, from: "inbox" }
-      : { name: "inbox" },
+      ? [{ name: "inbox" }, { name: "conversation", id: initialConversation }]
+      : [{ name: "inbox" }],
   );
 
-  switch (view.name) {
+  switch (top.name) {
     case "new":
       return (
         <NewConversationScreen
-          onBack={() => setView({ name: "inbox" })}
-          onOpen={(id) => setView({ name: "conversation", id, from: "new" })}
+          onBack={pop}
+          onOpen={(id) => push({ name: "conversation", id })}
         />
       );
     case "invite":
-      return <InviteScreen onBack={() => setView({ name: "new" })} />;
+      return <InviteScreen onBack={pop} />;
     case "accept":
       return (
         <AcceptInvitationScreen
-          onBack={() => setView({ name: "new" })}
+          onBack={pop}
           // Back to the list, which syncs and shows the new contact as pending.
-          onAccepted={() => setView({ name: "new" })}
+          onAccepted={pop}
         />
       );
     case "conversation":
       return (
         <ConversationScreen
-          id={view.id}
-          onBack={() => setView(view.from === "new" ? { name: "new" } : { name: "inbox" })}
-          onContact={() => setView({ ...view, name: "contact" })}
+          id={top.id}
+          onBack={pop}
+          onContact={() => push({ name: "contact", id: top.id })}
+          onLink={onLink}
         />
       );
     case "contact":
-      return (
-        <ContactScreen id={view.id} onBack={() => setView({ ...view, name: "conversation" })} />
-      );
+      return <ContactScreen id={top.id} onBack={pop} />;
     default:
       return (
         <MessagesScreen
-          onNewConversation={() => setView({ name: "new" })}
-          onOpen={(id) => setView({ name: "conversation", id, from: "inbox" })}
+          onNewConversation={() => push({ name: "new" })}
+          onOpen={(id) => push({ name: "conversation", id })}
         />
       );
   }

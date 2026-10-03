@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="almena_call_channel">Calls</string>
+    <string name="almena_call_title">Incoming call</string>
+    <string name="almena_call_text">Unlock Almena to see who is calling</string>
+    <string name="almena_call_caller">Almena</string>
+</resources>

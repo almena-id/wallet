@@ -4,7 +4,7 @@
 //! **Every request is authcrypted and asks for its answer on the same
 //! connection** (`return_route: "all"`), because a wallet has no endpoint of its
 //! own: the mediator answers `200` with the reply as the body. That is the
-//! design in the mediator's `docs/didcomm.md` §5, and it is the only way this
+//! design in the mediator's SPEC.md (§6.1, §7.1), and it is the only way this
 //! module talks to one.
 //!
 //! **HTTPS, except on this machine in a development build.** A mediator is
@@ -271,7 +271,7 @@ impl Mediator {
     /// A DID other than the inbox itself carries a possession proof: a JWT it
     /// signs, naming this mediator and the inbox — the Almena extension the
     /// mediator requires before it routes a DID to somebody (its
-    /// `docs/didcomm.md`, "Recipient proof").
+    /// SPEC.md §6.2, "Recipient possession proof").
     pub async fn recipient(
         &self,
         inbox: &Peer,

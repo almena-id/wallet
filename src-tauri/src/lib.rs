@@ -43,14 +43,17 @@
 mod backdrop;
 mod credentials;
 mod identity;
+mod issuers;
 mod messaging;
 mod notify;
 mod presentation;
 mod registry;
 #[cfg(target_os = "ios")]
 mod scene;
+mod status;
 mod tray;
 mod vault;
+mod webvh;
 #[cfg(desktop)]
 mod window;
 
@@ -142,10 +145,19 @@ pub fn run() {
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_notifications::init());
 
+    #[cfg(mobile)]
+    let builder = builder.plugin(almena_call::init());
+
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(almena_keystore::init());
+
     builder
-        .plugin(tauri_plugin_opener::init())
         // Writing to the clipboard: the webview's own `navigator.clipboard`
         // is refused on iOS. Only `write-text` is granted — see capabilities.
+        // The encrypted backup's save and open sheets, and the files they name
+        // (`messaging::backup`); only Rust calls them.
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             // Who opens `almena://`, where the system is not told by the
@@ -218,7 +230,12 @@ pub fn run() {
             messaging::push_unregister,
             registry::registry_request,
             registry::registry_answer,
+            registry::registry_collect,
             credentials::credentials_list,
+            credentials::credentials_check,
+            credentials::credentials_remove,
+            messaging::backup::backup_export,
+            messaging::backup::backup_import,
         ])
         .build(tauri::generate_context!())
         .expect("error while building the Almena Wallet")

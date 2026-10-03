@@ -132,7 +132,7 @@ pub fn generate(language: Language, length: Length) -> Result<Mnemonic, Identity
     // filled, so a shorter phrase still leaves nothing behind it.
     let mut buffer = Zeroizing::new([0u8; MAX_ENTROPY_BYTES]);
     let entropy = &mut buffer[..length.entropy_bytes()];
-    getrandom::getrandom(entropy).map_err(|_| IdentityError::Entropy)?;
+    getrandom::fill(entropy).map_err(|_| IdentityError::Entropy)?;
 
     Mnemonic::from_entropy_in(language, entropy).map_err(|_| IdentityError::Entropy)
 }

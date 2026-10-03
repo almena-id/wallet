@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-settle"
+description = "Enables the settle command without any pre-configured scope."
+commands.allow = ["settle"]
+
+[[permission]]
+identifier = "deny-settle"
+description = "Denies the settle command without any pre-configured scope."
+commands.deny = ["settle"]

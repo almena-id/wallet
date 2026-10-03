@@ -22,6 +22,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::credentials::Credential;
+use crate::status::{Status, Unchecked};
 
 /// One credential chosen for one query: the query it answers, the credential
 /// and the claims disclosed from it.
@@ -61,7 +62,8 @@ fn asked(query: &Value) -> Vec<String> {
 }
 
 /// A held credential that answers `query`, if any: the format and a `vct` it
-/// names, still valid at `now`.
+/// names, still valid at `now`, not known to be revoked or suspended, and
+/// still signed by a key its issuer lists.
 fn answering<'a>(query: &Value, held: &'a [Credential], now: u64) -> Option<&'a Credential> {
     if query["format"].as_str() != Some("dc+sd-jwt") {
         return None;
@@ -74,6 +76,11 @@ fn answering<'a>(query: &Value, held: &'a [Credential], now: u64) -> Option<&'a 
     held.iter().find(|credential| {
         credential.format == "dc+sd-jwt"
             && credential.valid_until > now
+            && !matches!(
+                credential.checked.status,
+                Some(Status::Revoked | Status::Suspended)
+            )
+            && credential.checked.problem != Some(Unchecked::Signature)
             && vct_of(&credential.credential).is_some_and(|vct| wanted.contains(&vct.as_str()))
     })
 }
@@ -91,13 +98,21 @@ pub fn choose(dcql: &Value, held: &[Credential], now: u64) -> (Vec<Chosen>, bool
             .copied()
             .find(|q| q["id"].as_str() == Some(id))
     };
-    let mut chosen = Vec::new();
-    let mut complete = true;
-    for set in dcql["credential_sets"]
+    // With no `credential_sets`, DCQL asks for every credential it lists:
+    // each is a set of its own, with one option, required.
+    let sets = dcql["credential_sets"]
         .as_array()
         .cloned()
-        .unwrap_or_default()
-    {
+        .unwrap_or_else(|| {
+            queries
+                .iter()
+                .filter_map(|query| query["id"].as_str())
+                .map(|id| serde_json::json!({"options": [[id]], "required": true}))
+                .collect()
+        });
+    let mut chosen = Vec::new();
+    let mut complete = true;
+    for set in sets {
         let options = set["options"].as_array().cloned().unwrap_or_default();
         // Each option is a list of query ids; here, one each.
         let picked = options.iter().find_map(|option| {
@@ -184,6 +199,7 @@ pub fn vp_token(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::status::Checked;
     use ed25519_dalek::{Signature, Verifier};
     use std::collections::BTreeMap;
 
@@ -220,6 +236,7 @@ mod tests {
             valid_until,
             received_at: 1,
             scope: "https://api.almena.id did:webvh:Qm:almena.id:ids:idn_club".into(),
+            checked: Checked::default(),
         }
     }
 
@@ -251,8 +268,31 @@ mod tests {
         );
         // A required set this wallet cannot answer, and an expired credential.
         assert!(!choose(&dcql(true), &[held(10)], 5).1);
+        // Nor one its issuer's list says is revoked or suspended.
+        let mut revoked = held(10);
+        revoked.checked = Checked::default().after(Ok(Status::Revoked), 1);
+        assert!(choose(&dcql(false), &[revoked], 5).0.is_empty());
+        let mut dropped = held(10);
+        dropped.checked = Checked::default().after(Err(Unchecked::Signature), 1);
+        assert!(choose(&dcql(false), &[dropped], 5).0.is_empty());
         let (none, complete) = choose(&dcql(false), &[held(4)], 5);
         assert!(none.is_empty() && !complete);
+    }
+
+    #[test]
+    fn without_credential_sets_every_credential_listed_is_required() {
+        let mut only_one = dcql(false);
+        only_one.as_object_mut().unwrap().remove("credential_sets");
+        only_one["credentials"] = json!([only_one["credentials"][0].clone()]);
+        let (chosen, complete) = choose(&only_one, &[held(10)], 5);
+        assert!(complete);
+        assert_eq!(chosen.len(), 1);
+        // Two listed, one held: the other is missing, not optional.
+        let mut both = dcql(false);
+        both.as_object_mut().unwrap().remove("credential_sets");
+        let (chosen, complete) = choose(&both, &[held(10)], 5);
+        assert_eq!(chosen.len(), 1);
+        assert!(!complete);
     }
 
     #[test]

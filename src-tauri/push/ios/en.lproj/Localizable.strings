@@ -2,3 +2,7 @@
    these keys, never the words; the keys are the mediator's contract. */
 "almena_wake_title" = "New messages";
 "almena_wake_body" = "Open the wallet to read them.";
+
+/* An incoming call, as CallKit names the caller while the wallet is closed
+   and cannot read who it is (plugins/call). */
+"almena_call_title" = "Incoming call";

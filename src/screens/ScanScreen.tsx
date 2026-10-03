@@ -8,10 +8,10 @@ import {
   scan,
 } from "@tauri-apps/plugin-barcode-scanner";
 
-import { ChevronLeftIcon } from "../components/icons";
 import { ScanFramingGuide } from "../components/ScanFramingGuide";
 import { useTranslations } from "../i18n";
 import { invitationKind } from "../links";
+import { BackButton } from "../components/BackButton";
 
 type ScanState =
   | { status: "starting" }
@@ -128,9 +128,7 @@ export function ScanScreen({ onBack, onPreviewChange, onInvitation }: ScanScreen
   return (
     <div className={previewing ? "screen screen--camera" : "screen"}>
       <header className="screen__header screen__header--compact">
-        <button type="button" className="icon-button" onClick={leave} aria-label={t.nav.back}>
-          <ChevronLeftIcon />
-        </button>
+        <BackButton onBack={leave} />
         <h1 className="screen__title screen__title--compact">{t.scan.title}</h1>
       </header>
 

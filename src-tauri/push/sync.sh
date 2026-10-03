@@ -1,13 +1,27 @@
 #!/bin/sh
 # Puts what push needs into the native projects under src-tauri/gen, which
 # `tauri android|ios init` regenerates without it: the notification's words,
-# the APNs entitlement, and Firebase in the Android build. Safe to run again;
+# the APNs entitlement, and Firebase in the Android build — and, while it is
+# patching the native projects, the iOS privacy manifest (PrivacyInfo.xcprivacy)
+# and the Android backup rules that leave the vault out (backup/). Safe to run again;
 # run from src-tauri/ (the Taskfile's `push:sync` does).
 set -eu
 
 android=gen/android
 if [ -d "$android/app/src/main/res" ]; then
   cp push/android/values/almena_push.xml "$android/app/src/main/res/values/"
+
+  # The vault's record stays out of the system's backups (backup/): sealed
+  # under this phone's Keystore, it opens nowhere else.
+  mkdir -p "$android/app/src/main/res/xml"
+  cp backup/data_extraction_rules.xml backup/backup_rules.xml "$android/app/src/main/res/xml/"
+  manifest="$android/app/src/main/AndroidManifest.xml"
+  if ! grep -q dataExtractionRules "$manifest"; then
+    sed -i.bak 's|^\(        android:icon="@mipmap/ic_launcher"\)$|        android:dataExtractionRules="@xml/data_extraction_rules"\
+        android:fullBackupContent="@xml/backup_rules"\
+\1|' "$manifest"
+    rm -f "$manifest.bak"
+  fi
   mkdir -p "$android/app/src/main/res/values-es"
   cp push/android/values-es/almena_push.xml "$android/app/src/main/res/values-es/"
 
@@ -53,6 +67,7 @@ fi
 apple=gen/apple
 if [ -d "$apple/wallet_iOS" ]; then
   cp push/ios/wallet_iOS.entitlements "$apple/wallet_iOS/"
+  cp PrivacyInfo.xcprivacy "$apple/wallet_iOS/"
   for lang in en es; do
     mkdir -p "$apple/wallet_iOS/$lang.lproj"
     cp "push/ios/$lang.lproj/Localizable.strings" "$apple/wallet_iOS/$lang.lproj/"

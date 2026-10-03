@@ -14,7 +14,7 @@
 //! one that has nothing to say.
 //!
 //! The interface starts it when the wallet comes to the front and stops it
-//! when it goes to the back (the mediator's `docs/didcomm.md` §5); signing out
+//! when it goes to the back (the mediator's SPEC.md §7.2); signing out
 //! stops it too. Between sessions it waits, [`BACKOFF_MIN`] doubling up to
 //! [`BACKOFF_MAX`], and tries again — unless there is nothing to be live for:
 //! no identity open, no mediation, or a mediator with no socket.
@@ -66,12 +66,17 @@ pub struct Live(Mutex<Option<JoinHandle<()>>>);
 impl Live {
     /// Starts a session, ending the one running, if any.
     pub fn restart<R: Runtime>(&self, app: tauri::AppHandle<R>) {
-        self.stop();
-        let running = tauri::async_runtime::spawn(run(app));
-        *self
+        // One lock across the abort, the spawn and the store: two restarts at
+        // once would otherwise each stop nothing and both start, and the one
+        // stored second would orphan the other's socket.
+        let mut slot = self
             .0
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(running);
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(running) = slot.take() {
+            running.abort();
+        }
+        *slot = Some(tauri::async_runtime::spawn(run(app)));
     }
 
     /// Ends the session, if there is one.

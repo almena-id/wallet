@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 
 import { listContacts } from "./contacts";
 import { errorCode } from "./mediator";
+import { settleRung, takeRung } from "./ring";
 
 /**
  * Calls: one at a time, one to one, audio or video — `SPEC.md` §3.
@@ -133,12 +134,18 @@ class Calls {
       await pc.setLocalDescription(offer);
       const sdp = await gathered(pc);
       this.check(generation);
-      this.call = await invoke<string>("call_send", {
+      const call = await invoke<string>("call_send", {
         id: contact,
         call: null,
         signal: { kind: "offer", media, sdp } satisfies Signal,
       });
+      // Cancelled while the offer was on its way: it has arrived all the same
+      // and is ringing there, so it is hung up rather than left to ring out.
+      if (generation !== this.generation) {
+        void send(contact, call, { kind: "hangup", reason: "cancelled" });
+      }
       this.check(generation);
+      this.call = call;
       this.arm(RING_MS, () => this.end({ kind: "hangup", reason: "unanswered", mine: true }, "unanswered"));
     } catch (failure) {
       this.failed(generation, failure);
@@ -282,6 +289,15 @@ class Calls {
       })
       .catch(() => undefined);
     this.arm(INCOMING_MS, () => this.end({ kind: "missed" }));
+    // Rung by the phone while the wallet was closed: it rings here now, so
+    // the phone stops; and if the person answered there, it is answered.
+    const rung = takeRung();
+    if (rung !== null) {
+      settleRung();
+      if (rung === "answer") {
+        void this.accept();
+      }
+    }
   }
 
   /** The microphone (and camera), the relay, and a connection with both. */

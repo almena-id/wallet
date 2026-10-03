@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 
-import { ChevronLeftIcon } from "../components/icons";
 import { useI18n } from "../i18n";
 import { fill } from "../i18n/format";
 import { listContacts, onMessagesChanged, syncMessages, type Contact } from "../contacts";
 import { errorCode } from "../mediator";
 import { initial } from "./MessagesScreen";
+import { BackButton } from "../components/BackButton";
 
 type NewConversationScreenProps = {
   onBack: () => void;
@@ -48,9 +48,7 @@ export function NewConversationScreen({ onBack, onOpen }: NewConversationScreenP
   return (
     <div className="screen">
       <header className="screen__header screen__header--compact">
-        <button type="button" className="icon-button" onClick={onBack} aria-label={t.nav.back}>
-          <ChevronLeftIcon />
-        </button>
+        <BackButton onBack={onBack} />
         <h1 className="screen__title screen__title--compact">{t.conversations.new.title}</h1>
       </header>
 

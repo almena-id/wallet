@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 11 and earlier: the same exclusion as data_extraction_rules.xml, for
+  the system's older backup. Copied into gen/android by push/sync.sh.
+-->
+<full-backup-content>
+    <exclude domain="root" path="vault.json" />
+    <exclude domain="root" path="vault.json.writing" />
+</full-backup-content>

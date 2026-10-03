@@ -28,3 +28,6 @@ dist-ssr
 
 # Local overrides for development (e.g. VITE_MEDIATOR)
 .env.local
+
+# A local [patch] of almena-didcomm onto ../mediator (see the file)
+/.cargo/config.toml

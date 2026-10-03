@@ -6,7 +6,7 @@
 //! reached at, and from then on anybody can reach one of them by wrapping a
 //! message in a `forward` to the mediator, which queues it until the wallet
 //! picks it up (Message Pickup 3.0). The protocols, and what the mediator
-//! requires of them, are in the mediator's `docs/didcomm.md` §4–5.
+//! requires of them, are in the mediator's SPEC.md (§3 and §6).
 //!
 //! - [`peer`]: the DIDs the wallet speaks as — inbox, contact card, pairwise —
 //!   all derived from the seed.
@@ -27,18 +27,20 @@
 //! Everything here needs the wallet open: every key and the state key come
 //! from the seed, which is only held while it is.
 
+pub(crate) mod backup;
 mod call;
 mod chat;
 mod contacts;
 mod conversation;
 pub mod live;
 pub(crate) mod mediator;
+pub(crate) mod notice;
 mod peer;
 mod photo;
 mod push;
 pub(crate) mod state;
 
-use almena_didcomm::{unpack, InMemorySecrets, Message};
+use almena_didcomm::{unpack, InMemorySecrets, Message, Urgency};
 use serde::{Serialize, Serializer};
 use serde_json::json;
 use tauri::async_runtime::Mutex;
@@ -55,6 +57,55 @@ const STATUS_REQUEST: &str = "https://didcomm.org/messagepickup/3.0/status-reque
 
 /// How many `delivery-request`s one sync makes at most.
 const SYNC_ROUNDS: usize = 10;
+
+/// Who a message written to one of this wallet's pairwise DIDs is from.
+#[derive(Debug, PartialEq, Eq)]
+enum Sender {
+    /// The counterparty of that relationship (its index), from their current
+    /// pairwise DID.
+    Theirs(usize),
+    /// Somebody else, while the relationship is still pending: their pairwise
+    /// is not known until the rotation in their `ping-response` is read, so
+    /// a message that overtook it is left queued for the round after.
+    NotYetKnown,
+    /// Nobody this wallet speaks with there: no relationship has that DID, or
+    /// it is open and the message is not from its counterparty. Acknowledged
+    /// and dropped, rather than downloaded again on every sync.
+    Nobody,
+}
+
+/// The rule every message inside a relationship is taken by: it is for one of
+/// our pairwise DIDs (`to`) and from that relationship's counterparty.
+fn sender(relationships: &[Relationship], to: &[String], from: Option<&str>) -> Sender {
+    let Some(at) = relationships.iter().position(|r| to.contains(&r.ours)) else {
+        return Sender::Nobody;
+    };
+    let relationship = &relationships[at];
+    if from == Some(relationship.theirs.as_str()) {
+        Sender::Theirs(at)
+    } else if relationship.pending {
+        Sender::NotYetKnown
+    } else {
+        Sender::Nobody
+    }
+}
+
+/// How many relationships opened through the card, with nothing said in
+/// them yet, a day may bring before strangers' pings are dropped.
+const WELCOMES: usize = 20;
+
+/// The relationships opened through the card in the last day that nothing
+/// has been said in — what `WELCOMES` counts.
+fn silent_welcomes(relationships: &[Relationship], now: u64) -> usize {
+    relationships
+        .iter()
+        .filter(|r| r.welcomed && r.last.is_none() && r.since + 86_400 > now)
+        .count()
+}
+
+/// How far ahead of this device's clock a message's `created_time` is taken,
+/// in seconds; anything later is dated now plus this.
+const CLOCK_SKEW: u64 = 300;
 
 /// What can go wrong, as codes rather than prose.
 #[derive(Debug, Clone, Copy)]
@@ -307,7 +358,7 @@ pub async fn mediator_disconnect<R: Runtime>(
     if let Some(mediation) = &state.mediation {
         if let Ok(mediator) = Mediator::resolve(&mediation.mediator).await {
             if let Ok(inbox) = Peer::inbox(&seed, &mediator.did) {
-                let _ = push::register(&mediator, &inbox, None).await;
+                let _ = push::register(&mediator, &inbox, None, None).await;
                 let _ = mediator.recipient(&inbox, &inbox, "remove").await;
             }
         }
@@ -338,7 +389,8 @@ pub async fn push_register<R: Runtime>(
     let mediator = Mediator::resolve(&mediation.mediator).await?;
     let inbox = Peer::inbox(&seed, &mediator.did)?;
     mediator.ensure(&inbox, None).await?;
-    match push::register(&mediator, &inbox, Some(&token)).await {
+    let voip = push::voip_token(&app);
+    match push::register(&mediator, &inbox, Some(&token), voip.as_deref()).await {
         Ok(()) => Ok(true),
         Err(MessagingError::MediatorRefused) => Ok(false),
         Err(error) => Err(error),
@@ -357,7 +409,7 @@ pub async fn push_unregister<R: Runtime>(
     if let Some(mediation) = state::read(&app, &seed)?.mediation {
         let mediator = Mediator::resolve(&mediation.mediator).await?;
         let inbox = Peer::inbox(&seed, &mediator.did)?;
-        let _ = push::register(&mediator, &inbox, None).await;
+        let _ = push::register(&mediator, &inbox, None, None).await;
     }
     push::forget(&app);
     Ok(())
@@ -596,6 +648,7 @@ pub async fn message_send<R: Runtime>(
             .created_time
             .unwrap_or_else(almena_didcomm::message::now),
         failed: false,
+        notice: None,
     };
     written(&app, &seed, &mut state, &id, entry, message).await
 }
@@ -741,9 +794,16 @@ pub async fn call_send<R: Runtime>(
     if relationship.pending {
         return Err(MessagingError::Pending);
     }
+    // An offer is marked as a call on its `forward`, so their mediator rings
+    // their phone even while the wallet there is closed and cannot read it;
+    // that mediator learns a call is coming, and nothing about it.
+    let urgency = match signal {
+        call::Signal::Offer { .. } => Urgency::Call,
+        call::Signal::Answer { .. } | call::Signal::Hangup { .. } => Urgency::Normal,
+    };
     let message = call::message(call.as_deref(), &signal)?;
     let call = message.thid().to_owned();
-    deliver(&seed, mediation, relationship, message).await?;
+    deliver_with(&seed, mediation, relationship, message, urgency).await?;
     Ok(call)
 }
 
@@ -756,10 +816,28 @@ pub fn manage<R: Runtime>(app: &tauri::AppHandle<R>) {
 
 /// Forgets everything messaging wrote down. Called when the identity leaves the
 /// device, by signing out or by running out of PIN attempts.
+///
+/// **Twice.** Stopping the live session aborts it, but a session caught in the
+/// middle of `apply` — under the [`Gate`], between two awaits — still finishes
+/// writing what it was writing, which would leave a file sealed under a seed
+/// that is gone. So the files go now, and again as soon as the gate is let go
+/// of: this is called from commands that cannot wait for it.
 pub fn clear<R: Runtime>(app: &tauri::AppHandle<R>) {
     if let Some(live) = app.try_state::<live::Live>() {
         live.stop();
     }
+    forget(app);
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Some(gate) = app.try_state::<Gate>() {
+            let _guard = gate.0.lock().await;
+            forget(&app);
+        }
+    });
+}
+
+/// Removes every file messaging keeps.
+fn forget<R: Runtime>(app: &tauri::AppHandle<R>) {
     state::clear(app);
     conversation::clear(app);
     crate::credentials::clear(app);
@@ -834,6 +912,74 @@ async fn accept(
     .await?;
     upsert(&mut state.relationships, relationship.clone());
     Ok(relationship)
+}
+
+/// The `did:web` name of a registry DID — the form this wallet's messaging
+/// resolves: `did:webvh:{SCID}:host…` is `did:web:host…`.
+fn web_name(did: &str) -> String {
+    match did.strip_prefix("did:webvh:") {
+        Some(rest) => rest
+            .split_once(':')
+            .map_or_else(|| did.to_owned(), |(_, name)| format!("did:web:{name}")),
+        None => did.to_owned(),
+    }
+}
+
+/// Where an issuer this wallet is pairing with (`registry.rs`, `pair`) may
+/// write to it: the pairwise for the issuer's DID, registered with this
+/// wallet's mediator, and the relationship it opens — named as the issuer,
+/// open from the start, its counterparty the issuer's `did:web` name. Its
+/// DID goes in the pairing token; `None` when there is no mediator or it
+/// cannot be reached, and the pairing goes on without notices.
+pub(crate) async fn issuer_channel<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    seed: &[u8; 64],
+    issuer: &str,
+    name: &str,
+) -> Option<String> {
+    let gate = app.try_state::<Gate>()?;
+    let _guard = gate.0.lock().await;
+    let mut state = state::read(app, seed).ok()?;
+    let mediation = state.mediation.clone()?;
+    let mediator = Mediator::resolve(&mediation.mediator).await.ok()?;
+    let inbox = Peer::inbox(seed, &mediator.did).ok()?;
+    mediator.ensure(&inbox, None).await.ok()?;
+    let pairwise = Peer::pairwise(seed, &mediator.did, issuer).ok()?;
+    mediator.register(&inbox, &pairwise).await.ok()?;
+    let name: String = name.chars().take(chat::NAME_CHARS).collect();
+    let relationship = match state.relationships.iter().find(|r| r.origin == issuer) {
+        Some(found) => Relationship {
+            theirs: web_name(issuer),
+            name: Some(name),
+            ..found.clone()
+        },
+        None => Relationship {
+            origin: issuer.to_owned(),
+            name: Some(name),
+            ..Relationship::new(pairwise.did.clone(), web_name(issuer), false)
+        },
+    };
+    upsert(&mut state.relationships, relationship);
+    state::write(app, seed, &state).ok()?;
+    Some(pairwise.did)
+}
+
+/// An issuer's notice in a conversation, and the issuer's DID as this wallet
+/// paired with it (the relationship's origin): what collecting needs.
+pub(crate) fn notice_of<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    seed: &[u8; 64],
+    contact: &str,
+    entry: &str,
+) -> Result<(String, notice::Notice), MessagingError> {
+    let state = state::read(app, seed)?;
+    let relationship = find(&state.relationships, contact)?;
+    conversation::read(app, seed, contact)?
+        .into_iter()
+        .find(|e| e.id == entry)
+        .and_then(|e| e.notice)
+        .map(|found| (relationship.origin.clone(), found))
+        .ok_or(MessagingError::ContactUnknown)
 }
 
 /// A message of text that arrived, for the relationship this wallet is `ours`
@@ -944,6 +1090,21 @@ async fn handle(
 
         match message.type_.as_str() {
             contacts::PING if to.contains(&card.did) => {
+                // Whoever holds the invitation may open a relationship, but
+                // not without end: past `WELCOMES` new ones in a day that
+                // nothing has been said in, a stranger's ping is dropped. One
+                // who is already a contact is always answered.
+                let known = message
+                    .from
+                    .as_deref()
+                    .is_some_and(|from| state.relationships.iter().any(|r| r.origin == from));
+                if !known
+                    && silent_welcomes(&state.relationships, almena_didcomm::message::now())
+                        >= WELCOMES
+                {
+                    received.push(id);
+                    continue;
+                }
                 // A sender that cannot be answered now is left queued and
                 // tried again on the next sync, without holding up the rest.
                 if let Ok(relationship) = contacts::welcome(
@@ -987,14 +1148,14 @@ async fn handle(
                 received.push(id);
             }
             call::OFFER | call::ANSWER | call::HANGUP => {
-                let Some(relationship) = state.relationships.iter().find(|r| to.contains(&r.ours))
+                // Not from their pairwise: nobody to ring for, and a call
+                // signal is worth nothing later, so it is never kept queued.
+                let Sender::Theirs(at) = sender(&state.relationships, &to, message.from.as_deref())
                 else {
                     received.push(id);
                     continue;
                 };
-                if message.from.as_deref() != Some(relationship.theirs.as_str()) {
-                    continue;
-                }
+                let relationship = &state.relationships[at];
                 if let Some((call, signal)) = call::read(&message, almena_didcomm::message::now()) {
                     outcome.calls.push(call::Incoming {
                         contact: conversation::id(&relationship.ours),
@@ -1005,20 +1166,15 @@ async fn handle(
                 received.push(id);
             }
             chat::TEXT | chat::PROFILE => {
-                let Some(relationship) = state
-                    .relationships
-                    .iter_mut()
-                    .find(|r| to.contains(&r.ours))
-                else {
-                    received.push(id);
-                    continue;
+                let relationship = match sender(&state.relationships, &to, message.from.as_deref())
+                {
+                    Sender::Theirs(at) => &mut state.relationships[at],
+                    Sender::NotYetKnown => continue,
+                    Sender::Nobody => {
+                        received.push(id);
+                        continue;
+                    }
                 };
-                // Until the rotation in their ping-response is read, their
-                // pairwise is not known; a message that overtook it is
-                // left for the round after.
-                if message.from.as_deref() != Some(relationship.theirs.as_str()) {
-                    continue;
-                }
 
                 if message.type_ == chat::TEXT {
                     if let Some(content) = chat::read_text(&message) {
@@ -1028,10 +1184,17 @@ async fn handle(
                                 id: message.id.clone(),
                                 mine: false,
                                 content,
-                                at: message
-                                    .created_time
-                                    .unwrap_or_else(almena_didcomm::message::now),
+                                // The sender's clock, but never ahead of
+                                // ours by more than a little: a date in the
+                                // future would pin the conversation on top.
+                                at: {
+                                    let now = almena_didcomm::message::now();
+                                    message
+                                        .created_time
+                                        .map_or(now, |at| at.min(now + CLOCK_SKEW))
+                                },
                                 failed: false,
+                                notice: None,
                             },
                         });
                     }
@@ -1061,7 +1224,35 @@ async fn handle(
                 }
                 received.push(id);
             }
-            _ => {}
+            notice::STATUS => {
+                // An issuer this wallet applied to, over the pairwise named
+                // when pairing; from anybody else it is dropped.
+                let from_them = state
+                    .relationships
+                    .iter()
+                    .find(|r| to.contains(&r.ours))
+                    .filter(|r| message.from.as_deref() == Some(r.theirs.as_str()));
+                if let (Some(relationship), Some(read)) = (from_them, notice::read(&message)) {
+                    let now = almena_didcomm::message::now();
+                    outcome.arrivals.push(Arrival {
+                        ours: relationship.ours.clone(),
+                        entry: Entry {
+                            id: message.id.clone(),
+                            mine: false,
+                            content: String::new(),
+                            at: message
+                                .created_time
+                                .map_or(now, |at| at.min(now + CLOCK_SKEW)),
+                            failed: false,
+                            notice: Some(read),
+                        },
+                    });
+                }
+                received.push(id);
+            }
+            // What this wallet does not speak is acknowledged and dropped:
+            // left queued, it would come back on every sync and every push.
+            _ => received.push(id),
         }
     }
 
@@ -1104,6 +1295,7 @@ fn apply<R: Runtime>(
             content: arrival.entry.content.clone(),
             at: arrival.entry.at,
             mine: false,
+            notice: arrival.entry.notice.as_ref().map(|n| n.status.clone()),
         };
         match conversation::put(
             app,
@@ -1166,6 +1358,7 @@ async fn written<R: Runtime>(
             content: entry.content.clone(),
             at: entry.at,
             mine: true,
+            notice: None,
         });
     }
     state::write(app, seed, state)?;
@@ -1179,9 +1372,20 @@ async fn deliver(
     relationship: &Relationship,
     message: Message,
 ) -> Result<(), MessagingError> {
+    deliver_with(seed, mediation, relationship, message, Urgency::Normal).await
+}
+
+/// [`deliver`], with the urgency its `forward` carries.
+async fn deliver_with(
+    seed: &[u8; 64],
+    mediation: &Mediation,
+    relationship: &Relationship,
+    message: Message,
+    urgency: Urgency,
+) -> Result<(), MessagingError> {
     let mediator = Mediator::resolve(&mediation.mediator).await?;
     let from = Peer::pairwise(seed, &mediator.did, &relationship.origin)?;
-    contacts::send(&mediator, &from, &relationship.theirs, message).await
+    contacts::send_with(&mediator, &from, &relationship.theirs, message, urgency).await
 }
 
 /// Sends this wallet's name to every contact that has answered. Returns how
@@ -1267,6 +1471,72 @@ fn seed(held: &Held) -> Result<Zeroizing<[u8; 64]>, MessagingError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_registry_did_is_written_to_by_its_did_web_name() {
+        use super::web_name;
+        assert_eq!(
+            web_name("did:webvh:QmScid:almena.id:ids:idn_1"),
+            "did:web:almena.id:ids:idn_1"
+        );
+        assert_eq!(web_name("did:web:almena.id"), "did:web:almena.id");
+    }
+
+    #[test]
+    fn a_message_is_taken_only_from_the_counterparty_of_the_pairwise_it_is_for() {
+        use super::{sender, Relationship, Sender};
+        let open = Relationship::new("did:ours:1".into(), "did:theirs:1".into(), false);
+        let pending = Relationship::new("did:ours:2".into(), "did:card:2".into(), true);
+        let all = vec![open, pending];
+        let to = |did: &str| vec![did.to_owned()];
+
+        assert_eq!(
+            sender(&all, &to("did:ours:1"), Some("did:theirs:1")),
+            Sender::Theirs(0)
+        );
+        // Somebody else writing to an open relationship's pairwise.
+        assert_eq!(
+            sender(&all, &to("did:ours:1"), Some("did:else")),
+            Sender::Nobody
+        );
+        assert_eq!(sender(&all, &to("did:ours:1"), None), Sender::Nobody);
+        // To a pairwise this wallet does not have.
+        assert_eq!(
+            sender(&all, &to("did:ours:9"), Some("did:theirs:1")),
+            Sender::Nobody
+        );
+        // Pending: their pairwise is not known yet, so it waits.
+        assert_eq!(
+            sender(&all, &to("did:ours:2"), Some("did:new:2")),
+            Sender::NotYetKnown
+        );
+        assert_eq!(
+            sender(&all, &to("did:ours:2"), Some("did:card:2")),
+            Sender::Theirs(1)
+        );
+    }
+
+    #[test]
+    fn only_silent_recent_welcomes_count_against_the_card() {
+        use super::{silent_welcomes, Relationship};
+        let now = 1_800_000_000;
+        let fresh = |welcomed: bool| Relationship {
+            since: now - 60,
+            welcomed,
+            ..Relationship::new("did:ours".into(), "did:theirs".into(), false)
+        };
+        let mut old = fresh(true);
+        old.since = now - 90_000;
+        let mut spoken = fresh(true);
+        spoken.last = Some(super::Last {
+            content: "hi".into(),
+            mine: false,
+            at: now,
+            notice: None,
+        });
+        let all = vec![fresh(true), fresh(false), old, spoken];
+        assert_eq!(silent_welcomes(&all, now), 1);
+    }
+
     use super::*;
 
     /// Where the ignored tests find a mediator: start one with

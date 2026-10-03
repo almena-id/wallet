@@ -4,7 +4,7 @@ Every merge into `main` runs [.github/workflows/release.yml](../.github/workflow
 
 | Platform | What is built | Signed with | Goes to |
 |---|---|---|---|
-| Linux x86_64 | `.deb`, `.AppImage` | the release OpenPGP key, over `SHA256SUMS` | GitHub release |
+| Linux x86_64 | `.deb`, `.rpm`, `.AppImage` | the release OpenPGP key, over `SHA256SUMS` | GitHub release |
 | Windows x86_64 | `-setup.exe` (NSIS), `.msi` | Authenticode, Azure Trusted Signing | GitHub release |
 | macOS Apple silicon | `.dmg` | Developer ID, notarized and stapled | GitHub release |
 | Android | `.aab` | the upload key (Google re-signs) | Google Play |

@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 
-import { ChevronLeftIcon } from "../../components/icons";
 import { useI18n } from "../../i18n";
 import { fill, plural } from "../../i18n/format";
+import { BackButton } from "../../components/BackButton";
 
 type ConfirmPhraseScreenProps = {
   words: string[];
@@ -84,9 +84,7 @@ export function ConfirmPhraseScreen({
   return (
     <div className="screen">
       <header className="screen__header screen__header--compact">
-        <button type="button" className="icon-button" onClick={onBack} aria-label={t.nav.back}>
-          <ChevronLeftIcon />
-        </button>
+        <BackButton onBack={onBack} />
         <h1 className="screen__title screen__title--compact">{t.onboarding.confirm.title}</h1>
       </header>
 

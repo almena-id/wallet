@@ -33,6 +33,24 @@ export type Last = {
   content: string;
   at: number;
   mine: boolean;
+  /** An issuer's notice: its status, worded here. */
+  notice?: NoticeStatus;
+};
+
+/** How an application stands, as its issuer tells it (`messaging/notice.rs`). */
+export type NoticeStatus = "accepted" | "rejected" | "issued";
+
+/** An issuer's notice about an application this wallet sent it. */
+export type Notice = {
+  application: string;
+  status: NoticeStatus;
+  credentialType: string;
+  /** The credential's name, by language. */
+  credentialName: Record<string, string>;
+  issuer: string;
+  note?: string;
+  /** Issued: where this wallet asks to receive it. */
+  collect?: string;
 };
 
 /** One message, either way. */
@@ -44,6 +62,8 @@ export type Entry = {
   at: number;
   /** Sent by this wallet and not delivered; it can be retried. */
   failed: boolean;
+  /** An issuer's notice, drawn from this rather than from `content`. */
+  notice?: Notice;
 };
 
 export type Conversation = {
@@ -117,6 +137,14 @@ export function clearConversation(id: string): Promise<void> {
 /** Sends a message; one that did not go comes back marked `failed`. */
 export function sendMessage(id: string, content: string): Promise<Entry> {
   return invoke<Entry>("message_send", { id, content });
+}
+
+/**
+ * Asks the issuer of an `issued` notice for the credential: the answer is an
+ * `almena://` link to its `receive` request, put to the person like any other.
+ */
+export function collectCredential(contact: string, entry: string): Promise<string> {
+  return invoke<string>("registry_collect", { contact, entry });
 }
 
 export function retryMessage(id: string, message: string): Promise<Entry> {

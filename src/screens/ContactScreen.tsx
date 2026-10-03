@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 
-import { ChevronLeftIcon } from "../components/icons";
 import { useI18n } from "../i18n";
 import { fill } from "../i18n/format";
 import { NAME_CHARS, readConversation, renameContact, type Contact } from "../contacts";
 import { errorCode } from "../mediator";
+import { BackButton } from "../components/BackButton";
 
 type ContactScreenProps = {
   id: string;
@@ -52,9 +52,7 @@ export function ContactScreen({ id, onBack }: ContactScreenProps) {
   return (
     <div className="screen">
       <header className="screen__header screen__header--compact">
-        <button type="button" className="icon-button" onClick={onBack} aria-label={t.nav.back}>
-          <ChevronLeftIcon />
-        </button>
+        <BackButton onBack={onBack} />
         <h1 className="screen__title screen__title--compact">{contact?.name ?? ""}</h1>
       </header>
 

@@ -45,8 +45,8 @@ export type VaultStatus = {
   deviceUnlock: boolean;
   /** Wrong PINs left before the record is destroyed. */
   attemptsLeft: number;
-  /** Where the record is kept: the platform's secret store or a private file. */
-  home: "store" | "file" | null;
+  /** Where the record is kept: the platform's secret store, a private file, or that file sealed under the Android Keystore. */
+  home: "store" | "file" | "keystore" | null;
   /** The format version found on the device. */
   version: number | null;
 };

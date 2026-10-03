@@ -2,7 +2,7 @@
 # main: the desktop installers become a GitHub release of almena-id/wallet,
 # and the phone builds go to Google Play and App Store Connect.
 #
-#   Linux x86_64          .deb and .AppImage (Ubuntu 24.04+)   GitHub release
+#   Linux x86_64          .deb, .rpm and .AppImage             GitHub release
 #   Windows x86_64        .exe (NSIS) and .msi, Authenticode    GitHub release
 #   macOS Apple silicon   .dmg, Developer ID, notarized         GitHub release
 #   Android               .aab, upload key                      Google Play
@@ -99,6 +99,12 @@ jobs:
       - name: TypeScript
         run: pnpm exec tsc --noEmit
 
+      - name: ESLint
+        run: pnpm lint
+
+      - name: Front-end tests
+        run: pnpm test
+
       - name: Formatting
         working-directory: src-tauri
         run: cargo fmt --check
@@ -153,13 +159,14 @@ jobs:
         # toolchain writes; the release profile has stripped the binary already.
         env:
           NO_STRIP: "true"
-        run: pnpm tauri build --bundles deb,appimage
+        run: pnpm tauri build --bundles deb,rpm,appimage
 
       - name: Package
         run: |
           bundle=src-tauri/target/release/bundle
           mkdir -p dist
           cp "$(ls "$bundle"/deb/*.deb | head -n 1)" "dist/almena-wallet-${VERSION}-linux-amd64.deb"
+          cp "$(ls "$bundle"/rpm/*.rpm | head -n 1)" "dist/almena-wallet-${VERSION}-linux-x86_64.rpm"
           cp "$(ls "$bundle"/appimage/*.AppImage | head -n 1)" "dist/almena-wallet-${VERSION}-linux-amd64.AppImage"
           ls -l dist
 

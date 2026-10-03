@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 
 import { BrandSpinner } from "../components/BrandSpinner";
-import { BackspaceIcon, BiometricIcon, ChevronLeftIcon } from "../components/icons";
+import { BackspaceIcon, BiometricIcon } from "../components/icons";
 import { useTranslations } from "../i18n";
+import { fill } from "../i18n/format";
+import { BackButton } from "../components/BackButton";
 
 type PinScreenProps = {
   title: string;
@@ -98,6 +100,34 @@ export function PinScreen({
     return () => clearTimeout(settle);
   }, [code, digits]);
 
+  // A computer has a keyboard: its digits and Backspace work the keypad too,
+  // unless somebody is typing into a field of something drawn over it.
+  useEffect(() => {
+    if (busy) {
+      return;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        target?.closest("input, textarea, [contenteditable='true']")
+      ) {
+        return;
+      }
+      if (/^[0-9]$/.test(event.key)) {
+        event.preventDefault();
+        setCode((current) => (current + event.key).slice(0, digits));
+      } else if (event.key === "Backspace") {
+        event.preventDefault();
+        setCode((current) => current.slice(0, -1));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, digits]);
+
   // A new question — repeat it, try again — starts empty.
   useEffect(() => {
     setCode("");
@@ -115,9 +145,7 @@ export function PinScreen({
     <div className="screen screen--pin">
       {onBack ? (
         <header className="screen__header screen__header--compact">
-          <button type="button" className="icon-button" onClick={onBack} aria-label={t.nav.back}>
-            <ChevronLeftIcon />
-          </button>
+          <BackButton onBack={onBack} />
           <h1 className="screen__title screen__title--compact">{title}</h1>
         </header>
       ) : (
@@ -127,6 +155,9 @@ export function PinScreen({
       <p className="pin__subtitle">{subtitle}</p>
 
       <div className="pin__dots" role="status" aria-live="polite">
+        <span className="visually-hidden">
+          {fill(t.pin.progress, { typed: code.length, digits })}
+        </span>
         {Array.from({ length: digits }, (_, index) => (
           <span
             key={index}

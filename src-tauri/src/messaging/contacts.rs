@@ -17,7 +17,7 @@
 //! So the card links nothing: everybody who used it is answered from a
 //! different DID, and nobody learns another's.
 
-use almena_didcomm::{b64, FromPrior, Message, PackOptions};
+use almena_didcomm::{b64, FromPrior, Message, PackOptions, Urgency};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use url::Url;
@@ -182,7 +182,10 @@ pub async fn welcome(
         .iter()
         .find(|r| r.origin == sender)
         .cloned()
-        .unwrap_or_else(|| Relationship::new(pairwise.did, sender.to_owned(), false)))
+        .unwrap_or_else(|| Relationship {
+            welcomed: true,
+            ..Relationship::new(pairwise.did, sender.to_owned(), false)
+        }))
 }
 
 /// Packs `message` from `from` to `to` — authcrypted, wrapped in a `forward`
@@ -193,6 +196,18 @@ pub async fn send(
     to: &str,
     message: Message,
 ) -> Result<(), MessagingError> {
+    send_with(mediator, from, to, message, Urgency::Normal).await
+}
+
+/// [`send`], with `urgency` on its `forward`: [`Urgency::Call`] has `to`'s
+/// mediator ring the phone rather than send the ordinary wake-up.
+pub async fn send_with(
+    mediator: &Mediator,
+    from: &Peer,
+    to: &str,
+    message: Message,
+    urgency: Urgency,
+) -> Result<(), MessagingError> {
     let packed = message
         .from(&from.did)
         .to([to])
@@ -202,7 +217,10 @@ pub async fn send(
             None,
             mediator.resolver(),
             &from.secrets(),
-            PackOptions::default(),
+            PackOptions {
+                urgency,
+                ..PackOptions::default()
+            },
         )
         .await
         .map_err(|_| MessagingError::CounterpartyUnreachable)?;

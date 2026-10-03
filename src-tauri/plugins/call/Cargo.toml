@@ -1,0 +1,17 @@
+[package]
+name = "almena-call"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Rings Almena Wallet for an incoming call while it is closed: a full-screen call on Android, CallKit on iOS."
+publish = false
+# Tells tauri-build where the native halves are, so they are part of the app's
+# Gradle and Xcode projects however often `gen/` is regenerated.
+links = "almena-call"
+
+[dependencies]
+tauri = { version = "2", default-features = false }
+serde = { version = "1", features = ["derive"] }
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

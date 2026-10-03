@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ChevronLeftIcon, PhoneIcon, SyncIcon, VideoIcon } from "../components/icons";
+import { PhoneIcon, SyncIcon, VideoIcon } from "../components/icons";
 import { calls, callsSupported, useCall } from "../call";
 import { useI18n } from "../i18n";
 import {
   MESSAGE_CHARS,
+  collectCredential,
   markSeen,
   onMessagesChanged,
   readConversation,
@@ -13,16 +14,22 @@ import {
   syncMessages,
   type Conversation,
   type Entry,
+  type Notice,
 } from "../contacts";
 import { errorCode } from "../mediator";
+import { usePlatform } from "../platform";
+import { fill } from "../i18n/format";
 import { moment } from "../when";
 import { initial } from "./MessagesScreen";
+import { BackButton } from "../components/BackButton";
 
 type ConversationScreenProps = {
   id: string;
   onBack: () => void;
   /** Opens the contact, where it is renamed. */
   onContact: () => void;
+  /** Puts an `almena://` link to the person, as one from outside would be. */
+  onLink: (url: string) => void;
 };
 
 /**
@@ -32,7 +39,7 @@ type ConversationScreenProps = {
  * opens; a message that did not go stays in the conversation, marked, to be
  * tried again.
  */
-export function ConversationScreen({ id, onBack, onContact }: ConversationScreenProps) {
+export function ConversationScreen({ id, onBack, onContact, onLink }: ConversationScreenProps) {
   const { t, locale } = useI18n();
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [draft, setDraft] = useState("");
@@ -40,20 +47,29 @@ export function ConversationScreen({ id, onBack, onContact }: ConversationScreen
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const end = useRef<HTMLDivElement>(null);
+  // Held for the whole send, and read synchronously: `sending` only changes on
+  // the next render, so two quick presses of Enter would both see it false.
+  const busy = useRef(false);
   const call = useCall();
+  const platform = usePlatform();
 
-  const load = useCallback(
-    () =>
-      readConversation(id)
-        .then((read) => {
-          setConversation(read);
-          if (read.contact.unread > 0) {
-            void markSeen(id).catch(() => undefined);
-          }
-        })
-        .catch((failure) => setError(t.messaging.errors[errorCode(failure)])),
-    [id, t],
-  );
+  // Each read is numbered, and only the latest one is shown: the live event and
+  // a sync can both ask, and an older answer must not land after a newer one.
+  const reads = useRef(0);
+  const load = useCallback(() => {
+    const ticket = ++reads.current;
+    return readConversation(id)
+      .then((read) => {
+        if (ticket !== reads.current) {
+          return;
+        }
+        setConversation(read);
+        if (read.contact.unread > 0) {
+          void markSeen(id).catch(() => undefined);
+        }
+      })
+      .catch((failure) => setError(t.messaging.errors[errorCode(failure)]));
+  }, [id, t]);
 
   const sync = useCallback(async () => {
     setSyncing(true);
@@ -96,9 +112,10 @@ export function ConversationScreen({ id, onBack, onContact }: ConversationScreen
 
   async function send() {
     const content = draft.trim();
-    if (content.length === 0) {
+    if (content.length === 0 || busy.current) {
       return;
     }
+    busy.current = true;
     setSending(true);
     setError(null);
     try {
@@ -107,11 +124,16 @@ export function ConversationScreen({ id, onBack, onContact }: ConversationScreen
     } catch (failure) {
       setError(t.messaging.errors[errorCode(failure)]);
     } finally {
+      busy.current = false;
       setSending(false);
     }
   }
 
   async function retry(entry: Entry) {
+    if (busy.current) {
+      return;
+    }
+    busy.current = true;
     setSending(true);
     setError(null);
     try {
@@ -119,8 +141,32 @@ export function ConversationScreen({ id, onBack, onContact }: ConversationScreen
     } catch (failure) {
       setError(t.messaging.errors[errorCode(failure)]);
     } finally {
+      busy.current = false;
       setSending(false);
     }
+  }
+
+  // An issued notice's credential: the issuer answers with the request to
+  // receive it, which goes to the sheet that asks, like any link.
+  const [collecting, setCollecting] = useState<string | null>(null);
+  async function collect(entry: Entry) {
+    setCollecting(entry.id);
+    setError(null);
+    try {
+      onLink(await collectCredential(id, entry.id));
+    } catch (failure) {
+      const errors = t.confirm.registry.errors;
+      setError(errors[errorCode(failure) as keyof typeof errors] ?? null);
+    } finally {
+      setCollecting(null);
+    }
+  }
+
+  // What an issuer's notice says, in this wallet's language.
+  function noticeText(notice: Notice): string {
+    const credential =
+      notice.credentialName[locale] ?? notice.credentialName.en ?? notice.credentialType;
+    return fill(t.conversations.notice[notice.status], { issuer: notice.issuer, credential });
   }
 
   const contact = conversation?.contact;
@@ -130,9 +176,7 @@ export function ConversationScreen({ id, onBack, onContact }: ConversationScreen
   return (
     <div className="screen screen--conversation">
       <header className="screen__header screen__header--compact">
-        <button type="button" className="icon-button" onClick={onBack} aria-label={t.nav.back}>
-          <ChevronLeftIcon />
-        </button>
+        <BackButton onBack={onBack} />
         <button
           type="button"
           className="conversation__who"
@@ -181,7 +225,7 @@ export function ConversationScreen({ id, onBack, onContact }: ConversationScreen
       {error ? <p className="card__note card__note--warning">{error}</p> : null}
 
       {conversation === null ? null : (
-        <section className="bubbles" aria-label={t.conversations.chat.history}>
+        <section className="bubbles" role="log" aria-label={t.conversations.chat.history}>
           {conversation.entries.length === 0 ? (
             <p className="bubbles__empty">
               {contact?.pending ? t.conversations.chat.pending : t.conversations.chat.empty}
@@ -192,7 +236,30 @@ export function ConversationScreen({ id, onBack, onContact }: ConversationScreen
                 key={entry.id}
                 className={`bubble${entry.mine ? " bubble--mine" : ""}${entry.failed ? " bubble--failed" : ""}`}
               >
-                <p className="bubble__text">{entry.content}</p>
+                {entry.notice ? (
+                  <>
+                    <p className="bubble__text">{noticeText(entry.notice)}</p>
+                    {entry.notice.note ? (
+                      <p className="bubble__text bubble__note">
+                        {t.conversations.notice.note}: {entry.notice.note}
+                      </p>
+                    ) : null}
+                    {entry.notice.status === "issued" && entry.notice.collect ? (
+                      <button
+                        type="button"
+                        className="bubble__action"
+                        onClick={() => void collect(entry)}
+                        disabled={collecting !== null}
+                      >
+                        {collecting === entry.id
+                          ? t.conversations.notice.collecting
+                          : t.conversations.notice.collect}
+                      </button>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="bubble__text">{entry.content}</p>
+                )}
                 <span className="bubble__time">{moment(entry.at, locale)}</span>
                 {entry.failed ? (
                   <button
@@ -225,7 +292,12 @@ export function ConversationScreen({ id, onBack, onContact }: ConversationScreen
           onKeyDown={(event) => {
             // Enter sends and Shift+Enter breaks the line, where there is a
             // keyboard with both; a phone's return key only ever breaks it.
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+            if (
+              platform.kind !== "mobile" &&
+              event.key === "Enter" &&
+              !event.shiftKey &&
+              !event.nativeEvent.isComposing
+            ) {
               event.preventDefault();
               void send();
             }

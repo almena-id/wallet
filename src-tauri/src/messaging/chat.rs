@@ -20,7 +20,7 @@ pub const TEXT: &str = "https://didcomm.org/basicmessage/2.0/message";
 pub const PROFILE: &str = "https://didcomm.org/user-profile/1.0/profile";
 
 /// The longest name kept, in characters: a name, not a biography.
-const NAME_CHARS: usize = 64;
+pub const NAME_CHARS: usize = 64;
 /// The longest text sent, in characters. Well inside what a mediator takes.
 pub const TEXT_CHARS: usize = 4000;
 

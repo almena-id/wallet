@@ -107,6 +107,59 @@ export function LinkSheet({
       details.kind === "registryFailed"
         ? copy.errors[details.code as keyof typeof copy.errors]
         : null;
+    const verifying = request?.verifying ?? null;
+    if (request && verifying) {
+      const say = (texts: Record<string, string>) =>
+        texts[locale] ?? texts.en ?? Object.values(texts)[0] ?? "";
+      // Nothing held answers it: it is shown, and cannot be accepted.
+      const nothing = verifying.presenting.length === 0;
+      const asks = say(verifying.form);
+      const rows: ConfirmDetail[] = [
+        { label: copy.verifier, value: verifying.verifier },
+        { label: copy.verifierDid, value: verifying.verifierDid, mono: true },
+        ...(asks ? [{ label: copy.asks, value: asks }] : []),
+        ...verifying.presenting.flatMap((one) => [
+          {
+            label: copy.presents,
+            value: `${say(one.credential)} · ${one.issuer}`,
+          },
+          ...one.claims.map((claim) => ({ label: claim.name, value: claim.value })),
+        ]),
+        { label: copy.portal, value: request.portal },
+      ];
+      return (
+        <ConfirmSheet
+          {...common}
+          error={error ?? failed}
+          icon={<CredentialIcon />}
+          title={copy.verifyTitle.replace("{verifier}", verifying.verifier)}
+          lead={copy.verifyLead.replace("{verifier}", verifying.verifier)}
+          details={rows}
+          note={
+            nothing
+              ? copy.nothingHeld
+              : !verifying.complete
+                ? copy.someMissing
+                : copy.verifyNote.replace("{verifier}", verifying.verifier)
+          }
+          confirmDisabled={nothing}
+          confirmLabel={copy.present}
+          onConfirm={() =>
+            void (async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                await registryAnswer(url);
+                onClose();
+              } catch (failure) {
+                setError(copy.errors[registryErrorCode(failure)]);
+                setBusy(false);
+              }
+            })()
+          }
+        />
+      );
+    }
     const applying = request?.applying ?? null;
     if (request && applying) {
       // In this language, else English, else whatever it has.
@@ -182,8 +235,27 @@ export function LinkSheet({
       : signing?.kind === "credential"
         ? [
             { label: copy.issuer, value: signing.identity },
+            ...(signing.credentialType
+              ? [{ label: copy.credential, value: signing.credentialType, mono: true }]
+              : []),
             ...signing.claims.map((claim) => ({ label: claim.name, value: claim.value })),
+            ...(signing.holder ? [{ label: copy.holder, value: signing.holder, mono: true }] : []),
             ...(until ? [{ label: copy.validUntil, value: until }] : []),
+            { label: copy.as, value: request.did, mono: true },
+          ]
+      : signing?.kind === "status_list"
+        ? [
+            { label: copy.issuer, value: signing.identity },
+            ...(signing.change
+              ? [
+                  { label: copy.credentialStatus, value: copy.statuses[signing.change.status] },
+                  ...(signing.change.holder
+                    ? [{ label: copy.holder, value: signing.change.holder, mono: true }]
+                    : []),
+                  { label: copy.entry, value: String(signing.change.index) },
+                ]
+              : []),
+            { label: copy.identity, value: signing.did ?? "", mono: true },
             { label: copy.as, value: request.did, mono: true },
           ]
       : signing?.kind === "endorsement"
@@ -212,6 +284,8 @@ export function LinkSheet({
     const title = signing
       ? (signing.kind === "credential"
           ? copy.issueTitle
+          : signing.kind === "status_list"
+            ? copy.statusTitle
           : signing.kind === "endorsement"
             ? copy.endorseTitle
             : copy.signTitle
@@ -226,6 +300,11 @@ export function LinkSheet({
     const lead = signing
       ? signing.kind === "credential"
         ? copy.issueLead
+        : signing.kind === "status_list"
+        ? (signing.change ? copy.statusChangeLead : copy.statusLead).replace(
+            /\{identity\}/g,
+            signing.identity,
+          )
         : signing.kind === "endorsement"
         ? copy.endorseLead
         : signing.did
@@ -255,6 +334,8 @@ export function LinkSheet({
         confirmLabel={
           signing?.kind === "credential"
             ? copy.issue
+            : signing?.kind === "status_list"
+            ? copy.statusSign
             : signing?.kind === "endorsement"
             ? copy.publish
             : signing

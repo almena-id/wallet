@@ -79,6 +79,10 @@ pub struct Relationship {
     /// something is said in it again.
     #[serde(default)]
     pub cleared: bool,
+    /// Opened by somebody who wrote to the card, not by accepting their
+    /// invitation.
+    #[serde(default)]
+    pub welcomed: bool,
 }
 
 impl Relationship {
@@ -95,6 +99,7 @@ impl Relationship {
             unread: 0,
             last: None,
             cleared: false,
+            welcomed: false,
         }
     }
 }
@@ -106,6 +111,10 @@ pub struct Last {
     pub content: String,
     pub at: u64,
     pub mine: bool,
+    /// An issuer's notice: its status (`accepted`, `rejected`, `issued`),
+    /// which the inbox words in its own language.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notice: Option<String>,
 }
 
 /// Everything in the file.
@@ -182,7 +191,8 @@ pub fn store<T: Serialize>(
     }
 
     let temporary = path.with_extension("json.writing");
-    let mut handle = fs::File::create(&temporary).map_err(|_| MessagingError::Storage)?;
+    let mut handle =
+        crate::vault::store::create_private(&temporary).map_err(|_| MessagingError::Storage)?;
     handle
         .write_all(&bytes)
         .map_err(|_| MessagingError::Storage)?;
@@ -199,10 +209,14 @@ pub fn clear<R: Runtime>(app: &tauri::AppHandle<R>) {
     }
 }
 
-fn seal<T: Serialize>(value: &T, seed: &[u8; 64], aad: &[u8]) -> Result<Vec<u8>, MessagingError> {
+pub(crate) fn seal<T: Serialize>(
+    value: &T,
+    seed: &[u8; 64],
+    aad: &[u8],
+) -> Result<Vec<u8>, MessagingError> {
     let plaintext = serde_json::to_vec(value).map_err(|_| MessagingError::Storage)?;
     let mut nonce = [0u8; NONCE_BYTES];
-    getrandom::getrandom(&mut nonce).map_err(|_| MessagingError::Entropy)?;
+    getrandom::fill(&mut nonce).map_err(|_| MessagingError::Entropy)?;
 
     let key = keys::derive(seed, &[STATE]);
     let ciphertext = XChaCha20Poly1305::new(Key::from_slice(&*key))
@@ -223,7 +237,7 @@ fn seal<T: Serialize>(value: &T, seed: &[u8; 64], aad: &[u8]) -> Result<Vec<u8>,
     .map_err(|_| MessagingError::Storage)
 }
 
-fn open<T: DeserializeOwned>(
+pub(crate) fn open<T: DeserializeOwned>(
     bytes: &[u8],
     seed: &[u8; 64],
     aad: &[u8],
@@ -289,8 +303,10 @@ mod tests {
                     content: "hello".into(),
                     at: 1,
                     mine: false,
+                    notice: None,
                 }),
                 cleared: false,
+                welcomed: false,
             }],
             profile: Some("Bob".into()),
         }

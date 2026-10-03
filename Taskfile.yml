@@ -273,10 +273,11 @@ tasks:
       - pnpm preview
 
   test:
-    desc: Run the Rust tests
-    dir: src-tauri
+    desc: Run the front end's tests (Vitest) and the Rust tests
+    deps: [install]
     cmds:
-      - cargo test {{.CLI_ARGS}}
+      - pnpm test
+      - cd src-tauri && cargo test {{.CLI_ARGS}}
 
   fmt:
     desc: Format the Rust code
@@ -285,10 +286,11 @@ tasks:
       - cargo fmt
 
   lint:
-    desc: Type-check the front end, check Rust formatting and run clippy
+    desc: Type-check and lint the front end, check Rust formatting and run clippy
     deps: [install]
     cmds:
       - pnpm exec tsc --noEmit
+      - pnpm lint
       - cd src-tauri && cargo fmt --check
       - cd src-tauri && cargo clippy --all-targets -- -D warnings
 
