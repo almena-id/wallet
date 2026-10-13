@@ -55,8 +55,9 @@ argon2 = { version = "0.5", features = ["zeroize"] }
 keyring-core = "1"
 # Messaging: DIDComm v2.0 messages, envelopes and DID resolution, from the
 # mediator's own repository — the same code the mediator answers with. Pinned
-# to a release tag; see SPEC.md there.
-almena-didcomm = { git = "https://github.com/almena-id/mediator", tag = "v2026.09.1" }
+# to a commit on `develop` until a release tag carries `Urgency` (none up to
+# v2026.09.4 does); move back to a tag then. See SPEC.md there.
+almena-didcomm = { git = "https://github.com/almena-id/mediator", rev = "96fb5fc28ad637719665191688e7ed286d438772" }
 url = "2.5"
 # Reaching a mediator. Rustls with `ring` and the Mozilla roots rather than the
 # platform verifier: the verifier needs a JNI hand-off on Android and aws-lc-rs

@@ -99,6 +99,7 @@ dependencies = [
 [[package]]
 name = "almena-didcomm"
 version = "0.1.0"
+source = "git+https://github.com/almena-id/mediator?rev=96fb5fc28ad637719665191688e7ed286d438772#96fb5fc28ad637719665191688e7ed286d438772"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -5456,7 +5457,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
