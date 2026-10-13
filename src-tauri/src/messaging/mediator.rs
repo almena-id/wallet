@@ -243,17 +243,8 @@ impl Mediator {
     ) -> Result<(), MessagingError> {
         let mut request = Message::new(MEDIATE_REQUEST, json!({}));
         request.pthid = invitation;
-        let grant = self.request(inbox, request).await?;
-        let routes_here = grant.type_.ends_with("/mediate-grant")
-            && grant.body["routing_did"]
-                .as_array()
-                .is_some_and(|dids| dids.iter().any(|did| did == self.did.as_str()));
-        // Every DID's service names this mediator as its route; a grant that
-        // routes through something else would leave them all pointing at the
-        // wrong place.
-        if !routes_here {
-            return Err(MessagingError::MediatorRefused);
-        }
+        let answer = self.request(inbox, request).await?;
+        granted(&answer, &self.did)?;
         self.register(inbox, inbox).await
     }
 
@@ -488,6 +479,31 @@ fn is_loopback(url: &Url) -> bool {
     }
 }
 
+/// Whether the answer to a `mediate-request` is a grant through `mediator`.
+///
+/// # Errors
+///
+/// [`MessagingError::MediatorFull`] for a `mediate-deny`, which an Almena
+/// mediator sends only when it takes no new mediations (its SPEC.md §6.1),
+/// and [`MessagingError::MediatorRefused`] for anything else that is not a
+/// grant routing through it: every DID's service names this mediator as its
+/// route, and a grant through something else would leave them all pointing at
+/// the wrong place.
+fn granted(answer: &Message, mediator: &str) -> Result<(), MessagingError> {
+    if answer.type_.ends_with("/mediate-deny") {
+        return Err(MessagingError::MediatorFull);
+    }
+    let routes_here = answer.type_.ends_with("/mediate-grant")
+        && answer.body["routing_did"]
+            .as_array()
+            .is_some_and(|dids| dids.iter().any(|did| did == mediator));
+    if routes_here {
+        Ok(())
+    } else {
+        Err(MessagingError::MediatorRefused)
+    }
+}
+
 /// One HTTP client for the process: Rustls with `ring` and the Mozilla roots,
 /// no redirects (a mediator that moves is a mediator to look up again, not one
 /// to follow), and a timeout.
@@ -553,6 +569,30 @@ mod tests {
             "https://mediator.example.com/oob?_oob={}",
             b64::encode(invitation.to_string().as_bytes())
         )
+    }
+
+    #[test]
+    fn a_deny_says_the_mediator_is_full_and_only_a_grant_through_it_is_one() {
+        const COORDINATE: &str = "https://didcomm.org/coordinate-mediation/3.0";
+        let answer = |kind: &str, body: Value| Message::new(format!("{COORDINATE}/{kind}"), body);
+        assert!(granted(&answer("mediate-grant", json!({"routing_did": [DID]})), DID).is_ok());
+        assert!(matches!(
+            granted(&answer("mediate-deny", json!({})), DID),
+            Err(MessagingError::MediatorFull)
+        ));
+        for other in [
+            answer(
+                "mediate-grant",
+                json!({"routing_did": ["did:web:elsewhere.example"]}),
+            ),
+            answer("mediate-grant", json!({})),
+            answer("recipient", json!({})),
+        ] {
+            assert!(matches!(
+                granted(&other, DID),
+                Err(MessagingError::MediatorRefused)
+            ));
+        }
     }
 
     #[test]

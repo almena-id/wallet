@@ -482,6 +482,7 @@
       "messaging_insecure": "That mediator does not use HTTPS, so this wallet will not talk to it.",
       "messaging_mediator_unreachable": "The mediator could not be reached. Check the connection and the address, and try again.",
       "messaging_mediator_refused": "The mediator turned the request down.",
+      "messaging_mediator_full": "This mediator is full and is not taking new wallets right now. Try again later, or choose another mediator.",
       "messaging_not_connected": "This wallet is not connected to a mediator.",
       "messaging_keys": "The keys for talking to the mediator could not be used.",
       "messaging_unreadable": "What this device holds about the mediator could not be read.",

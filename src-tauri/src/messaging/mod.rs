@@ -122,6 +122,9 @@ pub enum MessagingError {
     MediatorUnreachable,
     /// The mediator answered, and the answer was no.
     MediatorRefused,
+    /// The mediator takes no new wallets for now (`mediate-deny`): it is at
+    /// capacity. The wallets it already serves keep working.
+    MediatorFull,
     /// The counterparty could not be written to: its DID did not resolve,
     /// named no mailbox, or the mailbox did not take the message.
     CounterpartyUnreachable,
@@ -156,6 +159,7 @@ impl MessagingError {
             Self::Insecure => "messaging_insecure",
             Self::MediatorUnreachable => "messaging_mediator_unreachable",
             Self::MediatorRefused => "messaging_mediator_refused",
+            Self::MediatorFull => "messaging_mediator_full",
             Self::CounterpartyUnreachable => "messaging_counterparty_unreachable",
             Self::NotConnected => "messaging_not_connected",
             Self::Pending => "messaging_pending",

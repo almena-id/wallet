@@ -482,6 +482,7 @@
       "messaging_insecure": "Ese mediador no usa HTTPS, así que esta cartera no va a hablar con él.",
       "messaging_mediator_unreachable": "No se ha podido contactar con el mediador. Revisa la conexión y la dirección, e inténtalo otra vez.",
       "messaging_mediator_refused": "El mediador ha rechazado la petición.",
+      "messaging_mediator_full": "Este mediador está lleno y ahora no admite carteras nuevas. Inténtalo más tarde o elige otro mediador.",
       "messaging_not_connected": "Esta cartera no está conectada a ningún mediador.",
       "messaging_keys": "No se han podido usar las claves para hablar con el mediador.",
       "messaging_unreadable": "No se ha podido leer lo que este dispositivo guarda sobre el mediador.",
