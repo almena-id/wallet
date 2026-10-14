@@ -11,7 +11,7 @@
 //! that existed on three platforms and not on two would be a rejection the
 //! frontend has to expect rather than an honest *there is no bar here*.
 //!
-//! **The menu is named by the frontend.** Its one entry is text a person reads,
+//! **The menu is named by the frontend.** Its entries are text a person reads,
 //! and only that side holds the catalogues — so this is a command called once
 //! the interface knows its language, rather than something done at startup.
 
@@ -21,7 +21,7 @@ use tauri::AppHandle;
 use {
     crate::window,
     tauri::{
-        menu::{Menu, MenuItem},
+        menu::{Menu, MenuItem, PredefinedMenuItem},
         tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
         Manager, Runtime,
     },
@@ -32,8 +32,8 @@ use {
 /// Answers `false`, which is the frontend's cue that closing means closing here.
 #[cfg(not(desktop))]
 #[tauri::command]
-pub fn install_tray<R: tauri::Runtime>(app: AppHandle<R>, quit: String) -> bool {
-    let _ = (app, quit);
+pub fn install_tray<R: tauri::Runtime>(app: AppHandle<R>, open: String, quit: String) -> bool {
+    let _ = (app, open, quit);
     false
 }
 
@@ -41,17 +41,24 @@ pub fn install_tray<R: tauri::Runtime>(app: AppHandle<R>, quit: String) -> bool 
 #[cfg(desktop)]
 const TRAY: &str = "main";
 
+/// Identifier of the menu entry that brings the window back.
+#[cfg(desktop)]
+const OPEN: &str = "open";
+
 /// Identifier of the menu entry that ends the wallet.
 #[cfg(desktop)]
 const QUIT: &str = "quit";
 
-/// The one entry of the menu, kept so it can be given its name again.
+/// The entries of the menu, kept so they can be given their names again.
 ///
 /// The language can change while the wallet runs, and [`install_tray`] is called
-/// again when it does. Holding the entry rather than rebuilding the menu is what
-/// keeps the tray's wiring untouched: the same item, renamed.
+/// again when it does. Holding the entries rather than rebuilding the menu is
+/// what keeps the tray's wiring untouched: the same items, renamed.
 #[cfg(desktop)]
-struct QuitEntry<R: Runtime>(MenuItem<R>);
+struct Entries<R: Runtime> {
+    open: MenuItem<R>,
+    quit: MenuItem<R>,
+}
 
 /// The glyph the tray draws. Monochrome everywhere, but not the same file.
 ///
@@ -74,33 +81,35 @@ pub fn installed<R: tauri::Runtime>(app: &AppHandle<R>) -> bool {
     app.tray_by_id(TRAY).is_some()
 }
 
-/// Puts the tray icon on the bar, with a menu holding the entry it was handed.
+/// Puts the tray icon on the bar, with a menu holding the entries it was handed.
 ///
-/// `quit` is that entry's name, already translated by the caller — this side has
-/// no catalogues to translate it from. Called again it renames rather than
+/// `open` and `quit` are those entries' names, already translated by the caller
+/// — this side has no catalogues to translate them from. Called again it renames rather than
 /// builds, which is what a reload or a change of language amounts to.
 ///
 /// Answers whether there is a tray on the bar, so the frontend can say what the
 /// close button now does.
 #[cfg(desktop)]
 #[tauri::command]
-pub fn install_tray<R: tauri::Runtime>(app: AppHandle<R>, quit: String) -> bool {
+pub fn install_tray<R: tauri::Runtime>(app: AppHandle<R>, open: String, quit: String) -> bool {
     if installed(&app) {
-        rename(&app, &quit);
+        rename(&app, &open, &quit);
         return true;
     }
 
-    build(&app, &quit).is_ok()
+    build(&app, &open, &quit).is_ok()
 }
 
-/// Gives the entry its name again, in whatever language the interface now shows.
+/// Gives the entries their names again, in whatever language the interface now
+/// shows.
 ///
 /// A rename that fails leaves the word that was there before, which is a menu in
 /// the wrong language and not a menu anybody has lost.
 #[cfg(desktop)]
-fn rename<R: tauri::Runtime>(app: &AppHandle<R>, quit: &str) {
-    if let Some(entry) = app.try_state::<QuitEntry<R>>() {
-        let _ = entry.0.set_text(quit);
+fn rename<R: tauri::Runtime>(app: &AppHandle<R>, open: &str, quit: &str) {
+    if let Some(entries) = app.try_state::<Entries<R>>() {
+        let _ = entries.open.set_text(open);
+        let _ = entries.quit.set_text(quit);
     }
 }
 
@@ -112,9 +121,11 @@ fn rename<R: tauri::Runtime>(app: &AppHandle<R>, quit: &str) {
 /// platform refusing a tray icon — on Linux, most often because nothing on the
 /// desktop is serving one.
 #[cfg(desktop)]
-fn build<R: tauri::Runtime>(app: &AppHandle<R>, quit: &str) -> tauri::Result<()> {
+fn build<R: tauri::Runtime>(app: &AppHandle<R>, open: &str, quit: &str) -> tauri::Result<()> {
+    let open_item = MenuItem::with_id(app, OPEN, open, true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, QUIT, quit, true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&quit_item])?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let menu = Menu::with_items(app, &[&open_item, &separator, &quit_item])?;
 
     TrayIconBuilder::with_id(TRAY)
         .icon(tauri::image::Image::from_bytes(GLYPH)?)
@@ -134,14 +145,21 @@ fn build<R: tauri::Runtime>(app: &AppHandle<R>, quit: &str) -> tauri::Result<()>
                 window::show_main(tray.app_handle());
             }
         })
+        // The open entry is the left click again, for whoever looks for it in the
+        // menu — and the only way back on a Linux bar that never reports clicks.
         .on_menu_event(|app, event| {
-            if event.id() == QUIT {
+            if event.id() == OPEN {
+                window::show_main(app);
+            } else if event.id() == QUIT {
                 app.exit(0);
             }
         })
         .build(app)?;
 
-    app.manage(QuitEntry(quit_item));
+    app.manage(Entries {
+        open: open_item,
+        quit: quit_item,
+    });
 
     Ok(())
 }

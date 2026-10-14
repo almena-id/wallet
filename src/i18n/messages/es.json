@@ -12,6 +12,7 @@
     "back": "Volver"
   },
   "tray": {
+    "open": "Abrir Almena Wallet",
     "quit": "Salir"
   },
   "notifications": {
@@ -110,9 +111,6 @@
       "sign": "Firmar",
       "notSigner": "Este wallet no es de los que pueden firmarlo.",
       "validUntil": "Válida hasta",
-      "publish": "Publicar",
-      "endorseTitle": "Publicar {identity}",
-      "endorseLead": "Tu organización lo avala durante un año, con tu firma.",
       "issuer": "Emisor",
       "credential": "Credencial",
       "verified": "verificado por una credencial",

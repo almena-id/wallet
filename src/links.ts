@@ -68,11 +68,11 @@ export type RegistryRequest = {
   /** `sign`: what is signed. */
   signing: {
     /**
-     * `did_log_entry`: a version of an identity's DID; `endorsement`: an
-     * organisation vouching for one of its issuers, verifiers or mediators.
+     * `did_log_entry`: a version of an identity's DID; `credential`: an
+     * issuer's credential; `status_list`: an issuer's status list.
      */
-    kind: "did_log_entry" | "endorsement" | "credential" | "status_list";
-    /** The identity's or the item's name. */
+    kind: "did_log_entry" | "credential" | "status_list";
+    /** The identity's or the issuer's name. */
     identity: string;
     tenant: string | null;
     /** `null` for the first entry, which makes the DID. */

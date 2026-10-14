@@ -4,12 +4,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { useTranslations } from "./i18n";
 
 /**
- * Puts the wallet on the system tray and keeps its one menu entry in the
+ * Puts the wallet on the system tray and keeps its menu entries in the
  * language the interface is showing.
  *
- * The entry is text a person reads, so it comes from the catalogue on this side
+ * The entries are text a person reads, so it comes from the catalogue on this side
  * and is handed to the backend rather than written there. Running again on a
- * change of language renames the entry instead of building a second tray.
+ * change of language renames the entries instead of building a second tray.
  *
  * Answers whether there is a tray on the bar: false on a phone, which has no
  * bar, and on a desktop where the platform refused one — on Linux, usually
@@ -22,7 +22,7 @@ export function useTray(): boolean {
 
   useEffect(() => {
     let active = true;
-    invoke<boolean>("install_tray", { quit: t.tray.quit })
+    invoke<boolean>("install_tray", { open: t.tray.open, quit: t.tray.quit })
       .then((result) => {
         if (active) {
           setInstalled(result);

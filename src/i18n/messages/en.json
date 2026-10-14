@@ -12,6 +12,7 @@
     "back": "Back"
   },
   "tray": {
+    "open": "Open Almena Wallet",
     "quit": "Quit"
   },
   "notifications": {
@@ -110,9 +111,6 @@
       "sign": "Sign",
       "notSigner": "This wallet is not one of those that may sign it.",
       "validUntil": "Valid until",
-      "publish": "Publish",
-      "endorseTitle": "Publish {identity}",
-      "endorseLead": "Your organisation vouches for it for a year, with your signature.",
       "issuer": "Issuer",
       "credential": "Credential",
       "verified": "verified by a credential",

@@ -11,7 +11,8 @@
 //!
 //! **One key per registry**, derived like a pairwise: `m/5'/a'/b'/c'/n'`, with
 //! `a`, `b`, `c` from a hash of the origin the request is read from (the
-//! registry's API) and `n` the key's generation (0 until it is ever replaced).
+//! registry's identity domain, `almena.id`, where the API serves the wallet's
+//! requests) and `n` the key's generation (0 until it is ever replaced).
 //! The same words give the same DID for the same registry on any device, and
 //! two registries cannot tell they are seeing the same person. Nothing is
 //! stored. The key follows the origin the wallet actually reached, never the
@@ -202,9 +203,9 @@ const APPLYING: [&str; 4] = ["pair", "present", "submit", "receive"];
 /// `sign`: what to sign, and what it belongs to.
 #[derive(Deserialize, Clone)]
 struct Sign {
-    /// `did_log_entry` or `endorsement`.
+    /// `did_log_entry`, `credential` or `status_list`.
     kind: String,
-    /// What it is about: an identity's or an item's name.
+    /// What it is about: an identity's or an issuer's name.
     identity: String,
     tenant: Option<String>,
     did: Option<String>,
@@ -220,10 +221,6 @@ struct Sign {
     verification_method: Option<String>,
     proof_purpose: String,
     document: serde_json::Value,
-    /// `endorsement`: the presentation to sign next, whose
-    /// `verifiableCredential` takes the credential just signed.
-    #[serde(default)]
-    presentation: Option<serde_json::Value>,
     /// `status_list`: the entry whose status the list changes, and to what;
     /// `None` when it is signed as it is.
     #[serde(default)]
@@ -241,7 +238,7 @@ pub struct StatusChange {
     holder: Option<String>,
 }
 
-const SIGN_KINDS: [&str; 4] = ["did_log_entry", "endorsement", "credential", "status_list"];
+const SIGN_KINDS: [&str; 3] = ["did_log_entry", "credential", "status_list"];
 
 /// What the confirmation sheet shows: who asks, for what, and as whom this
 /// wallet would answer.
@@ -252,7 +249,7 @@ pub struct RegistryRequest {
     name: String,
     /// The portal's host, which is what vouches for the name.
     portal: String,
-    /// The host the answer goes to (the registry's API).
+    /// The host the answer goes to (where the registry serves the wallet).
     answer_to: String,
     /// `sign_in`, `link` or `sign`.
     purpose: String,
@@ -349,10 +346,9 @@ pub struct Answer {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Signing {
-    /// `did_log_entry`, or `endorsement` (a tenant vouches for one of its
-    /// issuers, verifiers or mediators).
+    /// `did_log_entry`, `credential` or `status_list`.
     kind: String,
-    /// The identity's or the item's name; its tenant's.
+    /// The identity's or the issuer's name; its tenant's.
     identity: String,
     tenant: Option<String>,
     /// The DID concerned; `None` for a first log entry, which makes it.
@@ -555,10 +551,12 @@ fn digest_of(content: &serde_json::Value) -> Option<String> {
 }
 
 /// Is `portal` the registry's own, as seen from where its request was read?
-/// The same host (`localhost` in development), or hosts one label under the
-/// same parent — `registry.almena.id` and `api.almena.id`. The parent must be
-/// somebody's domain and not a public suffix (the Public Suffix List, private
-/// section included), so `a.id` and `b.id` are strangers, and so are
+/// The same host (`localhost` in development); a host one label under it, when
+/// it is a registrable domain itself — `registry.almena.id` named from
+/// `almena.id`, where the registry's requests are read; or hosts one label
+/// under the same parent — `registry.almena.id` and `api.almena.id`. That
+/// domain must be somebody's and not a public suffix (the Public Suffix List,
+/// private section included), so `a.id` and `b.id` are strangers, and so are
 /// `evil.github.io` and `victim.github.io` or `a.co.uk` and `b.co.uk`.
 fn vouched(portal: &Url, read_from: &Url) -> bool {
     let (Some(portal), Some(read_from)) = (portal.host(), read_from.host()) else {
@@ -573,7 +571,11 @@ fn vouched(portal: &Url, read_from: &Url) -> bool {
     let parent = |host: &str| host.split_once('.').map(|(_, rest)| rest.to_owned());
     parent(portal)
         .filter(|rest| psl::domain(rest.as_bytes()).is_some())
-        .is_some_and(|rest| parent(read_from).as_ref() == Some(&rest))
+        .is_some_and(|rest| {
+            let registrable = psl::domain(read_from.as_bytes())
+                .is_some_and(|domain| domain.as_bytes() == read_from.as_bytes());
+            (registrable && rest == read_from) || parent(read_from).as_ref() == Some(&rest)
+        })
 }
 
 /// Does what the sheet will show match the document that gets signed? The
@@ -591,29 +593,11 @@ fn told_as_it_is(sign: &Sign) -> bool {
                 .and_then(|number| number.parse::<u64>().ok());
             let made = text(&document["state"]["id"]);
             sign.verification_method.is_none()
-                && sign.presentation.is_none()
                 && sign.proof_purpose == "assertionMethod"
                 && version.is_some()
                 && version == sign.version
                 && made.is_some()
                 && (sign.did.is_none() || sign.did == made)
-        }
-        // The tenant's credential for one of its components, and that
-        // component's presentation of it.
-        "endorsement" => {
-            let subject = &document["credentialSubject"];
-            let holder = sign
-                .presentation
-                .as_ref()
-                .and_then(|presentation| text(&presentation["holder"]));
-            sign.did.is_some()
-                && sign.proof_purpose == "assertionMethod"
-                && text(&subject["id"]) == sign.did
-                && holder == sign.did
-                && text(&subject["name"]).as_deref() == Some(sign.identity.as_str())
-                && text(&document["issuer"]) == sign.verification_method
-                && sign.valid_until.is_some()
-                && text(&document["validUntil"]) == sign.valid_until
         }
         // An issuer's credential: signed as a key of its DID, every claim
         // shown, valid until when the sheet says.
@@ -622,8 +606,7 @@ fn told_as_it_is(sign: &Sign) -> bool {
             let payload = &document["payload"];
             let issuer = sign.verification_method.clone().unwrap_or_default();
             let kid = text(&header["kid"]).unwrap_or_default();
-            sign.presentation.is_none()
-                && sign.proof_purpose == "assertionMethod"
+            sign.proof_purpose == "assertionMethod"
                 && !issuer.is_empty()
                 && sign.did.as_deref() == Some(issuer.as_str())
                 && text(&payload["iss"]).as_deref() == Some(issuer.as_str())
@@ -657,8 +640,7 @@ fn told_as_it_is(sign: &Sign) -> bool {
                 }
                 None => status_at(document, 0).is_some(),
             };
-            sign.presentation.is_none()
-                && sign.proof_purpose == "assertionMethod"
+            sign.proof_purpose == "assertionMethod"
                 && !issuer.is_empty()
                 && sign.did.as_deref() == Some(issuer.as_str())
                 && text(&header["alg"]).as_deref() == Some("EdDSA")
@@ -1089,15 +1071,7 @@ async fn answer(
         let named = sign.verification_method.as_deref().unwrap_or(&did);
         let created = timestamp(now());
         let proof = proof(&key, named, &sign.proof_purpose, &sign.document, &created)?;
-        if sign.kind != "endorsement" {
-            return post(&request.response_uri, Body::Json(json!({ "proof": proof }))).await;
-        }
-        // One approval, two signatures: the credential, then the presentation
-        // that carries it — as the item's controller.
-        let presentation = endorsed(&sign.document, &proof, sign.presentation.as_ref())?;
-        let presented = self::proof(&key, named, "authentication", &presentation, &created)?;
-        let body = json!({ "proof": proof, "presentation_proof": presented });
-        return post(&request.response_uri, Body::Json(body)).await;
+        return post(&request.response_uri, Body::Json(json!({ "proof": proof }))).await;
     }
     let token = id_token(&key, &did, token_claims(&did, request, channel, now()));
     let body = url::form_urlencoded::Serializer::new(String::new())
@@ -1322,23 +1296,6 @@ async fn post(response_uri: &str, body: Body) -> Result<(), RegistryError> {
     }
 }
 
-/// The presentation of an endorsement: the template the registry sent, with
-/// the credential just signed as its only `verifiableCredential`.
-fn endorsed(
-    credential: &serde_json::Value,
-    proof: &serde_json::Value,
-    template: Option<&serde_json::Value>,
-) -> Result<serde_json::Value, RegistryError> {
-    let mut presentation = template.cloned().ok_or(RegistryError::Unreadable)?;
-    if !presentation.is_object() {
-        return Err(RegistryError::Unreadable);
-    }
-    let mut signed = credential.clone();
-    signed["proof"] = proof.clone();
-    presentation["verifiableCredential"] = json!([signed]);
-    Ok(presentation)
-}
-
 /// A `did:key`'s multikey: what update keys are written as.
 fn multikey(did: &str) -> &str {
     did.trim_start_matches("did:key:")
@@ -1458,30 +1415,6 @@ mod tests {
                 "versionId": "2-Qm",
                 "state": {"id": "did:webvh:Qm:almena.id:ids:idn_a"},
             }),
-            presentation: None,
-            status_change: None,
-        }
-    }
-
-    fn endorsement() -> Sign {
-        let item = "did:webvh:Qm:almena.id:ids:idn_i";
-        let tenant = "did:webvh:Qm:almena.id:ids:idn_t";
-        Sign {
-            kind: "endorsement".into(),
-            identity: "Issuer".into(),
-            tenant: Some("Acme".into()),
-            did: Some(item.into()),
-            version: None,
-            valid_until: Some("2027-09-30T10:00:00Z".into()),
-            signers: vec![],
-            verification_method: Some(tenant.into()),
-            proof_purpose: "assertionMethod".into(),
-            document: json!({
-                "issuer": tenant,
-                "validUntil": "2027-09-30T10:00:00Z",
-                "credentialSubject": {"id": item, "name": "Issuer", "memberOf": {"id": tenant}},
-            }),
-            presentation: Some(json!({"holder": item, "verifiableCredential": []})),
             status_change: None,
         }
     }
@@ -1507,26 +1440,9 @@ mod tests {
             ..log_entry()
         }));
 
-        assert!(told_as_it_is(&endorsement()));
-        assert!(!told_as_it_is(&Sign {
-            identity: "Other".into(),
-            ..endorsement()
-        }));
-        assert!(!told_as_it_is(&Sign {
-            valid_until: Some("2099-01-01T00:00:00Z".into()),
-            ..endorsement()
-        }));
-        assert!(!told_as_it_is(&Sign {
-            verification_method: Some("did:webvh:Qm:almena.id:ids:idn_x".into()),
-            ..endorsement()
-        }));
-        assert!(!told_as_it_is(&Sign {
-            presentation: Some(json!({"holder": "did:webvh:Qm:almena.id:ids:idn_x"})),
-            ..endorsement()
-        }));
         assert!(!told_as_it_is(&Sign {
             kind: "anything".into(),
-            ..endorsement()
+            ..log_entry()
         }));
     }
 
@@ -1586,7 +1502,7 @@ mod tests {
     }
 
     /// Against a registry API run on this machine, whose requests name it:
-    /// `REGISTRY_PUBLIC_URL=http://localhost:8000 task dev` in `../api` (or set
+    /// `REGISTRY_DID_URL=http://localhost:8000 task dev` in `../api` (or set
     /// `ALMENA_TEST_REGISTRY`), then `cargo test -- --ignored`.
     #[tokio::test]
     #[ignore = "needs a registry API on this machine"]
@@ -1831,25 +1747,6 @@ mod tests {
     }
 
     #[test]
-    fn an_endorsement_presents_the_credential_just_signed() {
-        let (key, _) = identity_for(&SEED, &api(), None);
-        let tenant = "did:webvh:Qm:almena.id:ids:idn_t";
-        let credential = json!({"@context": ["https://www.w3.org/ns/credentials/v2"], "id": "x"});
-        let template = json!({
-            "@context": ["https://www.w3.org/ns/credentials/v2"],
-            "type": ["VerifiablePresentation"],
-            "holder": "did:webvh:Qm:almena.id:ids:idn_i",
-            "verifiableCredential": [],
-        });
-        let signed = proof(&key, tenant, "assertionMethod", &credential, "t").unwrap();
-        let presentation = endorsed(&credential, &signed, Some(&template)).unwrap();
-        assert_eq!(presentation["verifiableCredential"][0]["proof"], signed);
-        assert_eq!(presentation["verifiableCredential"][0]["id"], "x");
-        assert_eq!(presentation["holder"], template["holder"]);
-        assert!(endorsed(&credential, &signed, None).is_err());
-    }
-
-    #[test]
     fn timestamps_are_utc_seconds() {
         assert_eq!(timestamp(0), "1970-01-01T00:00:00Z");
         assert_eq!(timestamp(1_790_683_200), "2026-09-29T12:00:00Z");
@@ -1864,6 +1761,16 @@ mod tests {
         assert!(at("https://registry.almena.id", "https://api.almena.id/x"));
         assert!(at("http://localhost:3000", "http://localhost:8000/x"));
         assert!(at("https://almena.id", "https://almena.id/x"));
+        // Read from the identity domain, its portals are one label under it.
+        assert!(at("https://registry.almena.id", "https://almena.id/x"));
+        assert!(at("https://api.almena.id", "https://almena.id/x"));
+        assert!(!at("https://a.registry.almena.id", "https://almena.id/x"));
+        assert!(!at("https://almena.id", "https://registry.almena.id/x"));
+        // A public suffix vouches for nobody under it.
+        assert!(!at("https://almena.id", "https://id/x"));
+        assert!(!at("https://victim.github.io", "https://github.io/x"));
+        // Under a host that is not a registrable domain, only siblings.
+        assert!(!at("https://x.api.almena.id", "https://api.almena.id/x"));
         assert!(!at("https://registry.almena.id", "https://evil.example/x"));
         assert!(!at(
             "https://registry.almena.id",
@@ -2020,7 +1927,6 @@ mod tests {
                             "status": {"status_list": {"idx": 7, "uri": "https://api.almena.id/status-lists/club"}}},
                 "disclosures": [disclosure],
             }),
-            presentation: None,
             status_change: None,
         }
     }
@@ -2046,7 +1952,6 @@ mod tests {
                 "payload": {"sub": "https://api.almena.id/status-lists/stl_x", "iat": 1u64,
                             "status_list": {"bits": 2, "lst": lst}},
             }),
-            presentation: None,
             status_change: change,
         }
     }

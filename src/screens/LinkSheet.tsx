@@ -258,15 +258,6 @@ export function LinkSheet({
             { label: copy.identity, value: signing.did ?? "", mono: true },
             { label: copy.as, value: request.did, mono: true },
           ]
-      : signing?.kind === "endorsement"
-        ? [
-            { label: copy.portal, value: request.portal },
-            { label: copy.answerTo, value: request.answerTo },
-            ...(signing.tenant ? [{ label: copy.tenant, value: signing.tenant }] : []),
-            ...(until ? [{ label: copy.validUntil, value: until }] : []),
-            { label: copy.identity, value: signing.did ?? copy.newDid, mono: true },
-            { label: copy.as, value: request.did, mono: true },
-          ]
         : signing
           ? [
               { label: copy.portal, value: request.portal },
@@ -286,8 +277,6 @@ export function LinkSheet({
           ? copy.issueTitle
           : signing.kind === "status_list"
             ? copy.statusTitle
-          : signing.kind === "endorsement"
-            ? copy.endorseTitle
             : copy.signTitle
         ).replace(
           "{identity}",
@@ -305,8 +294,6 @@ export function LinkSheet({
             /\{identity\}/g,
             signing.identity,
           )
-        : signing.kind === "endorsement"
-        ? copy.endorseLead
         : signing.did
           ? copy.signLead
           : copy.signFirstLead
@@ -336,8 +323,6 @@ export function LinkSheet({
             ? copy.issue
             : signing?.kind === "status_list"
             ? copy.statusSign
-            : signing?.kind === "endorsement"
-            ? copy.publish
             : signing
                 ? copy.sign
                 : linking
