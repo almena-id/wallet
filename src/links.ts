@@ -5,8 +5,9 @@ import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import type { Contact } from "./contacts";
 
 /**
- * Links and codes from outside: an `almena://` link that opened the wallet, or
- * a code the scanner read. **Nothing from outside acts on the identity.** What
+ * Links and codes from outside: an `almena://` link that opened the wallet —
+ * or on a phone the same as `https://almena.id/w/…`, which Rust reads alike
+ * (`src-tauri/src/links.rs`) —, or a code the scanner read. **Nothing from outside acts on the identity.** What
  * it is decides which screen it is carried to — accepting an invitation,
  * connecting to a mediator, answering a registry — and nothing happens until
  * somebody says so there.
@@ -220,10 +221,10 @@ export function registryErrorCode(error: unknown): RegistryErrorCode {
 }
 
 /**
- * Calls `handle` with every `almena://` link the wallet is opened with: the
- * one that started it, and each one after — on a computer a link opened while
- * the wallet runs arrives through `single-instance`, on a phone through the
- * system.
+ * Calls `handle` with every link the wallet is opened with (`almena://`, or
+ * `https://almena.id/w/…` on a phone): the one that started it, and each one
+ * after — on a computer a link opened while the wallet runs arrives through
+ * `single-instance`, on a phone through the system.
  */
 export function useDeepLinks(handle: (url: string) => void) {
   const latest = useRef(handle);

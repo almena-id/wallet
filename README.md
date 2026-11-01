@@ -171,6 +171,28 @@ mediator's, from a code. Who tells the system that the wallet opens them:
 while the wallet runs goes to the running one: the phones deliver it, and on a
 computer `single-instance` hands it over.
 
+On a phone the same links are also written `https://almena.id/w/…` — whatever
+follows `almena://`, under `/w/` on the identity domain — and that is what the
+registry and catalog portals show (link and QR code). Any app may claim a custom
+scheme; only this one may claim that host, because `almena.id` names it: iOS
+universal links (the `applinks:almena.id` Associated Domain, against
+`/.well-known/apple-app-site-association`) and Android verified App Links (an
+`autoVerify` intent filter for `https://almena.id/w/`, against
+`/.well-known/assetlinks.json`, which must list the SHA-256 of the certificate
+the installed build is signed with). The deep-link plugin writes both from
+`tauri.conf.json` at every build, however often `gen/` is regenerated, and
+`push/ios/wallet_iOS.entitlements` carries the domain too. A camera that scans
+such a code opens the wallet; without it, the browser shows a page that offers
+the `almena://` link and where to get the wallet. The wallet reads both forms
+alike (`src-tauri/src/links.rs`), and only that host and prefix: any other
+https link is not a wallet link. A computer has no universal links and keeps
+`almena://`.
+
+| Platform | Try it |
+|---|---|
+| iOS | `xcrun simctl openurl booted "https://almena.id/w/invite?_oob=…"` (the simulator fetches the association file; a build signed with the team whose App ID has Associated Domains on) |
+| Android | `adb shell pm verify-app-links --re-verify id.almena.wallet`, then `adb shell pm get-app-links id.almena.wallet` (`verified` once `assetlinks.json` lists the build's fingerprint) and `adb shell am start -a android.intent.action.VIEW -d "https://almena.id/w/invite?_oob=…"` |
+
 ## Push notifications
 
 The mediator notifies a phone through Firebase Cloud Messaging (Android) or

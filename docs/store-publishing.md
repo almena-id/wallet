@@ -53,6 +53,21 @@ current when a permission, a data flow or a capability is added.
     the system's `BiometricPrompt`. It protects the copy of the vault's data
     key that opens the wallet without the PIN; the wallet never sees a
     fingerprint or a face, only whether the system unlocked its Keystore key.
+- **Universal links and App Links.** `https://almena.id/w/…` opens the
+  wallet, so no other app can take its links as any can take `almena://`.
+  iOS: the Associated Domains capability (`applinks:almena.id`, written into
+  the entitlements by the deep-link plugin and `push/ios/wallet_iOS.entitlements`)
+  must be on for the App ID `id.almena.wallet` in the developer account, and
+  its provisioning profiles made again; `almena.id` serves
+  `/.well-known/apple-app-site-association` naming `XDUFSW425R.id.almena.wallet`.
+  Android: the intent filter carries `android:autoVerify="true"`, and
+  `/.well-known/assetlinks.json` must list the SHA-256 of the certificate the
+  installed build is signed with — under Play App Signing, the app signing key
+  shown in the Play Console (Setup → App integrity), plus the upload key for
+  builds installed outside Play (the API's `REGISTRY_ANDROID_APP_FINGERPRINTS`).
+  Until it does, Android does not verify the links and the browser opens them
+  (a page offering the `almena://` link), so nothing breaks. Neither sends
+  anything off the device: the system fetches those files, not the wallet.
 - **Calls while closed.** On iOS the app declares the `voip` background mode
   (`Info.ios.plist`) and rings through PushKit and CallKit; App Review checks
   that every VoIP push shows a call, which it does. CallKit is not allowed on

@@ -63,6 +63,16 @@
             "almena"
           ],
           "appLink": false
+        },
+        {
+          "scheme": [
+            "https"
+          ],
+          "host": "almena.id",
+          "pathPrefix": [
+            "/w/"
+          ],
+          "appLink": true
         }
       ],
       "desktop": {

@@ -6,5 +6,12 @@
 	     distribution re-signs it as "production". -->
 	<key>aps-environment</key>
 	<string>development</string>
+	<!-- Universal links: https://almena.id/w/… opens the wallet, which
+	     almena.id names in /.well-known/apple-app-site-association. The
+	     deep-link plugin writes the same from tauri.conf.json at build. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:almena.id</string>
+	</array>
 </dict>
 </plist>

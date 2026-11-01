@@ -1,9 +1,10 @@
 //! Signing in to an Almena Registry portal, or linking this wallet to an
 //! account there — the wallet's side of the registry's `…/auth/wallet` API.
 //!
-//! The portal shows `almena://auth?request_uri=…` as a link and a QR code. The
-//! wallet reads the request at that address (who asks, for what, where the
-//! answer goes), puts it to the person, and on Accept posts back an `id_token`
+//! The portal shows `https://almena.id/w/auth?request_uri=…` — the same as
+//! `almena://auth?request_uri=…`, read either way (`crate::links`) — as a link
+//! and a QR code. The wallet reads the request at that address (who asks, for
+//! what, where the answer goes), puts it to the person, and on Accept posts back an `id_token`
 //! the way SIOPv2's `direct_post` does: a JWS, `EdDSA`, whose issuer and
 //! subject are the `did:key` this wallet keeps for that portal, whose audience
 //! is the portal and whose nonce is the request's. No DIDComm and no mediator:
@@ -522,15 +523,17 @@ fn disclosed(document: &serde_json::Value) -> Option<Vec<(String, serde_json::Va
     Some(claims)
 }
 
-/// Is `input` a registry request (`almena://auth?request_uri=…`)? Read only.
+/// Is `input` a registry request (`almena://auth?request_uri=…`, or the same
+/// as `https://almena.id/w/auth?request_uri=…`)? Read only.
 pub fn is_request(input: &str) -> bool {
     request_uri(input).is_ok()
 }
 
-/// The request's address, from the link or the code.
+/// The request's address, from the link or the code, in either form
+/// (`crate::links`).
 fn request_uri(input: &str) -> Result<Url, RegistryError> {
-    let link = Url::parse(input.trim()).map_err(|_| RegistryError::Unreadable)?;
-    if link.scheme() != "almena" || link.host_str() != Some("auth") {
+    let link = crate::links::scheme_form(input).ok_or(RegistryError::Unreadable)?;
+    if link.scheme() != crate::links::SCHEME || link.host_str() != Some("auth") {
         return Err(RegistryError::Unreadable);
     }
     let uri = link
@@ -1283,7 +1286,8 @@ struct Collected {
 /// credential: an `id_token` by the key this wallet paired with that issuer —
 /// derived again from the `collect` address's origin and the issuer's DID —
 /// for that address, with the application's id as nonce. The registry
-/// answers with a `receive` request, returned as its `almena://` link for the
+/// answers with a `receive` request, returned as its link (`https://almena.id/w/…`
+/// or `almena://`, `crate::links`) for the
 /// sheet to read and the person to accept, as the portal's third code would.
 #[tauri::command]
 pub async fn registry_collect(
@@ -1621,6 +1625,17 @@ mod tests {
         assert!(!is_request("almena://invite?_oob=abc"));
         assert!(!is_request("https://api.almena.id/x"));
         assert!(!is_request("almena://auth"));
+
+        // The same request as the https link on the identity domain.
+        let https = "https://almena.id/w/auth?request_uri=https%3A%2F%2Fapi.almena.id%2Fapi%2Fv1%2Fauth%2Fwallet%2Frequests%2Fabc";
+        assert_eq!(request_uri(https).unwrap(), request_uri(link).unwrap());
+        assert!(!is_request("https://almena.id/w/invite?_oob=abc"));
+        assert!(!is_request(
+            "https://evil.example/w/auth?request_uri=https%3A%2F%2Fapi.almena.id%2Fx"
+        ));
+        assert!(!is_request(
+            "https://almena.id/auth?request_uri=https%3A%2F%2Fapi.almena.id%2Fx"
+        ));
     }
 
     #[test]

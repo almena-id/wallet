@@ -19,6 +19,8 @@
 //! - `deep-link` exists everywhere: an `almena://` link — the scheme the
 //!   wallet's own invitations are written with — opens the wallet. On a
 //!   computer a link opened while it runs arrives through `single-instance`.
+//!   On a phone `https://almena.id/w/…` opens it too, a link only this app may
+//!   claim ([`links`]).
 //!
 //! The tray is the other thing only a computer has, and it changes what closing
 //! the window means: with a tray on the bar the wallet goes on running — live
@@ -47,6 +49,7 @@ mod backdrop;
 mod credentials;
 mod identity;
 mod issuers;
+mod links;
 mod messaging;
 mod notify;
 mod presentation;
