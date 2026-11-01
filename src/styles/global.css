@@ -2367,7 +2367,10 @@ html[data-camera-preview="true"] .app::before {
   flex-direction: column;
   justify-content: space-between;
   padding: 20px;
-  overflow: hidden;
+  /* The pattern is clipped to the card (contain), not the words: with
+     overflow left visible, the ID-1 proportion is a minimum and the card
+     grows when a long name in some language needs more room. */
+  contain: paint;
   border: 0;
   border-radius: 16px;
   background: linear-gradient(135deg, var(--brand), var(--brand-strong));

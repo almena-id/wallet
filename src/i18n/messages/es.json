@@ -19,7 +19,7 @@
     "newMessage": "Mensaje nuevo"
   },
   "home": {
-    "greeting": "Tu cartera",
+    "greeting": "Tu wallet",
     "credentials": "Tus credenciales",
     "refresh": "Volver a comprobar su estado",
     "emptyTitle": "Todavía no tienes credenciales",
@@ -49,7 +49,7 @@
     "validUntil": "Válida hasta",
     "expired": "Caducó el",
     "unreadable": "No se han podido leer las credenciales.",
-    "remove": "Quitar de esta cartera",
+    "remove": "Quitar de este wallet",
     "removeQuestion": "¿Quitarla para siempre? No queda ninguna copia: solo {issuer} puede volver a concederla.",
     "removeConfirm": "Quitar",
     "removeKeep": "Conservarla",
@@ -88,7 +88,7 @@
     "starting": "Activando la cámara",
     "permission": {
       "deniedTitle": "El acceso a la cámara está desactivado",
-      "deniedBody": "Vuelve a activar la cámara para la cartera en los ajustes del sistema y regresa a esta pantalla.",
+      "deniedBody": "Vuelve a activar la cámara para el wallet en los ajustes del sistema y regresa a esta pantalla.",
       "openSettings": "Abrir los ajustes del sistema"
     },
     "error": {
@@ -98,7 +98,7 @@
     "result": {
       "title": "Código leído",
       "again": "Escanear otro código",
-      "unknown": "No es una invitación que la cartera sepa leer."
+      "unknown": "No es una invitación que el wallet sepa leer."
     }
   },
   "confirm": {
@@ -224,7 +224,7 @@
       },
       "appearance": {
         "title": "Apariencia",
-        "hint": "El color que viste la cartera"
+        "hint": "El color que viste el wallet"
       },
       "notifications": {
         "title": "Notificaciones",
@@ -280,7 +280,7 @@
         "label": "Nada identificable",
         "hint": "«Almena Wallet · Mensaje nuevo»"
       },
-      "note": "Se muestran mientras la cartera no está delante. El sistema guarda lo que muestran en su propio historial, fuera de la cartera."
+      "note": "Se muestran mientras el wallet no está delante. El sistema guarda lo que muestran en su propio historial, fuera del wallet."
     },
     "security": {
       "title": "Seguridad",
@@ -295,7 +295,7 @@
       "keptInStore": "El almacén de secretos del propio dispositivo",
       "keptInFile": "El almacenamiento privado de esta aplicación",
       "keptInKeystore": "El almacenamiento privado de esta aplicación, sellado por el hardware seguro de este dispositivo",
-      "lockTitle": "Bloqueo de la cartera",
+      "lockTitle": "Bloqueo del wallet",
       "pinChange": "Cambiarlo",
       "biometricsLabel": "Biometría",
       "biometricsUnavailable": "No disponible en este dispositivo",
@@ -349,7 +349,7 @@
       "import": "Elegir una copia",
       "imported": "Restaurado: {contacts} contactos, {messages} mensajes y {credentials} credenciales que faltaban.",
       "errors": {
-        "backup_locked": "Desbloquea primero la cartera.",
+        "backup_locked": "Desbloquea primero el wallet.",
         "backup_file": "No se ha podido guardar o leer el fichero ahí. Prueba en otro sitio.",
         "backup_not_this_identity": "Ese fichero no es una copia de esta identidad.",
         "backup_storage": "No se ha podido leer o escribir lo que guarda este dispositivo."
@@ -405,7 +405,7 @@
     "errors": {
       "identity_entropy_unavailable": "Este dispositivo no ha proporcionado la aleatoriedad con la que se crea una frase. No se ha creado nada.",
       "identity_word_count": "Una frase tiene doce palabras o veinticuatro.",
-      "identity_checksum": "Esas palabras no son una frase que esta cartera haya producido. Revisa la ortografía y el orden.",
+      "identity_checksum": "Esas palabras no son una frase que este wallet haya producido. Revisa la ortografía y el orden.",
       "identity_no_draft": "No había ninguna frase que confirmar. Empieza de nuevo.",
       "identity_unknown": "No se ha podido crear la identidad. Inténtalo otra vez."
     },
@@ -421,8 +421,8 @@
     "repeatTitle": "Escríbelo otra vez",
     "repeatSubtitle": "Para que un desliz no se convierta en un candado que nadie abre.",
     "unlockTitle": "Tu PIN",
-    "unlockSubtitle": "La cartera está bloqueada.",
-    "callSubtitle": "Te están llamando. Desbloquea la cartera para contestar.",
+    "unlockSubtitle": "El wallet está bloqueado.",
+    "callSubtitle": "Te están llamando. Desbloquea el wallet para contestar.",
     "mismatch": "Esos dos no coinciden. Empieza de nuevo.",
     "progress": "{typed} de {digits} dígitos escritos",
     "delete": "Borrar",
@@ -433,7 +433,7 @@
     "checking": "Comprobando tu PIN",
     "useBiometrics": "Usar biometría",
     "currentTitle": "Tu PIN actual",
-    "currentSubtitle": "Se pide primero, para que nadie que encuentre la cartera abierta pueda cambiarlo.",
+    "currentSubtitle": "Se pide primero, para que nadie que encuentre el wallet abierto pueda cambiarlo.",
     "replaceIntro": "La identidad no se toca. Solo cambian los dígitos que la abren.",
     "armSubtitle": "Tu PIN, una vez, y este dispositivo recibe una llave propia."
   },
@@ -446,8 +446,8 @@
       "vault_pin_length": "Un PIN son cuatro o seis dígitos.",
       "vault_pin_not_digits": "Un PIN son dígitos y nada más.",
       "vault_no_identity": "No hay ninguna identidad abierta que escribir.",
-      "vault_unreadable": "Lo que hay en este dispositivo no es algo que esta cartera sepa leer.",
-      "vault_too_new": "Esto lo escribió una versión más nueva de la cartera. Actualízala y la identidad seguirá aquí.",
+      "vault_unreadable": "Lo que hay en este dispositivo no es algo que este wallet sepa leer.",
+      "vault_too_new": "Esto lo escribió una versión más nueva del wallet. Actualízalo y la identidad seguirá aquí.",
       "vault_storage": "No se ha podido leer la identidad de este dispositivo. No se ha cambiado nada.",
       "vault_entropy": "Este dispositivo no ha dado la aleatoriedad que necesita el cifrado. No se ha escrito nada.",
       "vault_unknown": "Eso no ha funcionado. Inténtalo otra vez.",
@@ -455,12 +455,12 @@
       "vault_device_unproven": "Este dispositivo no te ha reconocido, así que no se ha activado nada. Inténtalo otra vez o sigue con tu PIN.",
       "vault_no_device_store": "Este dispositivo no puede guardar una llave propia, así que el PIN es la manera de entrar.",
       "vault_device_refused": "Este dispositivo no te ha reconocido. Inténtalo otra vez.",
-      "vault_no_pin": "Esta cartera se abre con el bloqueo del propio dispositivo, no con un PIN.",
-      "vault_no_passcode": "Este iPhone no tiene código, así que la cartera necesita un PIN propio."
+      "vault_no_pin": "Este wallet se abre con el bloqueo del propio dispositivo, no con un PIN.",
+      "vault_no_passcode": "Este iPhone no tiene código, así que el wallet necesita un PIN propio."
     },
     "problem": {
       "title": "Este dispositivo tiene una identidad que no puede abrir",
-      "body": "No se ha perdido nada y no se ha cambiado nada. Hasta que esto se resuelva, la cartera no va a ofrecerte crear una segunda identidad encima de la que ya hay.",
+      "body": "No se ha perdido nada y no se ha cambiado nada. Hasta que esto se resuelva, el wallet no va a ofrecerte crear una segunda identidad encima de la que ya hay.",
       "retry": "Reintentar"
     },
     "deviceLock": {
@@ -474,7 +474,7 @@
   "logout": {
     "title": "Cerrar la sesión",
     "intro": "Léelo antes de hacerlo. No hay ningún soporte que pueda deshacerlo.",
-    "identity": "La identidad se va. La tiene este dispositivo y nadie más: ni quien hace la cartera, ni el mediador, ni una copia guardada en ningún sitio.",
+    "identity": "La identidad se va. La tiene este dispositivo y nadie más: ni quien hace el wallet, ni el mediador, ni una copia guardada en ningún sitio.",
     "messages": "Tus conversaciones se van con ella. Estaban cifradas para esta identidad, y sin ella nada puede leerlas.",
     "phrase": "Tu frase es la única vuelta atrás. Con ella la identidad vuelve tal cual, en este dispositivo o en otro. Sin ella se ha perdido, y perdida es para siempre.",
     "question": "¿Tienes tu frase delante?",
@@ -493,13 +493,13 @@
   },
   "messaging": {
     "errors": {
-      "messaging_locked": "La cartera está bloqueada. Desbloquéala e inténtalo otra vez.",
+      "messaging_locked": "El wallet está bloqueado. Desbloquéalo e inténtalo otra vez.",
       "messaging_invitation_unreadable": "Eso no es un enlace de invitación, una dirección ni un DID de un mediador.",
-      "messaging_insecure": "Ese mediador no usa HTTPS, así que esta cartera no va a hablar con él.",
+      "messaging_insecure": "Ese mediador no usa HTTPS, así que este wallet no va a hablar con él.",
       "messaging_mediator_unreachable": "No se ha podido contactar con el mediador. Revisa la conexión y la dirección, e inténtalo otra vez.",
       "messaging_mediator_refused": "El mediador ha rechazado la petición.",
-      "messaging_mediator_full": "Este mediador está lleno y ahora no admite carteras nuevas. Inténtalo más tarde o elige otro mediador.",
-      "messaging_not_connected": "Esta cartera no está conectada a ningún mediador.",
+      "messaging_mediator_full": "Este mediador está lleno y ahora no admite wallets nuevos. Inténtalo más tarde o elige otro mediador.",
+      "messaging_not_connected": "Este wallet no está conectado a ningún mediador.",
       "messaging_keys": "No se han podido usar las claves para hablar con el mediador.",
       "messaging_unreadable": "No se ha podido leer lo que este dispositivo guarda sobre el mediador.",
       "messaging_storage": "No se ha podido guardar el mediador en este dispositivo.",
@@ -510,7 +510,7 @@
       "messaging_pending": "Todavía no ha respondido a tu invitación. Podrás escribirle cuando lo haga.",
       "messaging_contact_unknown": "Ese contacto no está en este dispositivo.",
       "messaging_message_invalid": "Un mensaje no puede estar vacío ni pasar de 4.000 caracteres.",
-      "messaging_photo_invalid": "Esa imagen no es una que la cartera pueda guardar. Prueba con otra.",
+      "messaging_photo_invalid": "Esa imagen no es una que el wallet pueda guardar. Prueba con otra.",
       "messaging_calls_unavailable": "Tu mediador no retransmite llamadas, así que no se puede llamar."
     }
   },

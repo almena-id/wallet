@@ -197,8 +197,8 @@ export function LinkSheet({
           {...common}
           error={error ?? failed}
           icon={<CredentialIcon />}
-          title={copy[`${purpose}Title`].replace("{issuer}", applying.issuer)}
-          lead={copy[`${purpose}Lead`].replace("{issuer}", applying.issuer)}
+          title={copy[`${purpose}Title`].split("{issuer}").join(applying.issuer)}
+          lead={copy[`${purpose}Lead`].split("{issuer}").join(applying.issuer)}
           details={rows}
           note={
             nothing
