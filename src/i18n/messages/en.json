@@ -19,7 +19,60 @@
     "newMessage": "New message"
   },
   "home": {
-    "greeting": "Your wallet"
+    "greeting": "Your wallet",
+    "credentials": "Your credentials",
+    "refresh": "Check their status again",
+    "emptyTitle": "No credentials yet",
+    "emptyHint": "Ask an issuer for one at catalog.almena.id; it arrives here once granted.",
+    "scan": "Scan QR"
+  },
+  "credentials": {
+    "category": "Credential",
+    "about": "About it",
+    "claims": "What it says",
+    "noClaims": "It says nothing beyond its type.",
+    "type": "Type",
+    "issuerDid": "Issuer's DID",
+    "registry": "Received through",
+    "issuedAt": "Issued on",
+    "check": "Check status",
+    "chips": {
+      "valid": "Valid",
+      "suspended": "Suspended",
+      "revoked": "Revoked",
+      "expired": "Expired",
+      "invalid": "Not valid",
+      "unchecked": "Not checked"
+    },
+    "open": "{name}, from {issuer}: {status}",
+    "issuer": "Issued by",
+    "validUntil": "Valid until",
+    "expired": "Expired on",
+    "unreadable": "The credentials could not be read.",
+    "remove": "Remove from this wallet",
+    "removeQuestion": "Remove it for good? Nothing keeps a copy: only {issuer} can grant it again.",
+    "removeConfirm": "Remove",
+    "removeKeep": "Keep it",
+    "removeFailed": "It could not be removed. Try again.",
+    "status": "Status",
+    "statuses": {
+      "valid": "Valid",
+      "suspended": "Suspended",
+      "revoked": "Revoked"
+    },
+    "unchecked": {
+      "pending": "Checking…",
+      "noList": "Cannot be checked",
+      "unreachable": "Not checked: the issuer cannot be reached",
+      "untrusted": "Not checked: its issuer's list could not be trusted",
+      "signature": "Not valid: its issuer's DID no longer lists the key that signed it"
+    },
+    "checkedAt": "Checked {when}",
+    "checkedOffline": "As of {when}: the issuer cannot be reached now",
+    "notice": {
+      "suspended": "{issuer} has suspended this credential: verifiers refuse it for now, and this wallet does not offer it.",
+      "revoked": "{issuer} has revoked this credential: verifiers no longer accept it, and this wallet does not offer it."
+    }
   },
   "profile": {
     "changePhoto": "Change photo",
@@ -165,10 +218,6 @@
   "settings": {
     "title": "Settings",
     "sections": {
-      "credentials": {
-        "title": "Credentials",
-        "hint": "What issuers have granted you"
-      },
       "profile": {
         "title": "Profile",
         "hint": "Your photo and your name"
@@ -289,37 +338,6 @@
       "check": "Check for messages",
       "checking": "Checking…",
       "disconnect": "Disconnect"
-    },
-    "credentials": {
-      "none": "No credentials yet. Apply for one from an Almena registry's catalogue of credentials.",
-      "issuer": "Issued by",
-      "validUntil": "Valid until",
-      "expired": "Expired on",
-      "unreadable": "The credentials could not be read.",
-      "remove": "Remove from this wallet",
-      "removeQuestion": "Remove it for good? Nothing keeps a copy: only {issuer} can grant it again.",
-      "removeConfirm": "Remove",
-      "removeKeep": "Keep it",
-      "removeFailed": "It could not be removed. Try again.",
-      "status": "Status",
-      "statuses": {
-        "valid": "Valid",
-        "suspended": "Suspended",
-        "revoked": "Revoked"
-      },
-      "unchecked": {
-        "pending": "Checking…",
-        "noList": "Cannot be checked",
-        "unreachable": "Not checked: the issuer cannot be reached",
-        "untrusted": "Not checked: its issuer's list could not be trusted",
-        "signature": "Not valid: its issuer's DID no longer lists the key that signed it"
-      },
-      "checkedAt": "Checked {when}",
-      "checkedOffline": "As of {when}: the issuer cannot be reached now",
-      "notice": {
-        "suspended": "{issuer} has suspended this credential: verifiers refuse it for now, and this wallet does not offer it.",
-        "revoked": "{issuer} has revoked this credential: verifiers no longer accept it, and this wallet does not offer it."
-      }
     },
     "backup": {
       "exportTitle": "Make a backup",

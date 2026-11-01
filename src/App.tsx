@@ -26,7 +26,7 @@ import {
 } from "./vault";
 import { CallScreen } from "./screens/CallScreen";
 import { DeviceLockScreen } from "./screens/DeviceLockScreen";
-import { HomeScreen } from "./screens/HomeScreen";
+import { HomeTab } from "./screens/HomeTab";
 import { LinkSheet, type LinkOrigin } from "./screens/LinkSheet";
 import { LogoutScreen } from "./screens/LogoutScreen";
 import { MessagesTab } from "./screens/MessagesTab";
@@ -337,7 +337,9 @@ export default function App() {
     <PreferencesProvider value={preferences}>
       <div className={cameraPreview ? "app app--camera" : "app"}>
         <main className={keypad ? "app__view app__view--plain" : "app__view"} key={`${route}-${visit}`}>
-          {route === "home" ? <HomeScreen /> : null}
+          {route === "home" ? (
+            <HomeTab onScan={platform.barcodeScanner ? () => select("scan") : undefined} />
+          ) : null}
           {route === "messages" ? <MessagesTab
               initialConversation={conversation}
               onLink={(url) => void openLink(url, "link")}

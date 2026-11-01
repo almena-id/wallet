@@ -15,6 +15,8 @@
   /* The identity colour, and everything derived from it. Swapped as a set by
      the palettes below, so no component ever names a colour of its own. */
   --brand: #eb7229;
+  /* The far corner of a credential's card: the colour, a good deal deeper. */
+  --brand-strong: #b8541a;
   --brand-ink: #ffffff;
   --brand-soft: rgba(235, 114, 41, 0.14);
   --brand-shadow: rgba(235, 114, 41, 0.8);
@@ -22,6 +24,15 @@
   /* Kept clear of the brand orange: what it marks is not a highlight. */
   --danger: #c9372c;
   --danger-soft: rgba(201, 55, 44, 0.14);
+  /* How a credential stands, on the white pill its card wears in either
+     theme: the dot carries the state, the ink stays dark on white. */
+  --chip-bg: rgba(255, 255, 255, 0.9);
+  --chip-ink: #17181c;
+  --state-valid: #1f9d55;
+  --state-suspended: #c98a00;
+  --state-revoked: #c9372c;
+  --state-unchecked: rgba(23, 24, 28, 0.4);
+  --card-shadow: rgba(23, 24, 28, 0.35);
   /* Answering a call: the one green in the interface, which means "yes, now". */
   --accept: #1f9d55;
   /* The call screen is dark in either theme: a picture is watched on dark. */
@@ -80,6 +91,7 @@
    currently chosen and offer to change nothing. */
 [data-accent="orange"] {
   --brand: #eb7229;
+  --brand-strong: #b8541a;
   --brand-ink: #ffffff;
   --brand-soft: rgba(235, 114, 41, 0.14);
   --brand-shadow: rgba(235, 114, 41, 0.8);
@@ -89,6 +101,7 @@
 
 [data-accent="red"] {
   --brand: #e0413a;
+  --brand-strong: #a82a24;
   --brand-ink: #ffffff;
   --brand-soft: rgba(224, 65, 58, 0.14);
   --brand-shadow: rgba(224, 65, 58, 0.8);
@@ -98,6 +111,7 @@
 
 [data-accent="yellow"] {
   --brand: #f2b705;
+  --brand-strong: #c48f00;
   /* Dark ink: white on yellow is unreadable at any size worth reading. */
   --brand-ink: #17181c;
   --brand-soft: rgba(242, 183, 5, 0.18);
@@ -108,6 +122,7 @@
 
 [data-accent="green"] {
   --brand: #1f9d55;
+  --brand-strong: #13703b;
   --brand-ink: #ffffff;
   --brand-soft: rgba(31, 157, 85, 0.14);
   --brand-shadow: rgba(31, 157, 85, 0.8);
@@ -118,6 +133,7 @@
 /* The status portal's colour. */
 [data-accent="cyan"] {
   --brand: #3fe0ff;
+  --brand-strong: #12a9c9;
   /* Dark ink, as on yellow: white on a colour this light does not read. */
   --brand-ink: #17181c;
   --brand-soft: rgba(63, 224, 255, 0.18);
@@ -129,6 +145,7 @@
 /* The mediator's colour. */
 [data-accent="magenta"] {
   --brand: #d63384;
+  --brand-strong: #a01f60;
   --brand-ink: #ffffff;
   --brand-soft: rgba(214, 51, 132, 0.14);
   --brand-shadow: rgba(214, 51, 132, 0.8);
@@ -139,6 +156,7 @@
 /* The agent's colour. */
 [data-accent="teal"] {
   --brand: #0fa3a3;
+  --brand-strong: #0a7272;
   --brand-ink: #ffffff;
   --brand-soft: rgba(15, 163, 163, 0.14);
   --brand-shadow: rgba(15, 163, 163, 0.8);
@@ -149,6 +167,7 @@
 /* The catalog portal's colour. */
 [data-accent="blue"] {
   --brand: #2563eb;
+  --brand-strong: #1d43b0;
   --brand-ink: #ffffff;
   --brand-soft: rgba(37, 99, 235, 0.14);
   --brand-shadow: rgba(37, 99, 235, 0.8);
@@ -183,6 +202,7 @@
     --glass: rgba(38, 40, 47, 0.62);
     --glass-edge: rgba(255, 255, 255, 0.14);
     --glass-shadow: rgba(0, 0, 0, 0.55);
+    --card-shadow: rgba(0, 0, 0, 0.6);
     --glass-highlight: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.07));
     --glass-highlight-edge: rgba(255, 255, 255, 0.24);
   }
@@ -212,6 +232,7 @@
   --glass: rgba(38, 40, 47, 0.62);
   --glass-edge: rgba(255, 255, 255, 0.14);
   --glass-shadow: rgba(0, 0, 0, 0.55);
+  --card-shadow: rgba(0, 0, 0, 0.6);
   --glass-highlight: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.07));
   --glass-highlight-edge: rgba(255, 255, 255, 0.24);
 }
@@ -2310,6 +2331,285 @@ html[data-camera-preview="true"] .app::before {
   50% {
     top: 90%;
   }
+}
+
+/* ----------------------------------------------------------- credentials */
+
+/*
+ * Home is where the credentials are, so it may take more of a wide window than
+ * a screen of settings: two cards to a row, never a stretched single one.
+ */
+@media (min-width: 900px) {
+  .screen--wide {
+    max-width: 880px;
+  }
+}
+
+.credential-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+@media (min-width: 720px) {
+  .credential-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* A credential as the card it stands for: ID-1 proportions, the identity
+   colour from one corner to its deeper shade at the other, the brand's ink. */
+.credential-card {
+  position: relative;
+  display: flex;
+  width: 100%;
+  aspect-ratio: 1.586 / 1;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 20px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--brand), var(--brand-strong));
+  color: var(--brand-ink);
+  font: inherit;
+  text-align: left;
+  box-shadow: 0 18px 32px -22px var(--card-shadow);
+  isolation: isolate;
+}
+
+.credential-card--compact {
+  padding: 16px;
+  border-radius: 14px;
+}
+
+button.credential-card {
+  cursor: pointer;
+  transition:
+    transform 0.18s var(--ease-spring),
+    box-shadow 0.18s ease;
+}
+
+button.credential-card:active {
+  transform: scale(0.985);
+}
+
+button.credential-card:focus-visible {
+  outline: 3px solid var(--brand-soft);
+  outline-offset: 3px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button.credential-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 24px 36px -22px var(--card-shadow);
+  }
+}
+
+.credential-card__pattern {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  opacity: 0.12;
+}
+
+.credential-card__mark {
+  position: absolute;
+  right: -6%;
+  bottom: -14%;
+  z-index: -1;
+  width: 52%;
+  opacity: 0.1;
+}
+
+.credential-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.credential-card__lead {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The glyph on a pane of the ink at low strength, whichever ink it is. */
+.credential-card__icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+
+.credential-card__icon::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0.15;
+}
+
+.credential-card__icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.credential-card__chip {
+  width: 34px;
+  height: 26px;
+}
+
+.credential-card__chip rect {
+  opacity: 0.25;
+}
+
+.credential-card__chip-seams {
+  opacity: 0.35;
+}
+
+.credential-card__category {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.credential-card__foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.credential-card__names {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.credential-card__type {
+  display: -webkit-box;
+  overflow: hidden;
+  font-family: var(--font-brand);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.2;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.credential-card--compact .credential-card__type {
+  font-size: 16px;
+}
+
+.credential-card__issuer {
+  overflow: hidden;
+  font-size: 13px;
+  opacity: 0.85;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* How it stands: a white pill whose dot says the state. */
+.status-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  color: var(--chip-ink);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-chip__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--state-unchecked);
+}
+
+.status-chip--valid .status-chip__dot {
+  background: var(--state-valid);
+}
+
+.status-chip--suspended .status-chip__dot {
+  background: var(--state-suspended);
+}
+
+.status-chip--revoked .status-chip__dot,
+.status-chip--invalid .status-chip__dot,
+.status-chip--expired .status-chip__dot {
+  background: var(--state-revoked);
+}
+
+/* Home with nothing held: an empty wallet in the identity colour. */
+.empty-state__art {
+  width: 168px;
+  height: auto;
+  margin-bottom: 8px;
+}
+
+.empty-wallet__slot {
+  fill: none;
+  stroke: var(--brand);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+}
+
+.empty-wallet__line {
+  fill: none;
+  stroke: var(--brand);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.45;
+}
+
+.empty-wallet__back {
+  fill: var(--brand-soft);
+  stroke: var(--brand);
+  stroke-width: 2;
+}
+
+.empty-wallet__pocket {
+  fill: var(--surface-strong);
+  stroke: var(--brand);
+  stroke-width: 2;
+}
+
+.empty-wallet__clasp {
+  fill: var(--brand);
+}
+
+.empty-wallet__stud {
+  fill: var(--brand-ink);
+}
+
+.empty-wallet__spark {
+  fill: none;
+  stroke: var(--brand);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.6;
+}
+
+.button-row--centred {
+  justify-content: center;
+  margin-top: 10px;
 }
 
 /* ------------------------------------------------------------- messages */

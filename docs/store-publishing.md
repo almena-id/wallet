@@ -70,8 +70,9 @@ current when a permission, a data flow or a capability is added.
     a DID made for it alone and a signature, only when the person accepts the
     request (`src-tauri/src/registry.rs`); nothing else about them;
   - receiving a credential fetches its issuer's DID log first
-    (`src-tauri/src/issuers.rs`), and opening Profile → Credentials fetches,
-    for each credential held, its issuer's status list and DID log
+    (`src-tauri/src/issuers.rs`), and opening Home (when a status was not read
+    in the last ten minutes) or its sync button fetches, for each credential
+    held, its issuer's status list and DID log
     (`src-tauri/src/status.rs`):
     plain GETs that send nothing about the person — the list holds every
     credential of that issuer, so reading it does not say which one is theirs

@@ -19,12 +19,10 @@ import { BackupSettings } from "./settings/BackupSettings";
 import { MessagingSettings } from "./settings/MessagingSettings";
 import { NotificationsSettings } from "./settings/NotificationsSettings";
 import { ProfileSettings } from "./settings/ProfileSettings";
-import { CredentialsSettings } from "./settings/CredentialsSettings";
 import { SecuritySettings } from "./settings/SecuritySettings";
 
 /** Where the profile leads, and the list that leads there. */
 type Section =
-  | "credentials"
   | "profile"
   | "appearance"
   | "notifications"
@@ -33,7 +31,6 @@ type Section =
   | "security";
 
 const SECTIONS: Section[] = [
-  "credentials",
   "profile",
   "appearance",
   "notifications",
@@ -146,7 +143,6 @@ export function ProfileScreen({ vault, onKeypad, onSignOut }: ProfileScreenProps
           </h1>
         </header>
 
-        {section === "credentials" ? <CredentialsSettings /> : null}
         {section === "profile" ? <ProfileSettings /> : null}
         {section === "appearance" ? (
           <AppearanceSettings

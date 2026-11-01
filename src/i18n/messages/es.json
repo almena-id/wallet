@@ -19,7 +19,60 @@
     "newMessage": "Mensaje nuevo"
   },
   "home": {
-    "greeting": "Tu cartera"
+    "greeting": "Tu cartera",
+    "credentials": "Tus credenciales",
+    "refresh": "Volver a comprobar su estado",
+    "emptyTitle": "Todavía no tienes credenciales",
+    "emptyHint": "Solicítala a un emisor en catalog.almena.id; llega aquí en cuanto te la conceda.",
+    "scan": "Escanear QR"
+  },
+  "credentials": {
+    "category": "Credencial",
+    "about": "Sobre ella",
+    "claims": "Lo que dice",
+    "noClaims": "No dice nada más allá de su tipo.",
+    "type": "Tipo",
+    "issuerDid": "DID del emisor",
+    "registry": "Recibida a través de",
+    "issuedAt": "Expedida el",
+    "check": "Comprobar el estado",
+    "chips": {
+      "valid": "Válida",
+      "suspended": "Suspendida",
+      "revoked": "Revocada",
+      "expired": "Caducada",
+      "invalid": "No válida",
+      "unchecked": "Sin comprobar"
+    },
+    "open": "{name}, de {issuer}: {status}",
+    "issuer": "La expide",
+    "validUntil": "Válida hasta",
+    "expired": "Caducó el",
+    "unreadable": "No se han podido leer las credenciales.",
+    "remove": "Quitar de esta cartera",
+    "removeQuestion": "¿Quitarla para siempre? No queda ninguna copia: solo {issuer} puede volver a concederla.",
+    "removeConfirm": "Quitar",
+    "removeKeep": "Conservarla",
+    "removeFailed": "No se ha podido quitar. Inténtalo de nuevo.",
+    "status": "Estado",
+    "statuses": {
+      "valid": "Válida",
+      "suspended": "Suspendida",
+      "revoked": "Revocada"
+    },
+    "unchecked": {
+      "pending": "Comprobando…",
+      "noList": "No se puede comprobar",
+      "unreachable": "Sin comprobar: no se puede contactar con el emisor",
+      "untrusted": "Sin comprobar: no se puede confiar en la lista de su emisor",
+      "signature": "No válida: el DID de su emisor ya no lista la clave que la firmó"
+    },
+    "checkedAt": "Comprobado el {when}",
+    "checkedOffline": "Según lo comprobado el {when}: ahora no se puede contactar con el emisor",
+    "notice": {
+      "suspended": "{issuer} ha suspendido esta credencial: los verificadores la rechazan por ahora y este wallet no la ofrece.",
+      "revoked": "{issuer} ha revocado esta credencial: los verificadores ya no la aceptan y este wallet no la ofrece."
+    }
   },
   "profile": {
     "changePhoto": "Cambiar foto",
@@ -165,10 +218,6 @@
   "settings": {
     "title": "Ajustes",
     "sections": {
-      "credentials": {
-        "title": "Credenciales",
-        "hint": "Lo que los emisores te han otorgado"
-      },
       "profile": {
         "title": "Perfil",
         "hint": "Tu foto y tu nombre"
@@ -289,37 +338,6 @@
       "check": "Buscar mensajes",
       "checking": "Buscando…",
       "disconnect": "Desconectar"
-    },
-    "credentials": {
-      "none": "Todavía no tienes credenciales. Solicita una en el catálogo de credenciales de un registro de Almena.",
-      "issuer": "La expide",
-      "validUntil": "Válida hasta",
-      "expired": "Caducó el",
-      "unreadable": "No se han podido leer las credenciales.",
-      "remove": "Quitar de esta cartera",
-      "removeQuestion": "¿Quitarla para siempre? No queda ninguna copia: solo {issuer} puede volver a concederla.",
-      "removeConfirm": "Quitar",
-      "removeKeep": "Conservarla",
-      "removeFailed": "No se ha podido quitar. Inténtalo de nuevo.",
-      "status": "Estado",
-      "statuses": {
-        "valid": "Válida",
-        "suspended": "Suspendida",
-        "revoked": "Revocada"
-      },
-      "unchecked": {
-        "pending": "Comprobando…",
-        "noList": "No se puede comprobar",
-        "unreachable": "Sin comprobar: no se puede contactar con el emisor",
-        "untrusted": "Sin comprobar: no se puede confiar en la lista de su emisor",
-        "signature": "No válida: el DID de su emisor ya no lista la clave que la firmó"
-      },
-      "checkedAt": "Comprobado el {when}",
-      "checkedOffline": "Según lo comprobado el {when}: ahora no se puede contactar con el emisor",
-      "notice": {
-        "suspended": "{issuer} ha suspendido esta credencial: los verificadores la rechazan por ahora y este wallet no la ofrece.",
-        "revoked": "{issuer} ha revocado esta credencial: los verificadores ya no la aceptan y este wallet no la ofrece."
-      }
     },
     "backup": {
       "exportTitle": "Hacer una copia",
