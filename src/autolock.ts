@@ -36,8 +36,7 @@ function isAutoLock(value: unknown): value is AutoLock {
 
 function stored(): AutoLock {
   try {
-    const value = Number(window.localStorage.getItem(storageKey));
-    return isAutoLock(value) ? value : defaultAutoLock;
+    return readAutoLock(window.localStorage.getItem(storageKey));
   } catch {
     // Private modes and locked down webviews can refuse storage entirely.
     return defaultAutoLock;
@@ -61,6 +60,21 @@ export function useAutoLock(): {
   }, []);
 
   return { autoLock, setAutoLock };
+}
+
+/**
+ * How long is left before a wallet last used at `seen` locks, at `now`, for a
+ * length of `span` milliseconds — zero once it is due. What both the timer and
+ * the return to the screen ask; kept apart so it can be tested.
+ */
+export function idleLeft(seen: number, now: number, span: number): number {
+  return Math.max(seen + span - now, 0);
+}
+
+/** Whether the preference read back is one of the lengths offered. */
+export function readAutoLock(value: string | null): AutoLock {
+  const minutes = Number(value);
+  return isAutoLock(minutes) ? minutes : defaultAutoLock;
 }
 
 /**
@@ -115,17 +129,16 @@ export function useIdle(minutes: AutoLock, armed: boolean, away: () => void): ()
       return;
     }
 
-    const left = seen.current + span.current - Date.now();
     timer.current = window.setTimeout(() => {
       if (!counting.current) {
         return;
       }
-      if (Date.now() - seen.current >= span.current) {
+      if (idleLeft(seen.current, Date.now(), span.current) === 0) {
         latest.current();
       } else {
         arm();
       }
-    }, Math.max(left, 0));
+    }, idleLeft(seen.current, Date.now(), span.current));
   }, []);
 
   // The wallet is back where somebody can see it: the time decides, because the
@@ -134,7 +147,7 @@ export function useIdle(minutes: AutoLock, armed: boolean, away: () => void): ()
     if (!counting.current) {
       return;
     }
-    if (Date.now() - seen.current >= span.current) {
+    if (idleLeft(seen.current, Date.now(), span.current) === 0) {
       window.clearTimeout(timer.current);
       latest.current();
       return;

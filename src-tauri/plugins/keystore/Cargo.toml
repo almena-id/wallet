@@ -3,7 +3,7 @@ name = "almena-keystore"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "The Android Keystore, for Almena Wallet's vault: seals bytes under a key the device's secure hardware holds and never hands out."
+description = "The Android Keystore, for Almena Wallet's vault: seals bytes under a key the device's secure hardware holds and never hands out, and under a second one only a strong biometric unlocks."
 publish = false
 # Tells tauri-build where the Android library is, so it is part of the app's
 # Gradle project however often `gen/android` is regenerated.
@@ -12,6 +12,7 @@ links = "almena-keystore"
 [dependencies]
 tauri = { version = "2", default-features = false }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 base64 = "0.22"
 
 [build-dependencies]

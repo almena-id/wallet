@@ -5,6 +5,7 @@ import { BackspaceIcon, BiometricIcon } from "../components/icons";
 import { useTranslations } from "../i18n";
 import { fill } from "../i18n/format";
 import { BackButton } from "../components/BackButton";
+import { useShield } from "../shield";
 
 type PinScreenProps = {
   title: string;
@@ -19,6 +20,8 @@ type PinScreenProps = {
   onBack?: () => void;
   /** Offered next to the keypad, for a wallet that unlocks with a face. */
   onBiometrics?: () => void;
+  /** What that button is read out as, named as this device's system names it. */
+  biometricsLabel?: string;
   /** The way out for somebody who does not remember the code. */
   footer?: React.ReactNode;
   /**
@@ -55,6 +58,11 @@ const SETTLE_MS = 220;
  * Its own keys rather than the system keyboard: a PIN is digits and only
  * digits, and a numeric keyboard on a phone is still a keyboard with everything
  * else one tap away.
+ *
+ * Every PIN is typed here — choosing one, repeating it, changing it, arming
+ * biometrics and the lock — so this is where the screen is kept out of
+ * screenshots and the app switcher (`useShield`): the dots say how far along a
+ * code is, and a recording of the keys says what it is.
  */
 export function PinScreen({
   title,
@@ -64,12 +72,14 @@ export function PinScreen({
   onComplete,
   onBack,
   onBiometrics,
+  biometricsLabel,
   footer,
   busy = false,
   busyLabel,
 }: PinScreenProps) {
   const t = useTranslations();
   const [code, setCode] = useState("");
+  useShield();
 
   // Held in a ref rather than watched: the callback is rebuilt on every render
   // by most of the screens that use this one, and an effect that depended on it
@@ -185,7 +195,7 @@ export function PinScreen({
             type="button"
             className="pin__key pin__key--quiet"
             onClick={onBiometrics}
-            aria-label={t.pin.useBiometrics}
+            aria-label={biometricsLabel ?? t.pin.useBiometrics}
           >
             <BiometricIcon />
           </button>

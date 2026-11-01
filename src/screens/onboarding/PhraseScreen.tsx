@@ -4,6 +4,7 @@ import { useI18n } from "../../i18n";
 import { plural } from "../../i18n/format";
 import { PHRASE_LENGTHS, type PhraseLength } from "../../identity";
 import { BackButton } from "../../components/BackButton";
+import { useShield } from "../../shield";
 
 type PhraseScreenProps = {
   words: string[];
@@ -22,6 +23,12 @@ type PhraseScreenProps = {
  * The words, and a door that only opens deliberately: the checkbox is the
  * difference between having read the warning and having answered it.
  *
+ * **Written down, never copied.** There is no way to put the words on the
+ * clipboard: from there they reach the clipboard's history, other devices
+ * through the system's shared clipboard and any app that reads it. For the
+ * same reason the screen is kept out of screenshots and the app switcher while
+ * it is shown (`useShield`).
+ *
  * **Everything on this screen counts the words in front of somebody**, not the
  * length they last tapped. The two are the same except for the moment a new
  * phrase is being made, and during that moment the wording that describes the
@@ -37,26 +44,15 @@ export function PhraseScreen({
   onContinue,
 }: PhraseScreenProps) {
   const { t, locale } = useI18n();
-  const [copied, setCopied] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
+  useShield();
 
   // New words are a new promise: whatever was ticked was ticked about the words
   // that are now gone. Choosing the other length lands here too, which is the
   // point — a longer phrase is not the one that was already written down.
   useEffect(() => {
     setAcknowledged(false);
-    setCopied(false);
   }, [words]);
-
-  async function copyPhrase() {
-    try {
-      await navigator.clipboard.writeText(words.join(" "));
-      setCopied(true);
-    } catch {
-      // A webview that refuses the clipboard leaves the words on screen, which
-      // is where they were always meant to be read from.
-    }
-  }
 
   const shown = words.length;
 
@@ -131,9 +127,6 @@ export function PhraseScreen({
           disabled={!acknowledged || busy}
         >
           {t.onboarding.phrase.continue}
-        </button>
-        <button type="button" className="button" onClick={copyPhrase} disabled={busy}>
-          {copied ? t.onboarding.phrase.copied : t.onboarding.phrase.copy}
         </button>
       </div>
     </div>

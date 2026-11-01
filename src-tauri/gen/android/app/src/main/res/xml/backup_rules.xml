@@ -6,4 +6,6 @@
 <full-backup-content>
     <exclude domain="root" path="vault.json" />
     <exclude domain="root" path="vault.json.writing" />
+    <exclude domain="root" path="vault.biometric" />
+    <exclude domain="root" path="vault.biometric.writing" />
 </full-backup-content>

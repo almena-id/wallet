@@ -23,8 +23,12 @@
     "credentials": "Tus credenciales",
     "refresh": "Volver a comprobar su estado",
     "emptyTitle": "Todavía no tienes credenciales",
-    "emptyHint": "Solicítala a un emisor en catalog.almena.id; llega aquí en cuanto te la conceda.",
-    "scan": "Escanear QR"
+    "emptyHint": "Solicítala a un emisor en catalog.almena.id. Este wallet no recibe aviso cuando se emite: vuelve allí para recogerla.",
+    "scan": "Escanear QR",
+    "backupTitle": "Guarda una copia",
+    "backupBody": "Hay una credencial nueva en este dispositivo que aún no está en ninguna copia. Tu frase recupera tu identidad, no tus credenciales: un archivo de copia sí. Guárdalo donde solo tú llegues.",
+    "backupNow": "Guardar una copia",
+    "backupLater": "Ahora no"
   },
   "credentials": {
     "category": "Credencial",
@@ -72,7 +76,10 @@
     "notice": {
       "suspended": "{issuer} ha suspendido esta credencial: los verificadores la rechazan por ahora y este wallet no la ofrece.",
       "revoked": "{issuer} ha revocado esta credencial: los verificadores ya no la aceptan y este wallet no la ofrece."
-    }
+    },
+    "presented": "Presentada",
+    "neverPresented": "Aún no se ha presentado a nadie. Cada vez que se presente se anotará aquí, solo en este dispositivo.",
+    "presentedUnverified": "sin comprobar"
   },
   "profile": {
     "changePhoto": "Cambiar foto",
@@ -202,7 +209,14 @@
       "verifier": "Verificador",
       "verifierDid": "Su DID",
       "asks": "Para",
-      "verifyNote": "Acepta solo si estás ante {verifier} y esperas que te lo pida."
+      "verifyNote": "Acepta solo si estás ante {verifier} y esperas que te lo pida.",
+      "choose": "Hay más de una que sirve: elige cuál se envía",
+      "verifierChecked": "Comprobado",
+      "verifierUnverified": "No se ha podido comprobar",
+      "verifierResolved": "Publicado por su organización",
+      "verifierTenant": "Su organización",
+      "verifierUnverifiedNote": "Este wallet no ha podido comprobar quién es este verificador: su nombre es solo lo que dice el registro. Acepta solo si estás ante él y esperas que te lo pida.",
+      "submitCollect": "Este wallet no recibe avisos de cómo va tu solicitud. Vuelve a catalog.almena.id para ver en qué punto está y, cuando se emita, para recoger tu credencial."
     }
   },
   "messages": {
@@ -224,7 +238,7 @@
       },
       "appearance": {
         "title": "Apariencia",
-        "hint": "El color que viste el wallet"
+        "hint": "Color, modo e idioma"
       },
       "notifications": {
         "title": "Notificaciones",
@@ -264,6 +278,11 @@
         "system": "Sistema",
         "dark": "Oscuro",
         "light": "Claro"
+      },
+      "language": {
+        "title": "Idioma",
+        "system": "Sistema",
+        "self": "Español"
       }
     },
     "notifications": {
@@ -309,7 +328,10 @@
       "startTitle": "Al arrancar",
       "startLabel": "Abrir al iniciar sesión",
       "startHint": "Se abre minimizada, y bloqueada hasta que entres",
-      "startError": "El sistema no ha permitido el cambio. Inténtalo otra vez."
+      "startError": "El sistema no ha permitido el cambio. Inténtalo otra vez.",
+      "phraseTitle": "Frase de recuperación",
+      "phraseLabel": "Comprobar tu frase de recuperación",
+      "phraseHint": "Asegúrate de que las palabras que apuntaste abren este wallet"
     },
     "profile": {
       "title": "Tu nombre",
@@ -376,8 +398,6 @@
         "other": "Estas {count} palabras son la identidad. Anótalas en este orden y guárdalas donde solo llegues tú."
       },
       "warning": "Nadie puede devolvértelas. Quien las tenga tiene la identidad, y perderlas es perderla.",
-      "copy": "Copiar la frase",
-      "copied": "Copiada",
       "acknowledge": {
         "other": "He anotado las {count} palabras y las tengo conmigo"
       },
@@ -407,7 +427,9 @@
       "identity_word_count": "Una frase tiene doce palabras o veinticuatro.",
       "identity_checksum": "Esas palabras no son una frase que este wallet haya producido. Revisa la ortografía y el orden.",
       "identity_no_draft": "No había ninguna frase que confirmar. Empieza de nuevo.",
-      "identity_unknown": "No se ha podido crear la identidad. Inténtalo otra vez."
+      "identity_unknown": "No se ha podido crear la identidad. Inténtalo otra vez.",
+      "identity_unconfirmed": "Confirma primero que eres tú y vuelve a escribir las palabras.",
+      "identity_locked": "El wallet está bloqueado. Desbloquéalo e inténtalo otra vez."
     },
     "protect": {
       "title": "Elige un PIN",
@@ -435,7 +457,11 @@
     "currentTitle": "Tu PIN actual",
     "currentSubtitle": "Se pide primero, para que nadie que encuentre el wallet abierto pueda cambiarlo.",
     "replaceIntro": "La identidad no se toca. Solo cambian los dígitos que la abren.",
-    "armSubtitle": "Tu PIN, una vez, y este dispositivo recibe una llave propia."
+    "armSubtitle": "Tu PIN, una vez, y este dispositivo recibe una llave propia.",
+    "sixOnly": "En este dispositivo un PIN tiene seis dígitos. La identidad se guarda donde otro programa que se ejecute como tú podría copiarla, y cuatro dígitos son muy pocos frente a alguien que los pruebe todos.",
+    "continue": "Continuar",
+    "lengthenTitle": "Un PIN más largo",
+    "lengthenIntro": "Cuatro dígitos ya no bastan en este dispositivo: la identidad se guarda donde otro programa que se ejecute como tú podría copiarla y probar todos los PIN. Elige seis dígitos para continuar. La identidad no cambia."
   },
   "vault": {
     "errors": {
@@ -456,7 +482,10 @@
       "vault_no_device_store": "Este dispositivo no puede guardar una llave propia, así que el PIN es la manera de entrar.",
       "vault_device_refused": "Este dispositivo no te ha reconocido. Inténtalo otra vez.",
       "vault_no_pin": "Este wallet se abre con el bloqueo del propio dispositivo, no con un PIN.",
-      "vault_no_passcode": "Este iPhone no tiene código, así que el wallet necesita un PIN propio."
+      "vault_no_passcode": "Este iPhone no tiene código, así que el wallet necesita un PIN propio.",
+      "vault_pin_too_short": "En este dispositivo un PIN tiene seis dígitos.",
+      "vault_unconfirmed": "No se ha retirado nada: hay que confirmar el cierre de sesión.",
+      "vault_device_changed": "Las huellas, las caras o el inicio de sesión de este dispositivo han cambiado, así que ya no abren el wallet y se han desactivado. Usa tu PIN y, si quieres, vuelve a activarlos en Seguridad."
     },
     "problem": {
       "title": "Este dispositivo tiene una identidad que no puede abrir",
@@ -606,6 +635,46 @@
       "call_media": "No se ha podido usar el micrófono o la cámara. Revisa los permisos.",
       "call_relay": "No se ha podido llegar al relé de llamadas.",
       "call_failed": "La llamada no ha podido conectar."
+    }
+  },
+  "biometrics": {
+    "android": {
+      "label": "Huella o cara",
+      "use": "Usar tu huella o tu cara"
+    },
+    "windows": {
+      "label": "Windows Hello",
+      "use": "Usar Windows Hello"
+    },
+    "changedHint": "Desactivado: ha cambiado aquello con lo que este dispositivo te reconoce",
+    "prompt": {
+      "unlockTitle": "Desbloquear Almena Wallet",
+      "unlockSubtitle": "Con tu huella o tu cara",
+      "unlockCancel": "Usar PIN",
+      "armTitle": "Activar huella o cara",
+      "armSubtitle": "Para que abra el wallet a partir de ahora",
+      "armCancel": "Cancelar",
+      "confirmTitle": "Confirma que eres tú",
+      "confirmSubtitle": "Para comprobar tu frase de recuperación",
+      "confirmCancel": "Usar PIN"
+    }
+  },
+  "phraseCheck": {
+    "title": "Comprobar tu frase de recuperación",
+    "pinSubtitle": "Primero tu PIN, para que nadie que encuentre el wallet abierto pueda probar palabras con él.",
+    "deviceSubtitle": "Confirma primero que eres tú, para que nadie que encuentre el wallet abierto pueda probar palabras con él.",
+    "confirm": "Confirmar que eres tú",
+    "confirming": "Esperando a tu dispositivo",
+    "intro": "Tu frase no se puede volver a mostrar: este wallet nunca la guardó. Escribe las palabras que apuntaste, en orden, y el wallet te dirá si son las de este wallet. Se comprueban en este dispositivo y no se guardan.",
+    "label": "Tu frase",
+    "placeholder": "palabra uno, palabra dos, …",
+    "submit": "Comprobar",
+    "checking": "Comprobando tus palabras",
+    "match": "Estas palabras son la frase de este wallet. Guárdalas donde solo tú puedas encontrarlas.",
+    "mismatch": "Estas palabras no son la frase de este wallet. Revisa la ortografía y el orden con lo que apuntaste. Si siguen sin coincidir, protege este dispositivo: sin las palabras correctas nada recupera este wallet si se pierde.",
+    "done": "Hecho",
+    "errors": {
+      "unknown": "No se han podido comprobar las palabras. Inténtalo otra vez."
     }
   }
 }

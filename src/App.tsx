@@ -7,6 +7,7 @@ import { useI18n } from "./i18n";
 import { plural } from "./i18n/format";
 import { useIdle } from "./autolock";
 import { useBackdrop } from "./backdrop";
+import { biometricPrompt, biometricWords, lockNote, offersBiometrics } from "./biometrics";
 import { invitationKind, useDeepLinks } from "./links";
 import { useLive } from "./live";
 import { useRung, useRungCalls } from "./ring";
@@ -30,6 +31,7 @@ import { HomeTab } from "./screens/HomeTab";
 import { LinkSheet, type LinkOrigin } from "./screens/LinkSheet";
 import { LogoutScreen } from "./screens/LogoutScreen";
 import { MessagesTab } from "./screens/MessagesTab";
+import { PinChange } from "./screens/PinChange";
 import { PinScreen } from "./screens/PinScreen";
 import { ProfileScreen } from "./screens/ProfileScreen";
 import { ScanScreen } from "./screens/ScanScreen";
@@ -71,6 +73,11 @@ export default function App() {
   // device — has the bar step aside: under a keypad it is a band of nothing, and
   // a stray tap there is a tap past the question.
   const [keypad, setKeypad] = useState(false);
+  // **A PIN too short for where the record is kept** (`VaultStatus.lengthen`)
+  // is replaced before the wallet is used. The digits that just unlocked it are
+  // held for that one screen, so they are not asked for twice, and let go as
+  // soon as it is done — or the wallet locks.
+  const [unlockedWith, setUnlockedWith] = useState<string | null>(null);
 
   // **Links and codes from outside go to a sheet that asks, never straight to
   // an action.** An `almena://` link that opened the wallet, or a code the
@@ -109,6 +116,7 @@ export default function App() {
   // identity, and coming back opens the record again with a PIN or a face.
   // Live delivery stops with it, since it follows `identity`.
   const lockNow = useCallback(() => {
+    setUnlockedWith(null);
     setIdentity((open) => {
       if (open) {
         void forgetIdentity();
@@ -231,6 +239,7 @@ export default function App() {
         <main className="app__view app__view--plain">
           <Onboarding
             deviceLock={vault.status.deviceLock}
+            minDigits={vault.status.minDigits}
             onReady={(made) => {
               setIdentity(made);
               void vault.refresh();
@@ -282,17 +291,24 @@ export default function App() {
             busy={unlockBusy}
             busyLabel={t.pin.checking}
             onBiometrics={
-              vault.status.deviceKey
+              offersBiometrics(vault.status)
                 ? () => {
-                    void unlock(openVaultWithDevice);
+                    void unlock(() => openVaultWithDevice(biometricPrompt(t, "unlock")));
                   }
                 : undefined
             }
+            biometricsLabel={biometricWords(t, vault.status.biometrics).use}
             onComplete={(code) => {
+              setUnlockedWith(vault.status.lengthen ? code : null);
               void unlock(() => openVault(code));
             }}
             footer={
               <>
+                {/* A fingerprint or face enrolled since biometrics were turned
+                    on, or Windows Hello reset: the button is gone, and why. */}
+                {lockNote(t, vault.status) ? (
+                  <p className="card__note">{lockNote(t, vault.status)}</p>
+                ) : null}
                 {/* Said only once it is worth saying. A wallet that counts down
                     from ten at every launch reads as broken; one that says
                     nothing lets somebody destroy an identity by guessing. */}
@@ -312,6 +328,31 @@ export default function App() {
             }
           />
         </main>
+      </div>
+    );
+  }
+
+  // Open, with a PIN this device no longer takes: a longer one first. It cannot
+  // be put off — a wallet that could be told "later" for ever would keep the
+  // four digits for ever — and it costs one screen, once.
+  if (vault.status.pin && vault.status.lengthen) {
+    return (
+      <div className="app">
+        <main className="app__view app__view--plain">
+          <PinChange
+            vault={vault}
+            digits={vault.status.digits ?? 4}
+            known={unlockedWith}
+            title={t.pin.lengthenTitle}
+            intro={t.pin.lengthenIntro}
+            onChanged={(status) => {
+              setUnlockedWith(null);
+              vault.adopt(status);
+            }}
+          />
+        </main>
+        {/* A call that rings meanwhile is still answered. */}
+        {call ? <CallScreen view={call} /> : null}
       </div>
     );
   }

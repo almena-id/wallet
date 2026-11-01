@@ -6,10 +6,13 @@
  * is also the shape every other catalogue is checked against — a key missing
  * from a translation resolves to English rather than to a blank or a raw key.
  *
- * **The language is the system's.** There is no switch in the wallet: somebody
- * who reads in Spanish has already said so, once, to their phone or their
- * computer, and an application that asks again is an application that can be
- * left saying something they did not choose.
+ * **The language is the system's unless the person picks one.** Somebody who
+ * reads in Spanish has usually said so already, once, to their phone or their
+ * computer, so `system` is the default and is not a language: it is the
+ * absence of a choice, which leaves the system to answer. Profile → Appearance
+ * lets a person read the wallet in another of its languages all the same — a
+ * shared device, or a system language the wallet does not carry — kept on this
+ * device like the other preferences (`almena.language`).
  */
 
 import en from "./messages/en.json";
@@ -77,11 +80,58 @@ export function isLocale(value: string | null | undefined): boolean {
   return typeof value === "string" && locales.includes(value);
 }
 
-/** The locale to read in: whatever the system asks for, or the fallback. */
-export function resolveLocale(): string {
+/** What the person chose: one of the catalogues, or `system`. */
+export type Language = "system" | string;
+
+export const systemLanguage: Language = "system";
+
+const storageKey = "almena.language";
+
+/** A stored choice, if it is still one this wallet can honour. */
+export function isLanguage(value: unknown): value is Language {
+  return value === systemLanguage || (typeof value === "string" && isLocale(value));
+}
+
+/** The choice kept on this device; `system` when there is none, or it is gone. */
+export function storedLanguage(): Language {
+  try {
+    const value = window.localStorage.getItem(storageKey);
+    return isLanguage(value) ? value : systemLanguage;
+  } catch {
+    // Private modes and locked down webviews can refuse storage entirely.
+    return systemLanguage;
+  }
+}
+
+/** Keeps the choice on this device; losing it is acceptable, refusing it is not. */
+export function storeLanguage(language: Language): void {
+  try {
+    window.localStorage.setItem(storageKey, language);
+  } catch {
+    // The choice still applies until the wallet is closed.
+  }
+}
+
+/** The languages the system asks for, most wanted first. */
+function systemPreferred(): string[] {
   const preferred = typeof navigator === "undefined" ? [] : [...(navigator.languages ?? [])];
   if (typeof navigator !== "undefined" && navigator.language) {
     preferred.push(navigator.language);
+  }
+  return preferred;
+}
+
+/**
+ * The locale to read in: the one the person chose, else whatever the system
+ * asks for, else the fallback. `preferred` is the system's list, handed in so
+ * that the choice can be tested without a browser.
+ */
+export function resolveLocale(
+  language: Language = systemLanguage,
+  preferred: readonly string[] = systemPreferred(),
+): string {
+  if (language !== systemLanguage && isLocale(language)) {
+    return language;
   }
 
   for (const tag of preferred) {

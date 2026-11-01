@@ -49,6 +49,19 @@ const DELIVERY_LIMIT: u64 = 50;
 /// How long a mediator gets to answer before it counts as unreachable.
 const TIMEOUT: Duration = Duration::from_secs(20);
 
+/// The largest answer read from a mediator. The biggest is a `delivery`: at
+/// most [`DELIVERY_LIMIT`] messages, but never more than a mediation's queue
+/// holds — 10 MiB by default (the mediator's SPEC.md §11) —, each base64 in an
+/// attachment and the whole sealed in a JWE, base64 again: about 18 MiB. A
+/// mediator that sends more is not read to the end, so it cannot fill this
+/// device's memory.
+const ANSWER_BYTES: usize = 24 * 1024 * 1024;
+
+/// The largest DID document read for a `did:web`: the mediator holds the ones
+/// it fetches to the same 1 MiB (its SPEC.md §6.8), and a mediator's is a few
+/// kilobytes.
+const DOCUMENT_BYTES: usize = 1024 * 1024;
+
 /// A mediator, as far as the wallet needs to know one before talking to it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Target {
@@ -181,10 +194,7 @@ impl Mediator {
         if response.status() != reqwest::StatusCode::OK {
             return Err(MessagingError::MediatorUnreachable);
         }
-        let body = response
-            .text()
-            .await
-            .map_err(|_| MessagingError::MediatorUnreachable)?;
+        let body = answer(response).await?;
 
         self.open(inbox, &body).await
     }
@@ -332,6 +342,14 @@ impl Mediator {
     }
 }
 
+/// A mediator's answer as text, read under [`ANSWER_BYTES`].
+async fn answer(response: reqwest::Response) -> Result<String, MessagingError> {
+    let body = crate::registry::capped(response, ANSWER_BYTES)
+        .await
+        .ok_or(MessagingError::MediatorUnreachable)?;
+    String::from_utf8(body).map_err(|_| MessagingError::MediatorUnreachable)
+}
+
 /// What a `delivery` carries, as `(queue id, envelope)` pairs; nothing for any
 /// other message — an empty queue is answered with a `status`.
 pub fn delivered(reply: Message) -> Vec<(String, String)> {
@@ -386,10 +404,11 @@ async fn fetch(did: &str) -> Result<DidDocument, MessagingError> {
     if !response.status().is_success() {
         return Err(MessagingError::MediatorUnreachable);
     }
-    let json: Value = response
-        .json()
+    let body = crate::registry::capped(response, DOCUMENT_BYTES)
         .await
-        .map_err(|_| MessagingError::MediatorUnreachable)?;
+        .ok_or(MessagingError::MediatorUnreachable)?;
+    let json: Value =
+        serde_json::from_slice(&body).map_err(|_| MessagingError::MediatorUnreachable)?;
     let document =
         DidDocument::from_json(&json).map_err(|_| MessagingError::MediatorUnreachable)?;
     // A document served for another DID is not that DID's, whatever it says
@@ -678,6 +697,62 @@ mod tests {
             assert_eq!(
                 transport("https://localhost:8080/.well-known/did.json").expect("local"),
                 "http://localhost:8080/.well-known/did.json"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_answer_too_large_is_not_read() {
+        use crate::registry::serve_once;
+        let http = client().unwrap();
+        for chunked in [false, true] {
+            let small = serve_once(b"{\"protected\":\"\"}".to_vec(), chunked);
+            let response = http.get(small).send().await.unwrap();
+            assert_eq!(answer(response).await.unwrap(), "{\"protected\":\"\"}");
+
+            let large = serve_once(vec![b' '; ANSWER_BYTES + 1], chunked);
+            let response = http.get(large).send().await.unwrap();
+            assert!(
+                matches!(
+                    answer(response).await,
+                    Err(MessagingError::MediatorUnreachable)
+                ),
+                "chunked: {chunked}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_did_document_too_large_is_not_read() {
+        if !cfg!(debug_assertions) {
+            // Plain HTTP to this machine is a debug build's alone.
+            return;
+        }
+        let did = |port: u16| format!("did:web:127.0.0.1%3A{port}");
+        let at = |address: String| did(Url::parse(&address).unwrap().port().unwrap());
+        for chunked in [false, true] {
+            let small = crate::registry::serve(
+                move |port| json!({"id": did(port)}).to_string().into_bytes(),
+                chunked,
+            );
+            let small = at(small);
+            assert_eq!(fetch(&small).await.expect("read").id, small);
+
+            let large = crate::registry::serve(
+                move |port| {
+                    let padding = " ".repeat(DOCUMENT_BYTES);
+                    json!({"id": did(port), "padding": padding})
+                        .to_string()
+                        .into_bytes()
+                },
+                chunked,
+            );
+            assert!(
+                matches!(
+                    fetch(&at(large)).await,
+                    Err(MessagingError::MediatorUnreachable)
+                ),
+                "chunked: {chunked}"
             );
         }
     }

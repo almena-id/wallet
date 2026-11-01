@@ -1,8 +1,9 @@
 import { useState } from "react";
 
 import { autoLockMinutes, type AutoLock } from "../../autolock";
+import { biometricsHint, biometricWords } from "../../biometrics";
 import { useAutostart } from "../../autostart";
-import { BiometricIcon, KeypadIcon, PowerIcon } from "../../components/icons";
+import { BadgeCheckIcon, BiometricIcon, KeypadIcon, PowerIcon } from "../../components/icons";
 import { ChevronRow, ToggleRow } from "../../components/rows";
 import { useI18n } from "../../i18n";
 import { fill, plural } from "../../i18n/format";
@@ -18,6 +19,8 @@ type SecuritySettingsProps = {
   onChangePin: () => void;
   /** Opens the screen that asks for the PIN before the device is given a key. */
   onArmDevice: () => void;
+  /** Opens the screen where the holder checks the words they wrote down. */
+  onCheckPhrase: () => void;
   /** Opens the screen that explains what signing out costs. */
   onSignOut: () => void;
 };
@@ -28,6 +31,7 @@ export function SecuritySettings({
   onAutoLockChange,
   onChangePin,
   onArmDevice,
+  onCheckPhrase,
   onSignOut,
 }: SecuritySettingsProps) {
   const { locale, t } = useI18n();
@@ -75,15 +79,8 @@ export function SecuritySettings({
 
             <ToggleRow
               icon={<BiometricIcon />}
-              label={t.settings.security.biometricsLabel}
-              hint={
-                // One answer for every way this can be off — no sensor on this Mac,
-                // a build the system will not give a protected keychain to, a
-                // platform whose store would hand the key to anybody. They are the
-                // same fact to the person reading the row: this device will not do
-                // it. Which of the three it is belongs in the log, not here.
-                status.deviceUnlock ? undefined : t.settings.security.biometricsUnavailable
-              }
+              label={biometricWords(t, status.biometrics).label}
+              hint={biometricsHint(t, status)}
               on={status.deviceKey}
               disabled={!status.deviceUnlock}
               // Arming hands the platform a key, so it costs the PIN and happens on
@@ -142,6 +139,18 @@ export function SecuritySettings({
         </dl>
 
         {error ? <p className="card__note card__note--warning">{error}</p> : null}
+      </section>
+
+      <section className="card" aria-labelledby="security-phrase">
+        <h2 className="card__title" id="security-phrase">
+          {t.settings.security.phraseTitle}
+        </h2>
+        <ChevronRow
+          icon={<BadgeCheckIcon />}
+          label={t.settings.security.phraseLabel}
+          hint={t.settings.security.phraseHint}
+          onClick={onCheckPhrase}
+        />
       </section>
 
       {desktop ? (

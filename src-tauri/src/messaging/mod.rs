@@ -845,6 +845,7 @@ fn forget<R: Runtime>(app: &tauri::AppHandle<R>) {
     state::clear(app);
     conversation::clear(app);
     crate::credentials::clear(app);
+    crate::presented::clear(app);
     photo::clear(app);
 }
 

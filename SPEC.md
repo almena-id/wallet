@@ -19,6 +19,7 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT and MAY are to be interpreted a
 | [JSEP] | [RFC 8829][rfc8829], JavaScript Session Establishment Protocol | Offers and answers as SDP. |
 | [ICE] | [RFC 8445][rfc8445] | Connectivity; here, relayed candidates only. |
 | [TURN] | [RFC 8656][rfc8656] | The relay every call goes through. |
+| [ICE SDP] | [RFC 8839][rfc8839] | The `a=candidate` grammar: its type, `raddr` and `rport`. |
 | [Mediator] | The Almena Mediator Specification, §6.9 (TURN 1.0) | Where a wallet gets its TURN credentials. |
 
 ### 1.2 Informative
@@ -42,9 +43,10 @@ The PIURI is a fixed name, the same in every environment.
 ### 3.1 Relay only
 
 - A wallet MUST create its `RTCPeerConnection` with `iceTransportPolicy: "relay"` and the `ice_servers` its own mediator gave it (TURN 1.0, [Mediator] §6.9), asked for before each call.
-- It MUST NOT put a candidate other than `typ relay` in the SDP it sends, and MUST ignore any other in the SDP it receives.
+- It MUST NOT put a candidate other than `typ relay` in the SDP it sends, and MUST ignore any other in the SDP it receives. The type is the candidate's type field (the eighth field of the `a=candidate` line, after `typ`), not the words found elsewhere in the line.
+- In a relayed candidate it sends it MUST write `raddr` as `0.0.0.0` and `rport` as `0`, as browsers do for a candidate whose address they hide: they are where the relay was reached from — the server-reflexive, public address of the device — and ICE does not use them to connect ([RFC 8839][rfc8839] §5.1). It MUST do the same to what it receives before the SDP reaches its `RTCPeerConnection`.
 
-So neither wallet ever learns the other's IP address: each sees only the other's relay. Each wallet's own address is seen only by its own mediator's TURN server.
+So neither wallet ever learns the other's IP address: each sees only the other's relay, never even as a related address. Each wallet's own address is seen only by its own mediator's TURN server.
 
 ### 3.2 Messages
 
@@ -113,5 +115,6 @@ An unknown `reason` is read as `ended`. A `hangup` or `answer` for a call that i
 [rfc8829]: https://www.rfc-editor.org/rfc/rfc8829
 [rfc8445]: https://www.rfc-editor.org/rfc/rfc8445
 [rfc8656]: https://www.rfc-editor.org/rfc/rfc8656
+[rfc8839]: https://www.rfc-editor.org/rfc/rfc8839
 [rfc8827]: https://www.rfc-editor.org/rfc/rfc8827
 [rfc5763]: https://www.rfc-editor.org/rfc/rfc5763

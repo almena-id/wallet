@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useI18n } from "../../i18n";
 import { fill, plural } from "../../i18n/format";
 import { BackButton } from "../../components/BackButton";
+import { useShield } from "../../shield";
 
 type ConfirmPhraseScreenProps = {
   words: string[];
@@ -64,6 +65,8 @@ export function ConfirmPhraseScreen({
   onFailed,
 }: ConfirmPhraseScreenProps) {
   const { t, locale } = useI18n();
+  // The choices are the phrase's own words, in their positions.
+  useShield();
   const asked = useMemo(() => rounds(words), [words]);
   const [round, setRound] = useState(0);
 

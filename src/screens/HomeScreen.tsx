@@ -17,6 +17,13 @@ type HomeScreenProps = {
   onOpen: (id: string) => void;
   /** Opens the scanner; absent where there is none. */
   onScan?: () => void;
+  /** The reminder to back up, while a credential arrived that no backup carries. */
+  backup?: {
+    busy: boolean;
+    error: string | null;
+    onBackUp: () => void;
+    onDismiss: () => void;
+  };
 };
 
 /**
@@ -24,7 +31,7 @@ type HomeScreenProps = {
  * each with how it stands — one under the other, two to a row on a wide
  * window. With nothing held, a drawing and where credentials come from.
  */
-export function HomeScreen({ held, failed, checking, onCheck, onOpen, onScan }: HomeScreenProps) {
+export function HomeScreen({ held, failed, checking, onCheck, onOpen, onScan, backup }: HomeScreenProps) {
   const { t, locale } = useI18n();
   const copy = t.credentials;
   const any = held !== null && held.length > 0;
@@ -51,6 +58,27 @@ export function HomeScreen({ held, failed, checking, onCheck, onOpen, onScan }: 
       </header>
 
       {failed ? <p className="card__note card__note--warning">{copy.unreadable}</p> : null}
+
+      {backup ? (
+        <section className="card" aria-label={t.home.backupTitle}>
+          <h2 className="card__title">{t.home.backupTitle}</h2>
+          <p className="card__body">{t.home.backupBody}</p>
+          {backup.error ? <p className="card__note card__note--warning">{backup.error}</p> : null}
+          <div className="button-row">
+            <button
+              type="button"
+              className="button button--primary"
+              disabled={backup.busy}
+              onClick={backup.onBackUp}
+            >
+              {t.home.backupNow}
+            </button>
+            <button type="button" className="button" disabled={backup.busy} onClick={backup.onDismiss}>
+              {t.home.backupLater}
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       {held === null ? null : any ? (
         <section className="credential-grid" aria-label={t.home.credentials}>

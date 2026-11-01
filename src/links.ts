@@ -112,31 +112,73 @@ export type RegistryRequest = {
     /** `present`: how many credentials are asked for. */
     asked: number;
     /** `present`: what this wallet would present; only these claims go. */
-    presenting: {
-      credential: Record<string, string>;
-      issuer: string;
-      claims: { name: string; value: string }[];
-    }[];
+    presenting: Presenting[];
     /** `present`: every credential the form requires is among them. */
     complete: boolean;
   } | null;
   /** `verify`: a verifier asking this wallet to present credentials. */
   verifying: {
+    /** Its name as the registry gives it: no document it signed carries one. */
     verifier: string;
     verifierDid: string;
+    /**
+     * Whether the wallet checked it by itself: its `did:webvh` and its
+     * tenant's resolve on the registry asked, their logs signed by the
+     * tenant's own keys. False when anything did not hold or was unreachable.
+     */
+    verified: boolean;
+    /** Its tenant's DID, once that resolved. */
+    tenant: string | null;
+    /** The domains the tenant's document links to it. */
+    domains: string[];
     /** What it asks for: its form's name, by language. */
     form: Record<string, string>;
     asked: number;
     /** What this wallet would present; only these claims go. */
-    presenting: {
-      credential: Record<string, string>;
-      issuer: string;
-      claims: { name: string; value: string }[];
-    }[];
+    presenting: Presenting[];
     /** Every credential it requires is among them. */
     complete: boolean;
   } | null;
 };
+
+/**
+ * One credential set of a request this wallet can answer: every held
+ * credential that would do. The first goes unless another is picked.
+ */
+export type Presenting = {
+  /** Its place in the query: what a choice names it by. */
+  set: number;
+  options: PresentOption[];
+};
+
+export type PresentOption = {
+  /** The held credential's id. */
+  id: string;
+  credential: Record<string, string>;
+  issuer: string;
+  issuedAt: number;
+  /** Only these claims of it go. */
+  claims: { name: string; value: string }[];
+};
+
+/** Which credential the holder picked, by set; a set left out sends its first. */
+export type PresentChoice = Record<number, string>;
+
+/** The option a set sends under `choice`: the one picked, else its first. */
+export function pickedOption(presenting: Presenting, choice: PresentChoice): PresentOption {
+  return presenting.options.find((option) => option.id === choice[presenting.set]) ?? presenting.options[0];
+}
+
+/** What Accept sends of a choice: only the sets that had one to make. */
+export function choiceToSend(presenting: Presenting[], choice: PresentChoice): PresentChoice {
+  const sent: PresentChoice = {};
+  for (const one of presenting) {
+    if (one.options.length > 1) {
+      sent[one.set] = pickedOption(one, choice).id;
+    }
+  }
+  return sent;
+}
 
 export type RegistryErrorCode =
   | "registry_locked"
@@ -154,9 +196,9 @@ export function registryRequest(input: string): Promise<RegistryRequest> {
   return invoke<RegistryRequest>("registry_request", { input });
 }
 
-/** Answers the request: what Accept does. */
-export function registryAnswer(input: string): Promise<void> {
-  return invoke<void>("registry_answer", { input });
+/** Answers the request: what Accept does. To present, `choice` is what the holder picked. */
+export function registryAnswer(input: string, choice?: PresentChoice): Promise<void> {
+  return invoke<void>("registry_answer", { input, choice: choice ?? null });
 }
 
 export function registryErrorCode(error: unknown): RegistryErrorCode {

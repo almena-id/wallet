@@ -12,8 +12,8 @@
 //!
 //! **Restoring adds, it never takes away.** What the device already holds wins
 //! over what the file says, and what the file has that the device does not is
-//! added: a contact, a message, a credential, or a name or picture where there
-//! is none. Restoring the same file twice changes nothing the second time.
+//! added: a contact, a message, a credential, an entry of what was presented
+//! (`presented.rs`), or a name or picture where there is none. Restoring the same file twice changes nothing the second time.
 
 use std::collections::BTreeMap;
 use std::io::Write as _;
@@ -28,6 +28,7 @@ use super::state::{self, State as Messaging};
 use super::{photo, seed, Gate, MessagingError};
 use crate::credentials::{self, Credential};
 use crate::identity::Held;
+use crate::presented::{self, Presentation};
 
 const AAD: &[u8] = b"almena-wallet/backup/1";
 /// The extension the save sheet suggests and the open sheet filters by.
@@ -44,6 +45,9 @@ struct Contents {
     conversations: BTreeMap<String, Vec<Entry>>,
     credentials: Vec<Credential>,
     photo: Option<String>,
+    /// What was presented; absent from a file made before it was kept.
+    #[serde(default)]
+    presented: Vec<Presentation>,
 }
 
 /// What a restore added.
@@ -169,6 +173,7 @@ pub async fn backup_import<R: Runtime>(
         conversation::replace(&app, &seed, id, entries)?;
     }
     credentials::replace(&app, &seed, &into.credentials)?;
+    presented::replace(&app, &seed, into.presented.clone())?;
     if into.photo.is_some() {
         photo::write(&app, &seed, into.photo.as_deref())?;
     }
@@ -194,6 +199,7 @@ fn gather<R: Runtime>(
         conversations,
         credentials: credentials::all(app, seed)?,
         photo: photo::read(app, seed)?,
+        presented: presented::all(app, seed)?,
         messaging,
     })
 }
@@ -238,6 +244,13 @@ fn merged(mut into: Contents, from: Contents) -> (Contents, Restored) {
     if into.photo.is_none() {
         into.photo = from.photo;
     }
+    for entry in from.presented {
+        if !into.presented.iter().any(|kept| kept.id == entry.id) {
+            into.presented.push(entry);
+        }
+    }
+    into.presented
+        .sort_by_key(|kept| std::cmp::Reverse(kept.at));
     (into, restored)
 }
 
@@ -313,7 +326,25 @@ mod tests {
             conversations,
             credentials: Vec::new(),
             photo: None,
+            presented: Vec::new(),
         }
+    }
+
+    #[test]
+    fn what_was_presented_is_restored_once_and_newest_first() {
+        use crate::presented::tests::entry;
+        let mut ours = contents(&["a"], &[], None);
+        ours.presented = vec![entry("p1", 1)];
+        let mut file = contents(&["a"], &[], None);
+        file.presented = vec![entry("p2", 2), entry("p1", 1)];
+        let (into, _) = merged(ours, file);
+        let ids: Vec<&str> = into.presented.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, ["p2", "p1"]);
+        // A file from before the log was kept still opens.
+        let older = serde_json::json!({"made": 1, "messaging": serde_json::to_value(&into.messaging).unwrap(),
+            "conversations": {}, "credentials": [], "photo": null});
+        let read: Contents = serde_json::from_value(older).unwrap();
+        assert!(read.presented.is_empty());
     }
 
     #[test]

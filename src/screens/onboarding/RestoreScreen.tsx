@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { useTranslations } from "../../i18n";
 import { BackButton } from "../../components/BackButton";
+import { useShield } from "../../shield";
 
 type RestoreScreenProps = {
   /** Shown when the phrase was refused, already in the right language. */
@@ -14,6 +15,9 @@ type RestoreScreenProps = {
 /** Signing in: there is no account to look up, only a phrase to derive from. */
 export function RestoreScreen({ error, busy, onBack, onSubmit }: RestoreScreenProps) {
   const t = useTranslations();
+  // What is typed here is the phrase. Pasting it in stays possible: taking
+  // words off the clipboard puts nothing on it.
+  useShield();
   const [phrase, setPhrase] = useState("");
 
   return (

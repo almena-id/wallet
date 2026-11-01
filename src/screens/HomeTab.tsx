@@ -7,6 +7,15 @@ import {
   removeCredential,
   type HeldCredential,
 } from "../credentials";
+import {
+  backupDue,
+  backupErrorCode,
+  dismissBackupReminder,
+  exportBackup,
+  markBackedUp,
+  readBackupMark,
+} from "../backup";
+import { useTranslations } from "../i18n";
 import { useStack } from "../nav";
 import { CredentialScreen } from "./CredentialScreen";
 import { HomeScreen } from "./HomeScreen";
@@ -34,6 +43,24 @@ export function HomeTab({ onScan }: HomeTabProps) {
   const [held, setHeld] = useState<HeldCredential[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [checking, setChecking] = useState(false);
+  const t = useTranslations();
+  // A credential that no backup carries yet: suggested once, from here.
+  const [mark, setMark] = useState(readBackupMark);
+  const [backingUp, setBackingUp] = useState(false);
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const backUp = useCallback(async () => {
+    setBackingUp(true);
+    setBackupError(null);
+    try {
+      if (await exportBackup()) {
+        setMark(markBackedUp());
+      }
+    } catch (failure) {
+      setBackupError(t.settings.backup.errors[backupErrorCode(failure)]);
+    } finally {
+      setBackingUp(false);
+    }
+  }, [t]);
 
   const check = useCallback(() => {
     setChecking(true);
@@ -85,6 +112,16 @@ export function HomeTab({ onScan }: HomeTabProps) {
       onCheck={() => void check()}
       onOpen={(id) => push({ name: "credential", id })}
       onScan={onScan}
+      backup={
+        held !== null && backupDue(held, mark)
+          ? {
+              busy: backingUp,
+              error: backupError,
+              onBackUp: () => void backUp(),
+              onDismiss: () => setMark(dismissBackupReminder()),
+            }
+          : undefined
+      }
     />
   );
 }

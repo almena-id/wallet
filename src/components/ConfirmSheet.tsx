@@ -26,6 +26,8 @@ type ConfirmSheetProps = {
   confirmLabel: string;
   /** Accepting is not possible — the note says why. */
   confirmDisabled?: boolean;
+  /** A choice to make before accepting, drawn under the details. */
+  children?: ReactNode;
   busy?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -53,6 +55,7 @@ export function ConfirmSheet({
   busy = false,
   onCancel,
   onConfirm,
+  children,
 }: ConfirmSheetProps) {
   const titleId = useId();
   const cancel = useRef<HTMLButtonElement>(null);
@@ -124,14 +127,16 @@ export function ConfirmSheet({
 
         {details.length > 0 ? (
           <dl className="detail-list sheet__details">
-            {details.map((detail) => (
-              <div className="detail-list__row" key={detail.label}>
+            {details.map((detail, index) => (
+              <div className="detail-list__row" key={`${index}-${detail.label}`}>
                 <dt>{detail.label}</dt>
                 <dd className={detail.mono ? "detail-list__mono" : undefined}>{detail.value}</dd>
               </div>
             ))}
           </dl>
         ) : null}
+
+        {children}
 
         {note ? <p className="card__note">{note}</p> : null}
         {error ? <p className="card__note card__note--warning">{error}</p> : null}

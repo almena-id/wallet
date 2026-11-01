@@ -11,7 +11,13 @@ type PinChangeProps = {
   digits: number;
   /** Where the new status goes once it has been replaced. */
   onChanged: (status: VaultStatus) => void;
-  onBack: () => void;
+  /** Absent where the change cannot be put off: a PIN too short to keep. */
+  onBack?: () => void;
+  /** The current PIN when it was typed a moment ago to unlock, so it is not asked twice. */
+  known?: string | null;
+  /** What the screen choosing the new one is called and says, when not a plain change. */
+  title?: string;
+  intro?: string;
 };
 
 /**
@@ -22,9 +28,9 @@ type PinChangeProps = {
  * replaced by somebody walking past, and finding out at the end that the first
  * answer was wrong would mean typing the new one twice for nothing.
  */
-export function PinChange({ vault, digits, onChanged, onBack }: PinChangeProps) {
+export function PinChange({ vault, digits, onChanged, onBack, known, title, intro }: PinChangeProps) {
   const t = useTranslations();
-  const [current, setCurrent] = useState<string | null>(null);
+  const [current, setCurrent] = useState<string | null>(known ?? null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -63,7 +69,13 @@ export function PinChange({ vault, digits, onChanged, onBack }: PinChangeProps) 
       try {
         onChanged(await changeVaultPin(current, next));
       } catch (failure) {
-        setError(t.vault.errors[errorCode(failure)]);
+        const code = errorCode(failure);
+        setError(t.vault.errors[code]);
+        // A current PIN that turned out wrong — one handed over from the lock
+        // that the record no longer takes — is asked for again.
+        if (code === "vault_wrong_pin") {
+          setCurrent(null);
+        }
         void vault.refresh();
       } finally {
         setBusy(false);
@@ -91,12 +103,13 @@ export function PinChange({ vault, digits, onChanged, onBack }: PinChangeProps) 
 
   return (
     <PinSetup
-      title={t.settings.security.pinChange}
-      intro={t.pin.replaceIntro}
+      title={title ?? t.settings.security.pinChange}
+      intro={intro ?? t.pin.replaceIntro}
       error={error}
       busy={busy}
       busyLabel={t.pin.checking}
       onBack={onBack}
+      minDigits={vault.status.minDigits}
       onChosen={replace}
     />
   );

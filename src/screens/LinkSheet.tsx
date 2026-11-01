@@ -6,12 +6,16 @@ import { useI18n } from "../i18n";
 import { plural } from "../i18n/format";
 import { acceptInvitation } from "../contacts";
 import {
+  choiceToSend,
   invitationKind,
   linkDetails,
+  pickedOption,
   registryAnswer,
   registryErrorCode,
   registryRequest,
   type LinkDetails,
+  type PresentChoice,
+  type Presenting,
   type RegistryRequest,
 } from "../links";
 import { connectMediator, errorCode, mediatorName } from "../mediator";
@@ -52,6 +56,9 @@ export function LinkSheet({
   const [details, setDetails] = useState<Read | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Which credential goes, where several would answer: the first until the
+  // holder picks another.
+  const [choice, setChoice] = useState<PresentChoice>({});
 
   useEffect(() => {
     void (async () => {
@@ -102,6 +109,47 @@ export function LinkSheet({
 
   if (details.kind === "registry" || details.kind === "registryFailed") {
     const copy = t.confirm.registry;
+    // In this language, else English, else whatever it has.
+    const say = (texts: Record<string, string>) =>
+      texts[locale] ?? texts.en ?? Object.values(texts)[0] ?? "";
+    // What goes, set by set, as the holder has picked it.
+    const presentedRows = (presenting: Presenting[]): ConfirmDetail[] =>
+      presenting.flatMap((one) => {
+        const option = pickedOption(one, choice);
+        return [
+          { label: copy.presents, value: `${say(option.credential)} · ${option.issuer}` },
+          ...option.claims.map((claim) => ({ label: claim.name, value: claim.value })),
+        ];
+      });
+    // Where more than one credential would do, the holder picks which.
+    const picker = (presenting: Presenting[]) =>
+      presenting
+        .filter((one) => one.options.length > 1)
+        .map((one) => {
+          const picked = pickedOption(one, choice);
+          return (
+            <div className="sheet__choice" key={one.set} role="radiogroup" aria-label={copy.choose}>
+              <p className="card__subtitle">{copy.choose}</p>
+              {one.options.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={option.id === picked.id}
+                  className={
+                    option.id === picked.id ? "segmented__option is-active" : "segmented__option"
+                  }
+                  disabled={busy}
+                  onClick={() => setChoice((current) => ({ ...current, [one.set]: option.id }))}
+                >
+                  {`${say(option.credential)} · ${option.issuer} · ${new Date(
+                    option.issuedAt * 1000,
+                  ).toLocaleDateString(locale)}`}
+                </button>
+              ))}
+            </div>
+          );
+        });
     const request = details.kind === "registry" ? details.request : null;
     const failed =
       details.kind === "registryFailed"
@@ -109,22 +157,27 @@ export function LinkSheet({
         : null;
     const verifying = request?.verifying ?? null;
     if (request && verifying) {
-      const say = (texts: Record<string, string>) =>
-        texts[locale] ?? texts.en ?? Object.values(texts)[0] ?? "";
       // Nothing held answers it: it is shown, and cannot be accepted.
       const nothing = verifying.presenting.length === 0;
       const asks = say(verifying.form);
+      // The name is the registry's word; what the wallet checked itself is
+      // said beside it, and so is not having been able to.
       const rows: ConfirmDetail[] = [
         { label: copy.verifier, value: verifying.verifier },
+        {
+          label: copy.verifierChecked,
+          value: !verifying.verified
+            ? copy.verifierUnverified
+            : verifying.domains.length > 0
+              ? verifying.domains.join(", ")
+              : copy.verifierResolved,
+        },
         { label: copy.verifierDid, value: verifying.verifierDid, mono: true },
+        ...(verifying.tenant
+          ? [{ label: copy.verifierTenant, value: verifying.tenant, mono: true }]
+          : []),
         ...(asks ? [{ label: copy.asks, value: asks }] : []),
-        ...verifying.presenting.flatMap((one) => [
-          {
-            label: copy.presents,
-            value: `${say(one.credential)} · ${one.issuer}`,
-          },
-          ...one.claims.map((claim) => ({ label: claim.name, value: claim.value })),
-        ]),
+        ...presentedRows(verifying.presenting),
         { label: copy.portal, value: request.portal },
       ];
       return (
@@ -140,7 +193,9 @@ export function LinkSheet({
               ? copy.nothingHeld
               : !verifying.complete
                 ? copy.someMissing
-                : copy.verifyNote.replace("{verifier}", verifying.verifier)
+                : !verifying.verified
+                  ? copy.verifierUnverifiedNote
+                  : copy.verifyNote.replace("{verifier}", verifying.verifier)
           }
           confirmDisabled={nothing}
           confirmLabel={copy.present}
@@ -149,7 +204,7 @@ export function LinkSheet({
               setBusy(true);
               setError(null);
               try {
-                await registryAnswer(url);
+                await registryAnswer(url, choiceToSend(verifying.presenting, choice));
                 onClose();
               } catch (failure) {
                 setError(copy.errors[registryErrorCode(failure)]);
@@ -157,14 +212,13 @@ export function LinkSheet({
               }
             })()
           }
-        />
+        >
+          {picker(verifying.presenting)}
+        </ConfirmSheet>
       );
     }
     const applying = request?.applying ?? null;
     if (request && applying) {
-      // In this language, else English, else whatever it has.
-      const say = (texts: Record<string, string>) =>
-        texts[locale] ?? texts.en ?? Object.values(texts)[0] ?? "";
       const purpose = request.purpose as "pair" | "present" | "submit" | "receive";
       const presenting = purpose === "present";
       // Nothing held answers the request: it is shown, and cannot be accepted.
@@ -172,15 +226,7 @@ export function LinkSheet({
       const rows: ConfirmDetail[] = [
         { label: copy.issuer, value: applying.issuer },
         { label: copy.credential, value: say(applying.credential) },
-        ...(presenting
-          ? applying.presenting.flatMap((one) => [
-              {
-                label: copy.presents,
-                value: `${say(one.credential)} · ${one.issuer}`,
-              },
-              ...one.claims.map((claim) => ({ label: claim.name, value: claim.value })),
-            ])
-          : []),
+        ...(presenting ? presentedRows(applying.presenting) : []),
         ...(purpose === "submit"
           ? applying.answers.map((answer) => ({
               label: say(answer.label),
@@ -214,7 +260,10 @@ export function LinkSheet({
               setBusy(true);
               setError(null);
               try {
-                await registryAnswer(url);
+                await registryAnswer(
+                  url,
+                  presenting ? choiceToSend(applying.presenting, choice) : undefined,
+                );
                 onClose();
               } catch (failure) {
                 setError(copy.errors[registryErrorCode(failure)]);
@@ -222,7 +271,13 @@ export function LinkSheet({
               }
             })()
           }
-        />
+        >
+          {presenting ? picker(applying.presenting) : null}
+          {/* Issuers' notices are off since the vault went (no server-held
+              key sends them), so nothing here will say how it went: the
+              catalog is where the holder looks and collects. */}
+          {purpose === "submit" ? <p className="card__note">{copy.submitCollect}</p> : null}
+        </ConfirmSheet>
       );
     }
     const linking = request?.purpose === "link";

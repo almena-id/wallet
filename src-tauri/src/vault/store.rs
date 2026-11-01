@@ -113,7 +113,7 @@ const SEALED: &[u8] = b"almena-keystore/1\n";
 
 /// The service every item is filed under. The bundle identifier, so the items
 /// are recognisably this wallet's wherever somebody looks at them.
-const SERVICE: &str = "id.almena.wallet";
+pub(super) const SERVICE: &str = "id.almena.wallet";
 const RECORD: &str = "vault";
 #[cfg(any(target_os = "ios", target_os = "macos"))]
 const DEVICE_KEY: &str = "device-key";
@@ -207,6 +207,8 @@ pub fn init() {
 /// is being asked. What is being asked is whether putting them there means the
 /// operating system will stand in front of them, and the answer is no on a
 /// store that hands its items to whoever is logged in.
+// Only Apple's keeper reaches this: Android and Windows keep their own.
+#[cfg_attr(not(any(target_os = "ios", target_os = "macos")), allow(dead_code))]
 pub fn has_device_store() -> bool {
     #[cfg(target_os = "ios")]
     {
@@ -224,6 +226,34 @@ pub fn has_device_store() -> bool {
     {
         false
     }
+}
+
+/// **Whether a record kept at `home` is out of reach of the device's own user.**
+///
+/// Where it is, a copy cannot be taken off and tried against every PIN at
+/// leisure, so the ten attempts are the whole of a guesser's chances and four
+/// digits are enough. Where it is not, they are not: a process running as the
+/// same user reads the record — the Credential Manager, the Secret Service and
+/// the macOS file keychain hand their items over, a private file is a file —
+/// and Argon2id slows ten thousand guesses without stopping them.
+///
+/// - **iOS:** the Keychain item is `this-device-only`, sealed under keys the
+///   Secure Enclave holds, and no other app reaches it.
+/// - **Android:** only the file sealed under the Keystore (`Home::Keystore`).
+///   `None` — a record not written yet — is taken to be headed there, since the
+///   Keystore is what a write tries first; one that fell back to a plain file is
+///   asked for a longer PIN after its next opening.
+/// - **macOS, Windows, Linux:** never, signed or not. The record lives in the
+///   file keychain on every macOS build; only the device key reaches the data
+///   protection keychain.
+pub const fn hardware_bound(home: Option<Home>) -> bool {
+    if cfg!(target_os = "ios") {
+        return true;
+    }
+    if cfg!(target_os = "android") {
+        return !matches!(home, Some(Home::File | Home::Store));
+    }
+    false
 }
 
 /// Reads the record, from wherever it is.
@@ -263,7 +293,7 @@ pub fn read<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Option<(Vec<u8>, Ho
         // Written before the Keystore was used: sealed now, so the copy that
         // could be guessed at offline does not stay on the phone.
         let home = write(app, &bytes).unwrap_or(Home::File);
-        return Ok(Some((bytes, home)));
+        Ok(Some((bytes, home)))
     }
 
     #[cfg(not(target_os = "android"))]
@@ -355,14 +385,16 @@ pub(crate) fn create_private(path: &Path) -> std::io::Result<fs::File> {
     options.open(path)
 }
 
-/// Removes the record and the device key, wherever either of them is.
+/// Removes the record and the device key, wherever either of them is — the
+/// Keychain item, the Android Keystore key and its sealed copy, the Windows
+/// Hello key and its entry ([`super::presence`]).
 pub fn clear<R: Runtime>(app: &tauri::AppHandle<R>) {
+    use super::presence::Keeper as _;
+
     if let Ok(entry) = record_entry() {
         let _ = entry.delete_credential();
     }
-    if let Ok(entry) = device_entry() {
-        let _ = entry.delete_credential();
-    }
+    let _ = super::presence::system(app, None).remove();
     if let Ok(path) = file(app) {
         let _ = fs::remove_file(&path);
         let _ = fs::remove_file(path.with_extension("json.writing"));
@@ -383,6 +415,8 @@ pub fn clear<R: Runtime>(app: &tauri::AppHandle<R>) {
 /// [`VaultError::DeviceRefused`] when something is and the system would not
 /// hand it over — a face not recognised, a prompt dismissed. The two are told
 /// apart because only the first means the key is gone.
+// Only Apple's keeper reaches this: Android and Windows keep their own.
+#[cfg_attr(not(any(target_os = "ios", target_os = "macos")), allow(dead_code))]
 pub fn device_key() -> Result<Zeroizing<Vec<u8>>, VaultError> {
     let entry = device_entry().map_err(|_| VaultError::NoDeviceKey)?;
     match entry.get_secret() {
@@ -445,6 +479,8 @@ pub fn set_device_lock(_key: &[u8]) -> Result<(), VaultError> {
 /// # Errors
 ///
 /// [`VaultError::NoDeviceStore`] where there is nothing to put it in.
+// Only Apple's keeper reaches this: Android and Windows keep their own.
+#[cfg_attr(not(any(target_os = "ios", target_os = "macos")), allow(dead_code))]
 pub fn set_device_key(key: Option<&[u8]>) -> Result<(), VaultError> {
     let entry = device_entry().map_err(|_| VaultError::NoDeviceStore)?;
 
@@ -519,8 +555,76 @@ fn device_entry() -> keyring_core::Result<keyring_core::Entry> {
 }
 
 fn file<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, VaultError> {
+    beside(app, FILE)
+}
+
+/// A file next to the record, in the application's own directory.
+pub(super) fn beside<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    name: &str,
+) -> Result<PathBuf, VaultError> {
     app.path()
         .app_local_data_dir()
-        .map(|dir| dir.join(FILE))
+        .map(|dir| dir.join(name))
         .map_err(|_| VaultError::Storage)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn where_a_record_is_kept_has_a_name_the_interface_knows() {
+        assert_eq!(Home::Store.name(), "store");
+        assert_eq!(Home::File.name(), "file");
+        assert_eq!(Home::Keystore.name(), "keystore");
+    }
+
+    #[test]
+    fn a_plain_file_is_never_out_of_reach_and_a_computer_s_store_neither() {
+        assert!(!hardware_bound(Some(Home::File)));
+        if cfg!(any(target_os = "ios", target_os = "android")) {
+            assert!(hardware_bound(None));
+        } else {
+            assert!(!hardware_bound(None));
+            assert!(!hardware_bound(Some(Home::Store)));
+        }
+    }
+
+    #[test]
+    fn only_an_iphone_lets_its_own_lock_be_the_wallet_s() {
+        assert_eq!(device_lockable(), cfg!(target_os = "ios"));
+        if !cfg!(target_os = "ios") {
+            assert!(matches!(
+                set_device_lock(&[0; 32]),
+                Err(VaultError::NoDeviceStore)
+            ));
+        }
+    }
+
+    #[test]
+    fn a_private_file_is_this_user_s_alone_and_starts_empty() {
+        let directory = std::env::temp_dir().join(format!("almena-store-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("vault.json.writing");
+        // Left behind by an interrupted write, with a wider mode.
+        fs::write(&path, b"half a record").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        }
+
+        let mut handle = create_private(&path).unwrap();
+        handle.write_all(b"{}").unwrap();
+        drop(handle);
+        assert_eq!(fs::read(&path).unwrap(), b"{}");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+        let _ = fs::remove_dir_all(&directory);
+    }
 }

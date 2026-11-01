@@ -1,9 +1,10 @@
 //! The record: what the wallet writes down, and what it takes to read it back.
 //!
 //! **One secret, wrapped twice.** A random data key encrypts the seed; the data
-//! key itself is encrypted by a key the PIN derives. Where the platform has a
-//! secret store, a copy of the data key goes there too, so a face opens the
-//! wallet without the digits — see [`super::store`]. Either wrap opens it and
+//! key itself is encrypted by a key the PIN derives. Where the system keeps a
+//! key behind its own presence check, a copy of the data key goes there too, so
+//! a face or a finger opens the wallet without the digits — see
+//! [`super::presence`]. Either wrap opens it and
 //! neither is the wallet, which is what lets a failed sensor not be the end of
 //! an identity and a forgotten PIN not be either.
 //!
@@ -436,7 +437,7 @@ fn key_from(bytes: &[u8]) -> Option<Zeroizing<[u8; KEY_BYTES]>> {
     Some(Zeroizing::new(key))
 }
 
-fn random<const N: usize>() -> Result<[u8; N], VaultError> {
+pub(super) fn random<const N: usize>() -> Result<[u8; N], VaultError> {
     let mut bytes = [0u8; N];
     getrandom::fill(&mut bytes).map_err(|_| VaultError::Entropy)?;
     Ok(bytes)

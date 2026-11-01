@@ -33,6 +33,9 @@
 //!
 //! [`scene`] is the second window an iPad offers, and why it is turned down.
 //!
+//! [`shield`] keeps the window out of screenshots, recordings and the app
+//! switcher while a screen that holds the identity is shown.
+//!
 //! [`identity`] makes an identity from a phrase and holds its seed while the
 //! wallet is open; [`vault`] keeps that seed on the device between launches,
 //! encrypted behind a PIN. The seed never crosses to the front end.
@@ -47,9 +50,11 @@ mod issuers;
 mod messaging;
 mod notify;
 mod presentation;
+mod presented;
 mod registry;
 #[cfg(target_os = "ios")]
 mod scene;
+mod shield;
 mod status;
 mod tray;
 mod vault;
@@ -140,6 +145,16 @@ pub fn run() {
             }
         }
     });
+    // The app switcher's picture of a shielded screen, on iOS: the scene about
+    // to stop being active is reported as the window losing the focus, which
+    // is the moment to cover it — see `shield`.
+    #[cfg(target_os = "ios")]
+    let builder = builder.on_window_event(|_window, event| {
+        if let tauri::WindowEvent::Focused(focused) = event {
+            shield::focus(*focused);
+        }
+    });
+
     // Push: the device token the mediator notifies. Mobile only — see
     // `messaging::push`; desktop has no push.
     #[cfg(mobile)]
@@ -152,9 +167,9 @@ pub fn run() {
     let builder = builder.plugin(almena_keystore::init());
 
     builder
-        // Writing to the clipboard: the webview's own `navigator.clipboard`
-        // is refused on iOS. Only `write-text` is granted — see capabilities.
-        // The encrypted backup's save and open sheets, and the files they name
+        // Writing to the clipboard — the invitation link, and nothing that holds
+        // the identity: the webview's own `navigator.clipboard` is refused on
+        // iOS. Only `write-text` is granted — see capabilities. The encrypted backup's save and open sheets, and the files they name
         // (`messaging::backup`); only Rust calls them.
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -190,17 +205,20 @@ pub fn run() {
             notify::notifications_configure,
             tray::install_tray,
             backdrop::backdrop_set,
+            shield::screen_shield,
             identity::identity_draft,
             identity::identity_create,
             identity::identity_restore,
             identity::identity_discard,
             identity::identity_forget,
+            identity::identity_check_phrase,
             vault::vault_status,
             vault::vault_create,
             vault::vault_open,
             vault::vault_open_with_device,
             vault::vault_change_pin,
             vault::vault_set_device,
+            vault::vault_confirm,
             vault::vault_destroy,
             messaging::mediator_status,
             messaging::mediator_connect,
@@ -234,6 +252,7 @@ pub fn run() {
             credentials::credentials_list,
             credentials::credentials_check,
             credentials::credentials_remove,
+            presented::presented_list,
             messaging::backup::backup_export,
             messaging::backup::backup_import,
         ])

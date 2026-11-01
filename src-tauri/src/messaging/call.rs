@@ -120,10 +120,49 @@ pub fn read(message: &Message, now: u64) -> Option<(String, Signal)> {
 
 /// The SDP without any candidate but relayed ones (`SPEC.md` §3.1): a host or
 /// server-reflexive candidate would be somebody's address.
+///
+/// **A relayed candidate names an address too.** Its `raddr` and `rport` are
+/// where the relay was reached from — the server-reflexive address, which is
+/// the device's public one — so they are written as `0.0.0.0` and `0`, as
+/// browsers do for a candidate whose address they hide. ICE does not use them
+/// to connect (RFC 8839 §5.1: they are for diagnostics and QoS), so nothing is
+/// lost.
 fn relayed(sdp: &str) -> String {
     sdp.split_inclusive('\n')
-        .filter(|line| !line.starts_with("a=candidate:") || line.contains(" typ relay"))
+        .filter_map(|line| {
+            if line.starts_with("a=candidate:") {
+                relay_only(line)
+            } else {
+                Some(line.to_owned())
+            }
+        })
         .collect()
+}
+
+/// A candidate line if it is a relayed one, with its related address hidden.
+///
+/// The type is read where the grammar puts it — the seventh and eighth fields,
+/// `typ relay` — and not looked for anywhere in the line, which an extension
+/// attribute could otherwise satisfy.
+fn relay_only(line: &str) -> Option<String> {
+    let body = line.trim_end_matches(['\r', '\n']);
+    let ending = &line[body.len()..];
+    let mut fields: Vec<&str> = body.split(' ').collect();
+    if fields.get(6) != Some(&"typ") || fields.get(7) != Some(&"relay") {
+        return None;
+    }
+    // Pairs from the eighth field on: a name, then its value.
+    let mut index = 8;
+    while index + 1 < fields.len() {
+        match fields[index] {
+            "raddr" => fields[index + 1] = "0.0.0.0",
+            "rport" => fields[index + 1] = "0",
+            _ => {}
+        }
+        index += 2;
+    }
+
+    Some(fields.join(" ") + ending)
 }
 
 /// The TURN servers this wallet's mediator lets it relay a call through, as
@@ -154,6 +193,29 @@ mod tests {
     use super::*;
 
     const SDP: &str = "v=0\r\na=candidate:1 1 udp 2122 192.168.1.2 5000 typ host\r\na=candidate:2 1 udp 16 203.0.113.9 49160 typ relay raddr 0.0.0.0 rport 0\r\na=candidate:3 1 udp 1686 198.51.100.4 6000 typ srflx raddr 192.168.1.2 rport 5000\r\na=end-of-candidates\r\n";
+
+    #[test]
+    fn a_relayed_candidate_does_not_say_where_it_was_reached_from() {
+        let sdp = relayed(
+            "v=0\r\na=candidate:2 1 udp 16 203.0.113.9 49160 typ relay raddr 198.51.100.4 rport 6000 generation 0\r\na=candidate:4 1 udp 15 203.0.113.9 49161 typ relay raddr 2001:db8::1 rport 6001\n",
+        );
+        assert!(!sdp.contains("198.51.100.4") && !sdp.contains("6000"));
+        assert!(!sdp.contains("2001:db8::1") && !sdp.contains("6001"));
+        assert!(sdp.contains(
+            "a=candidate:2 1 udp 16 203.0.113.9 49160 typ relay raddr 0.0.0.0 rport 0 generation 0\r\n"
+        ));
+        // The relay's own address is what the other side connects to: kept.
+        assert!(sdp.ends_with("49161 typ relay raddr 0.0.0.0 rport 0\n"));
+    }
+
+    #[test]
+    fn the_type_is_read_where_the_grammar_puts_it() {
+        // A host candidate that says `typ relay` later on is still a host.
+        let sdp = relayed(
+            "v=0\r\na=candidate:1 1 udp 2122 192.168.1.2 5000 typ host x typ relay\r\na=candidate:9 1 udp 1 typ relay\r\n",
+        );
+        assert_eq!(sdp, "v=0\r\n");
+    }
 
     #[test]
     fn only_relayed_candidates_travel() {

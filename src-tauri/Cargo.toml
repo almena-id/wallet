@@ -35,6 +35,9 @@ bs58 = "0.5"
 ed25519-dalek = "2"
 hmac = "0.12"
 sha2 = "0.10"
+# Comparing a typed phrase's seed with the open one in constant time
+# (`identity::identity_check_phrase`); already in the tree, through the ciphers.
+subtle = "2.6"
 # The Public Suffix List (ICANN and private sections), for `registry::vouched`.
 psl = "2"
 getrandom = "0.4"
@@ -49,6 +52,9 @@ miniz_oxide = { version = "0.8", features = ["with-alloc"] }
 # `alloc` only: the randomness comes from `getrandom`.
 chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
 argon2 = { version = "0.5", features = ["zeroize"] }
+# Windows Hello's signature turned into the key that wraps the data key
+# (`vault::presence::hello`); on every host, so the derivation is tested there.
+hkdf = "0.12"
 # The platform's own secret store, named per platform below rather than picked
 # by the `keyring` umbrella crate, whose Android choice is an in-memory stub
 # that loses the identity on every launch. See `vault::store`.
@@ -107,6 +113,10 @@ rustls-native-certs = "0.8"
 # never leaves the phone's secure hardware (`vault::store`). In this
 # repository: its Kotlin half is in `plugins/keystore/android`.
 almena-keystore = { path = "plugins/keystore" }
+# Setting `FLAG_SECURE` on the activity's window while a screen that holds the
+# identity is shown (`shield.rs`). The version wry already reaches the
+# activity with.
+jni = "0.21"
 
 [target.'cfg(target_os = "ios")'.dependencies]
 # `protected` is the data protection keychain, the only one whose items can be
@@ -118,8 +128,8 @@ apple-native-keyring-store = { version = "1", features = ["protected"] }
 # The same version the store already brings in.
 security-framework = "3"
 # Turning down the second window an iPad offers — see `scene.rs`. The same
-# `objc2-ui-kit` Tauri itself is built on, with only the pieces that ask the
-# application to destroy a scene session.
+# `objc2-ui-kit` Tauri itself is built on, with the pieces that ask the
+# application to destroy a scene session and those that cover a window.
 objc2 = "0.6"
 objc2-ui-kit = { version = "0.3", default-features = false, features = [
     "UIApplication",
@@ -127,6 +137,22 @@ objc2-ui-kit = { version = "0.3", default-features = false, features = [
     "UISceneSession",
     "UISceneOptions",
     "block2",
+    # Covering a shielded screen before the app switcher takes its picture
+    # (`shield.rs`).
+    "UIColor",
+    "UIInterface",
+    "UIResponder",
+    "UIView",
+    "UIWindow",
+    "UIWindowScene",
+    "objc2-core-foundation",
+] }
+# Walking the scenes and their windows (`shield.rs`). The same version UIKit's
+# bindings bring in.
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "NSArray",
+    "NSEnumerator",
+    "NSSet",
 ] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -146,6 +172,15 @@ objc2-local-authentication = { version = "0.3", features = ["LAContext"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-native-keyring-store = "1"
+# Windows Hello: `KeyCredentialManager` makes and signs with a key the TPM
+# holds (`vault::presence::hello`). The version Tauri already brings in, with
+# only what that needs.
+windows = { version = "0.61", features = [
+    "Foundation",
+    "Security_Credentials",
+    "Security_Cryptography",
+    "Storage_Streams",
+] }
 
 [target.'cfg(all(unix, not(any(target_os = "macos", target_os = "ios", target_os = "android"))))'.dependencies]
 # The pure Rust D-Bus client: the alternative links libdbus and needs a C

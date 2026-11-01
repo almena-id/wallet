@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 
+import { biometricPrompt, biometricWords } from "../biometrics";
 import { useTranslations } from "../i18n";
 import { errorCode, setVaultDevice, type Vault, type VaultStatus } from "../vault";
 import { PinScreen } from "./PinScreen";
@@ -29,7 +30,8 @@ export function PinConfirm({ vault, digits, onArmed, onBack }: PinConfirmProps) 
       setError(null);
       setBusy(true);
       try {
-        onArmed(await setVaultDevice(true, code));
+        // Android's prompt follows straight after the digits, in these words.
+        onArmed(await setVaultDevice(true, code, biometricPrompt(t, "arm")));
       } catch (failure) {
         setError(t.vault.errors[errorCode(failure)]);
         // Arming spends an attempt like any other answer, so a record that has
@@ -44,7 +46,7 @@ export function PinConfirm({ vault, digits, onArmed, onBack }: PinConfirmProps) 
 
   return (
     <PinScreen
-      title={t.settings.security.biometricsLabel}
+      title={biometricWords(t, vault.status.biometrics).label}
       subtitle={t.pin.armSubtitle}
       digits={digits}
       error={error}

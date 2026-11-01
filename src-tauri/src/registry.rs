@@ -88,6 +88,81 @@ const GENERATION: u32 = 0;
 /// How long a token is good for once signed.
 const TOKEN_LIFETIME: u64 = 120;
 
+/// The largest answer read from a registry: a request, a credential, a
+/// collected link. Each is a few kilobytes; a host that sends more is not
+/// read to the end, so it cannot fill this device's memory.
+pub(crate) const BODY_BYTES: usize = 1024 * 1024;
+
+/// A response's body, if it is at most `limit` bytes — read a chunk at a
+/// time and abandoned the moment it passes, whatever `Content-Length` said.
+pub(crate) async fn capped(mut response: reqwest::Response, limit: usize) -> Option<Vec<u8>> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > limit as u64)
+    {
+        return None;
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.ok()? {
+        if body.len() + chunk.len() > limit {
+            return None;
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Some(body)
+}
+
+/// Serves `body` once on a port of this machine, with a `Content-Length`
+/// or chunked, and answers with where.
+#[cfg(test)]
+pub(crate) fn serve_once(body: Vec<u8>, chunked: bool) -> String {
+    serve(move |_| body, chunked)
+}
+
+/// [`serve_once`], with a body written knowing the port it is served on.
+#[cfg(test)]
+pub(crate) fn serve(body: impl FnOnce(u16) -> Vec<u8> + Send + 'static, chunked: bool) -> String {
+    use std::io::{Read as _, Write as _};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let body = body(address.port());
+    std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0u8; 1024];
+        let _ = stream.read(&mut request);
+        let head = if chunked {
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n".to_owned()
+        } else {
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+        };
+        let _ = stream.write_all(head.as_bytes());
+        if chunked {
+            for piece in body.chunks(64 * 1024) {
+                let _ = stream.write_all(format!("{:x}\r\n", piece.len()).as_bytes());
+                let _ = stream.write_all(piece);
+                let _ = stream.write_all(b"\r\n");
+            }
+            let _ = stream.write_all(b"0\r\n\r\n");
+        } else {
+            let _ = stream.write_all(&body);
+        }
+    });
+    format!("http://{address}/")
+}
+
+/// A response's JSON, read under [`BODY_BYTES`].
+async fn json_of<T: serde::de::DeserializeOwned>(
+    response: reqwest::Response,
+) -> Result<T, RegistryError> {
+    let body = capped(response, BODY_BYTES)
+        .await
+        .ok_or(RegistryError::Unreadable)?;
+    serde_json::from_slice(&body).map_err(|_| RegistryError::Unreadable)
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum RegistryError {
     /// No identity is open, so there is no key to sign with.
@@ -267,8 +342,12 @@ pub struct RegistryRequest {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Verifying {
+    /// Its name as the registry gives it: in no document it signed.
     verifier: String,
     verifier_did: String,
+    /// What this wallet checked of it by itself (`issuers::vouch`).
+    #[serde(flatten)]
+    vouched: crate::issuers::Vouched,
     /// What it asks for: its form's name, by language.
     form: std::collections::BTreeMap<String, String>,
     /// How many credentials are asked for.
@@ -297,29 +376,67 @@ pub struct Applying {
     complete: bool,
 }
 
-/// One credential to present, as the sheet shows it.
+/// One credential set to answer, as the sheet shows it: every held
+/// credential that would do, the first the one sent unless another is picked.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Presenting {
+    /// Its place in the query: what a choice names it by.
+    set: usize,
+    options: Vec<PresentOption>,
+}
+
+/// One credential that would answer a set.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresentOption {
+    /// The held credential's id: what a choice names.
+    id: String,
     /// Its type's names, by language.
     credential: std::collections::BTreeMap<String, String>,
     issuer: String,
+    issued_at: u64,
     /// The claims that would be disclosed; nothing else of it goes.
     claims: Vec<Claim>,
 }
 
-/// What this wallet would present for a request, from the credentials it holds.
+/// What this wallet could present for a request, from the credentials it holds.
 fn presentable<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     seed: &[u8; 64],
     request: &Request,
-) -> (Vec<crate::presentation::Chosen>, bool) {
+) -> (Vec<crate::presentation::Offer>, bool) {
     let held = crate::credentials::all(app, seed).unwrap_or_default();
     request
         .dcql_query
         .as_ref()
-        .map(|query| crate::presentation::choose(query, &held, now()))
+        .map(|query| crate::presentation::offers(query, &held, now()))
         .unwrap_or((Vec::new(), false))
+}
+
+/// The offers as the sheet shows them.
+fn shown_offers(offers: &[crate::presentation::Offer]) -> Vec<Presenting> {
+    offers
+        .iter()
+        .map(|offer| Presenting {
+            set: offer.set,
+            options: offer
+                .options
+                .iter()
+                .map(|one| PresentOption {
+                    id: one.credential.id.clone(),
+                    credential: one.credential.type_labels.clone(),
+                    issuer: one.credential.issuer_name.clone(),
+                    issued_at: one.credential.issued_at,
+                    claims: one
+                        .claims
+                        .iter()
+                        .map(|(name, value)| claim(name, value))
+                        .collect(),
+                })
+                .collect(),
+        })
+        .collect()
 }
 
 fn claim(name: &str, value: &serde_json::Value) -> Claim {
@@ -444,10 +561,7 @@ async fn fetch(input: &str) -> Result<(Url, Request), RegistryError> {
         404 | 410 => return Err(RegistryError::Expired),
         _ => return Err(RegistryError::Unreachable),
     }
-    let request: Request = response
-        .json()
-        .await
-        .map_err(|_| RegistryError::Unreadable)?;
+    let request: Request = json_of(response).await?;
     let signing = request.purpose == "sign";
     let expected = match request.purpose.as_str() {
         "sign" => "proof",
@@ -780,9 +894,20 @@ fn seed(held: &Held) -> Result<Zeroizing<[u8; 64]>, RegistryError> {
 }
 
 /// The request the sheet is showing, with the link it came from: what Accept
-/// answers.
+/// answers — and, to present, what it offered and what it found of the
+/// verifier, so Accept sends what the sheet showed rather than working it out
+/// again.
 #[derive(Default)]
-pub struct Shown(Mutex<Option<(String, Url, Request)>>);
+pub struct Shown(Mutex<Option<Kept>>);
+
+#[derive(Clone)]
+struct Kept {
+    input: String,
+    uri: Url,
+    request: Request,
+    offers: Vec<crate::presentation::Offer>,
+    vouched: Option<crate::issuers::Vouched>,
+}
 
 pub fn manage<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     use tauri::Manager;
@@ -803,8 +928,25 @@ pub async fn registry_request(
     let (_, did) = identity_for(&seed, &uri, issuer_of(&request));
     // Refused before anything is kept: the portal must at least be a web one.
     let portal = portal(&request.client_id)?;
+    let (offers, complete) = if request.purpose == "present" || request.purpose == "verify" {
+        presentable(&app, &seed, &request)
+    } else {
+        (Vec::new(), true)
+    };
+    let vouched = match &request.verifier {
+        Some(verifier) => {
+            Some(crate::issuers::vouch(&verifier.did, uri.host_str().unwrap_or_default()).await)
+        }
+        None => None,
+    };
     if let Ok(mut kept) = shown.0.lock() {
-        *kept = Some((input, uri.clone(), request.clone()));
+        *kept = Some(Kept {
+            input,
+            uri: uri.clone(),
+            request: request.clone(),
+            offers: offers.clone(),
+            vouched: vouched.clone(),
+        });
     }
     let signing = request.sign.as_ref().map(|sign| Signing {
         kind: sign.kind.clone(),
@@ -843,25 +985,6 @@ pub async fn registry_request(
             .flatten(),
         change: sign.status_change.clone(),
     });
-    let (chosen, complete) = if request.purpose == "present" || request.purpose == "verify" {
-        presentable(&app, &seed, &request)
-    } else {
-        (Vec::new(), true)
-    };
-    let presenting = || -> Vec<Presenting> {
-        chosen
-            .iter()
-            .map(|one| Presenting {
-                credential: one.credential.type_labels.clone(),
-                issuer: one.credential.issuer_name.clone(),
-                claims: one
-                    .claims
-                    .iter()
-                    .map(|(name, value)| claim(name, value))
-                    .collect(),
-            })
-            .collect()
-    };
     let asked = request
         .dcql_query
         .as_ref()
@@ -870,28 +993,18 @@ pub async fn registry_request(
     let verifying = request.verifier.as_ref().map(|verifier| Verifying {
         verifier: verifier.name.chars().take(200).collect(),
         verifier_did: verifier.did.clone(),
+        vouched: vouched.clone().unwrap_or_default(),
         form: request
             .form
             .as_ref()
             .map(|form| form.name.clone())
             .unwrap_or_default(),
         asked,
-        presenting: presenting(),
+        presenting: shown_offers(&offers),
         complete,
     });
     let applying = request.issuer.as_ref().map(|issuer| Applying {
-        presenting: chosen
-            .iter()
-            .map(|one| Presenting {
-                credential: one.credential.type_labels.clone(),
-                issuer: one.credential.issuer_name.clone(),
-                claims: one
-                    .claims
-                    .iter()
-                    .map(|(name, value)| claim(name, value))
-                    .collect(),
-            })
-            .collect(),
+        presenting: shown_offers(&offers),
         complete,
         issuer: issuer.name.chars().take(200).collect(),
         issuer_did: issuer.did.clone(),
@@ -962,12 +1075,15 @@ fn answers(content: &serde_json::Value) -> Vec<Answer> {
 /// Answers the registry request the sheet showed: what Accept does. The
 /// request is not read again, so what is signed is what was shown; it is
 /// kept until it is answered, so Accept can be tried again after a failure.
+/// To present, `choice` names, by set, the credential the holder picked among
+/// those the sheet offered; a set it does not name sends the first.
 #[tauri::command]
 pub async fn registry_answer(
     app: tauri::AppHandle,
     held: State<'_, Held>,
     shown: State<'_, Shown>,
     input: String,
+    choice: Option<std::collections::BTreeMap<usize, String>>,
 ) -> Result<(), RegistryError> {
     let seed = seed(&held)?;
     let kept = shown
@@ -975,16 +1091,24 @@ pub async fn registry_answer(
         .lock()
         .ok()
         .and_then(|kept| kept.clone())
-        .filter(|(link, _, _)| *link == input);
-    let Some((_, uri, request)) = kept else {
+        .filter(|kept| kept.input == input);
+    let Some(Kept {
+        uri,
+        request,
+        offers,
+        vouched,
+        ..
+    }) = kept
+    else {
         return Err(RegistryError::Unreadable);
     };
     if request.purpose == "receive" {
         let received = receive(&seed, &uri, &request).await?;
         crate::credentials::keep(&app, &seed, received).map_err(|_| RegistryError::Refused)?;
     } else if request.purpose == "present" || request.purpose == "verify" {
-        // The same choice the sheet showed, from the same credentials.
-        let (chosen, _) = presentable(&app, &seed, &request);
+        // What the sheet offered, as the holder picked among it.
+        let chosen = crate::presentation::picked(&offers, &choice.unwrap_or_default())
+            .ok_or(RegistryError::Unreadable)?;
         if chosen.is_empty() {
             return Err(RegistryError::NothingToPresent);
         }
@@ -1000,6 +1124,13 @@ pub async fn registry_answer(
             Body::Json(json!({ "vp_token": token })),
         )
         .await?;
+        // Sent and taken: written down for the holder. A log that cannot be
+        // written does not undo a presentation that has been made.
+        let _ = crate::presented::record(
+            &app,
+            &seed,
+            presented_entry(&request, &chosen, vouched.as_ref(), &uri, now()),
+        );
     } else {
         // Pairing with an issuer: where it may write to this wallet over
         // DIDComm, when there is a mediator to receive at.
@@ -1012,11 +1143,51 @@ pub async fn registry_answer(
         answer(&seed, &uri, &request, channel.as_deref()).await?;
     }
     if let Ok(mut kept) = shown.0.lock() {
-        if kept.as_ref().is_some_and(|(link, _, _)| *link == input) {
+        if kept.as_ref().is_some_and(|kept| kept.input == input) {
             *kept = None;
         }
     }
     Ok(())
+}
+
+/// The log's entry for a presentation that was made.
+fn presented_entry(
+    request: &Request,
+    chosen: &[crate::presentation::Chosen],
+    vouched: Option<&crate::issuers::Vouched>,
+    uri: &Url,
+    at: u64,
+) -> crate::presented::Presentation {
+    let (to, to_did) = request
+        .verifier
+        .as_ref()
+        .or(request.issuer.as_ref())
+        .map(|them| (them.name.chars().take(200).collect(), them.did.clone()))
+        .unwrap_or_default();
+    crate::presented::Presentation {
+        id: format!("{}-{at}", request.nonce),
+        at,
+        purpose: request.purpose.clone(),
+        to,
+        to_did,
+        verified: vouched.map(|vouched| vouched.verified),
+        domains: vouched
+            .map(|vouched| vouched.domains.clone())
+            .unwrap_or_default(),
+        portal: portal(&request.client_id)
+            .ok()
+            .and_then(|portal| portal.host_str().map(str::to_owned))
+            .unwrap_or_else(|| uri.host_str().unwrap_or_default().to_owned()),
+        credentials: chosen
+            .iter()
+            .map(|one| crate::presented::Shared {
+                credential: one.credential.id.clone(),
+                type_labels: one.credential.type_labels.clone(),
+                issuer_name: one.credential.issuer_name.clone(),
+                claims: one.claims.iter().map(|(name, _)| name.clone()).collect(),
+            })
+            .collect(),
+    }
 }
 
 async fn answer(
@@ -1153,10 +1324,7 @@ pub async fn registry_collect(
         404 | 409 | 410 => return Err(RegistryError::Expired),
         _ => return Err(RegistryError::Refused),
     }
-    let collected: Collected = response
-        .json()
-        .await
-        .map_err(|_| RegistryError::Unreadable)?;
+    let collected: Collected = json_of(response).await?;
     // Only a request on the same registry it was collected from.
     let link = request_uri(&collected.deep_link)?;
     if link.origin() != url.origin() {
@@ -1237,10 +1405,7 @@ async fn receive(
         404 | 409 | 410 => return Err(RegistryError::Expired),
         _ => return Err(RegistryError::Refused),
     }
-    let received: Received = response
-        .json()
-        .await
-        .map_err(|_| RegistryError::Unreadable)?;
+    let received: Received = json_of(response).await?;
     if received.format != "dc+sd-jwt" || received.issuer.did != issuer.did {
         return Err(RegistryError::Unreadable);
     }
@@ -2058,5 +2223,22 @@ mod tests {
                 &Signature::from_slice(&signature).unwrap(),
             )
             .expect("verifies");
+    }
+
+    #[tokio::test]
+    async fn an_answer_too_large_is_not_read() {
+        let http = client().unwrap();
+        for chunked in [false, true] {
+            let small = serve_once(b"{\"ok\":true}".to_vec(), chunked);
+            let response = http.get(small).send().await.unwrap();
+            assert_eq!(capped(response, 64).await.unwrap(), b"{\"ok\":true}");
+
+            let large = serve_once(vec![b' '; 300 * 1024], chunked);
+            let response = http.get(large).send().await.unwrap();
+            assert!(
+                capped(response, 256 * 1024).await.is_none(),
+                "chunked: {chunked}"
+            );
+        }
     }
 }

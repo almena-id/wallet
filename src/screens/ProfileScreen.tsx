@@ -12,6 +12,7 @@ import { usePlatform } from "../platform";
 import type { Vault } from "../vault";
 import { PinChange } from "./PinChange";
 import { PinConfirm } from "./PinConfirm";
+import { PhraseCheckScreen } from "./PhraseCheckScreen";
 import { InviteScreen } from "./InviteScreen";
 import { MediatorConnectScreen } from "./MediatorConnectScreen";
 import { AppearanceSettings } from "./settings/AppearanceSettings";
@@ -42,7 +43,8 @@ const SECTIONS: Section[] = [
 /**
  * Where the profile tab is, on a stack (`nav.ts`): the menu, a section, or a
  * screen a section sends somebody to — choosing a mediator, replacing the PIN,
- * arming the device, this wallet's code — each left by its own way back.
+ * arming the device, checking the recovery phrase, this wallet's code — each
+ * left by its own way back.
  */
 type View =
   | { name: "menu" }
@@ -50,6 +52,7 @@ type View =
   | { name: "connect" }
   | { name: "pin" }
   | { name: "device" }
+  | { name: "phrase" }
   | { name: "invite" };
 
 type ProfileScreenProps = {
@@ -81,7 +84,7 @@ export function ProfileScreen({ vault, onKeypad, onSignOut }: ProfileScreenProps
     ? SECTIONS.filter((name) => name !== "notifications")
     : SECTIONS;
 
-  const keypad = top.name === "pin" || top.name === "device";
+  const keypad = top.name === "pin" || top.name === "device" || top.name === "phrase";
   useEffect(() => {
     onKeypad(keypad);
   }, [keypad, onKeypad]);
@@ -117,6 +120,9 @@ export function ProfileScreen({ vault, onKeypad, onSignOut }: ProfileScreenProps
         }}
       />
     );
+  }
+  if (top.name === "phrase") {
+    return <PhraseCheckScreen vault={vault} onBack={pop} />;
   }
   if (top.name === "device") {
     return (
@@ -169,6 +175,7 @@ export function ProfileScreen({ vault, onKeypad, onSignOut }: ProfileScreenProps
             onAutoLockChange={preferences.setAutoLock}
             onChangePin={() => push({ name: "pin" })}
             onArmDevice={() => push({ name: "device" })}
+            onCheckPhrase={() => push({ name: "phrase" })}
             onSignOut={onSignOut}
           />
         ) : null}

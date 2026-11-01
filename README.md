@@ -9,7 +9,11 @@ macOS, Linux and Windows.
 It is at an early stage: the shell, the look and the build for every platform
 are in place, and so is onboarding — creating an identity from a new BIP-39
 phrase or bringing one back from an existing phrase, then keeping it on the
-device encrypted behind a PIN — and connecting to a mediator: the wallet asks
+device encrypted behind a PIN (six digits on a computer, where the record
+could be copied off), which biometrics can stand in for where the system
+guards the key itself: Face ID or Touch ID on iOS and a signed macOS build,
+a fingerprint or face on Android, Windows Hello on Windows (not on Linux,
+which has no standard way to ask) — and connecting to a mediator: the wallet asks
 it for mediation and registers an inbox DID derived from the phrase. Contacts
 are made with an invitation, as a QR code or a link, and each gets a DID of
 its own; with them the wallet exchanges names and text messages, kept on the
@@ -18,6 +22,44 @@ while it is not, on Android and iOS the mediator sends a push notification that
 says only that something is waiting. Contacts can also call each other, by voice or video, while both
 wallets are open; the call is relayed through each wallet's mediator, so
 neither learns the other's address ([SPEC.md](SPEC.md)).
+
+## Credentials and verification
+
+The wallet holds verifiable credentials (SD-JWT VCs) that issuers of an
+Almena Registry grant, and presents them when asked. Everything goes through
+an `almena://auth?request_uri=…` code or link that a registry portal shows;
+the wallet reads the request, puts it to the person on a sheet, and does
+nothing until Accept:
+
+- **Signing in** to a registry portal, or linking the wallet to an account
+  there, with a DID made for that registry alone.
+- **Applying** for a credential at catalog.almena.id: pairing with the issuer,
+  presenting credentials the form asks for, and signing the answers. Issuers
+  send no notices for now, so the wallet says to come back to the catalog to
+  see how an application stands and to collect the credential. Once the
+  issuer has signed it, the credential is **received** and checked — bound to
+  this wallet's key for that issuer, signed by a key the issuer's `did:webvh`
+  lists, every disclosure accounted for — and kept on the device, encrypted.
+  Home lists what is held, with each credential's status read from its
+  issuer's status list.
+- **Presenting to a verifier**: a verifier's portal asks for credentials. The
+  wallet checks the verifier on its own — its `did:webvh` and its
+  organisation's resolve on that registry — and says so, or says it could
+  not; then it shows exactly what would go. Only the claims asked for are
+  disclosed, each presentation bound to the request; where several held
+  credentials would do, the person picks one. What was presented, to whom
+  and when is kept on the device and shown on the credential's screen.
+- **Signing** (for registry administrators): did:webvh log entries, an
+  issuer's credentials and its status lists.
+
+A backup file (Profile → Backup) carries the credentials, the contacts and
+the conversations, which the phrase alone does not bring back; Home suggests
+one when a new credential is in none yet. The phrase itself cannot be shown
+again, but Profile → Security checks whether typed words are this wallet's
+phrase, after the PIN or the device. The wallet is read in the system's
+language, or in English or Spanish as chosen in Profile → Appearance.
+`AGENTS.md` has the details, and
+[docs/store-publishing.md](docs/store-publishing.md) what each flow sends.
 
 ## Requirements
 
@@ -70,6 +112,10 @@ task deploy:android                # pick a device or emulator, build, install
 task deploy:android DEVICE=Pixel   # skip the question
 ```
 
+Biometric unlock needs a strong (Class 3) fingerprint or face enrolled; an
+emulator has one once a fingerprint is added in its extended controls
+(`adb -e emu finger touch 1` answers the prompt).
+
 The native project is committed under `src-tauri/gen/android`; `task
 init:android` regenerates it. A deploy lists what `adb` can reach — cabled,
 over Wi-Fi and emulators — builds only for that target's ABI, and installs the
@@ -100,7 +146,9 @@ than ending it — messages keep arriving — and clicking the tray icon (or the
 Dock icon on macOS, or Open in the tray's menu) brings it back; that menu is
 also where it is quit. A second launch brings the running one to the front
 instead of starting another, and the window reopens where it was left. Profile → Security can have it open at
-login, minimised and locked.
+login, minimised and locked, and on Windows open it with Windows Hello once
+Hello is set up for the account (turning it on asks Hello twice: once to make
+the key, once to sign with it).
 Messages that arrive while it is not in front become system notifications,
 saying as much as Profile → Notifications allows: everything, who sent it, or
 nothing identifying.

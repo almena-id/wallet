@@ -3,6 +3,20 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { Identity } from "./identity";
 
+/** Who recognises the person: Face ID or Touch ID, Android's biometrics, Windows Hello. */
+export type BiometricKind = "apple" | "android" | "windows";
+
+/**
+ * The words the system's prompt shows, in the interface's language. Only
+ * Android's prompt is worded by the app; elsewhere they are ignored.
+ */
+export type BiometricPrompt = {
+  title: string;
+  subtitle: string;
+  /** The button that leaves the prompt for the PIN. */
+  cancel: string;
+};
+
 /**
  * What the device is keeping, and what it takes to open it.
  *
@@ -29,6 +43,18 @@ export type VaultStatus = {
   pin: boolean;
   /** How long the PIN is, so the keypad can be drawn before it is typed. */
   digits: number | null;
+  /**
+   * The shortest PIN this device takes when one is chosen or changed: four
+   * where hardware keeps the record on the device (an iPhone, the Android
+   * Keystore), six where a process of the same user could copy it off and try
+   * every PIN at leisure (a computer, an Android file).
+   */
+  minDigits: number;
+  /**
+   * Whether the PIN is shorter than `minDigits`. It still opens the wallet;
+   * once it has, a longer one is asked for before anything else.
+   */
+  lengthen: boolean;
   /** Whether the device's own lock can be the wallet's, with no PIN: an iPhone. */
   deviceLock: boolean;
   /** Whether the device is holding a key, and so whether a face opens this. */
@@ -37,12 +63,20 @@ export type VaultStatus = {
    * Whether this platform can offer opening with the device at all.
    *
    * Only where the system refuses to hand the key over until it has
-   * recognised somebody: iOS, and a signed macOS build on a Mac with a sensor.
-   * Windows and Linux give their items to whoever is logged in without asking,
-   * and Android has no store this side reaches yet, so a face button there
-   * would be a way in that asks for nothing.
+   * recognised somebody: iOS, a signed macOS build on a Mac with a sensor, an
+   * Android phone with a strong biometric enrolled, Windows with Hello set up.
+   * Linux has no standard way to ask, so a button there would be a way in that
+   * asks for nothing.
    */
   deviceUnlock: boolean;
+  /**
+   * Whether the device's copy of the key can no longer come back: a
+   * fingerprint or face enrolled since it was turned on, or Windows Hello
+   * reset. `deviceKey` is then false and the PIN is the way in.
+   */
+  deviceChanged: boolean;
+  /** Which system recognises the person here, so it is named as that system names it. */
+  biometrics: BiometricKind | null;
   /** Wrong PINs left before the record is destroyed. */
   attemptsLeft: number;
   /** Where the record is kept: the platform's secret store, a private file, or that file sealed under the Android Keystore. */
@@ -57,13 +91,25 @@ export const emptyVault: VaultStatus = {
   problem: null,
   pin: false,
   digits: null,
+  minDigits: 6,
+  lengthen: false,
   deviceLock: false,
   deviceKey: false,
   deviceUnlock: false,
+  deviceChanged: false,
+  biometrics: null,
   attemptsLeft: 10,
   home: null,
   version: null,
 };
+
+/** The lengths a PIN can have. */
+export const PIN_LENGTHS = [4, 6] as const;
+
+/** The lengths a new PIN may be chosen at on this device, shortest first. */
+export function pinLengths(minDigits: number): number[] {
+  return PIN_LENGTHS.filter((digits) => digits >= minDigits);
+}
 
 export function readVault(): Promise<VaultStatus> {
   return invoke<VaultStatus>("vault_status");
@@ -86,12 +132,13 @@ export function openVault(pin: string): Promise<Identity> {
 /**
  * Opens it with the key the device is holding.
  *
- * On iOS the prompt this raises is the system's own: the key is stored so that
- * it is not handed over until somebody has been recognised, so there is no
- * separate question to ask first.
+ * The prompt this raises is the system's own: the key is stored so that it is
+ * not handed over until somebody has been recognised, so there is no separate
+ * question to ask first. `vault_device_changed` means the copy could no longer
+ * come back and biometrics have been turned off.
  */
-export function openVaultWithDevice(): Promise<Identity> {
-  return invoke<Identity>("vault_open_with_device");
+export function openVaultWithDevice(prompt?: BiometricPrompt): Promise<Identity> {
+  return invoke<Identity>("vault_open_with_device", { prompt: prompt ?? null });
 }
 
 export function changeVaultPin(current: string, next: string): Promise<VaultStatus> {
@@ -99,13 +146,35 @@ export function changeVaultPin(current: string, next: string): Promise<VaultStat
 }
 
 /** Arms or disarms opening with the device. Arming needs the PIN. */
-export function setVaultDevice(enabled: boolean, pin?: string): Promise<VaultStatus> {
-  return invoke<VaultStatus>("vault_set_device", { enabled, pin: pin ?? null });
+export function setVaultDevice(
+  enabled: boolean,
+  pin?: string,
+  prompt?: BiometricPrompt,
+): Promise<VaultStatus> {
+  return invoke<VaultStatus>("vault_set_device", {
+    enabled,
+    pin: pin ?? null,
+    prompt: prompt ?? null,
+  });
 }
 
-/** Takes the identity off the device. The phrase is what is left. */
+/**
+ * Confirms the holder is in front of the open wallet — the PIN, or with none
+ * the device's own check — before checking the recovery phrase, which the Rust
+ * side refuses for a few minutes without it.
+ */
+export function confirmVault(pin?: string, prompt?: BiometricPrompt): Promise<void> {
+  return invoke<void>("vault_confirm", { pin: pin ?? null, prompt: prompt ?? null });
+}
+
+/**
+ * Takes the identity off the device. The phrase is what is left.
+ *
+ * Called only once the sign-out screen has been confirmed; the Rust side
+ * removes nothing without being told that is what the call is for.
+ */
 export function destroyVault(): Promise<VaultStatus> {
-  return invoke<VaultStatus>("vault_destroy");
+  return invoke<VaultStatus>("vault_destroy", { confirm: "sign-out" });
 }
 
 /**
@@ -119,11 +188,14 @@ export type VaultErrorCode =
   | "vault_exists"
   | "vault_pin_length"
   | "vault_pin_not_digits"
+  | "vault_pin_too_short"
+  | "vault_unconfirmed"
   | "vault_no_identity"
   | "vault_no_device_key"
   | "vault_device_unproven"
   | "vault_no_device_store"
   | "vault_device_refused"
+  | "vault_device_changed"
   | "vault_no_pin"
   | "vault_no_passcode"
   | "vault_unreadable"
@@ -139,11 +211,14 @@ const CODES: VaultErrorCode[] = [
   "vault_exists",
   "vault_pin_length",
   "vault_pin_not_digits",
+  "vault_pin_too_short",
+  "vault_unconfirmed",
   "vault_no_identity",
   "vault_no_device_key",
   "vault_device_unproven",
   "vault_no_device_store",
   "vault_device_refused",
+  "vault_device_changed",
   "vault_no_pin",
   "vault_no_passcode",
   "vault_unreadable",

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="almena_wake_title">Mensajes nuevos</string>
-    <string name="almena_wake_body">Abre la cartera para leerlos.</string>
+    <string name="almena_wake_body">Abre el wallet para leerlos.</string>
     <string name="fcm_fallback_notification_channel_label">Mensajes</string>
 </resources>

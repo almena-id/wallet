@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { useTranslations } from "../i18n";
 import { fill } from "../i18n/format";
+import { pinLengths } from "../vault";
 import { PinScreen } from "./PinScreen";
 import { BackButton } from "../components/BackButton";
 
@@ -20,6 +21,11 @@ type PinSetupProps = {
   busy?: boolean;
   /** What is being waited for, read out to anybody who cannot see the mark. */
   busyLabel?: string;
+  /**
+   * The shortest PIN this device takes (`VaultStatus.minDigits`). Where only
+   * six digits are offered, the length is said rather than asked, with why.
+   */
+  minDigits?: number;
 };
 
 /** Choosing a PIN is two questions: how long, then twice what it is. */
@@ -42,8 +48,10 @@ export function PinSetup({
   onBack,
   busy,
   busyLabel,
+  minDigits = 4,
 }: PinSetupProps) {
   const t = useTranslations();
+  const lengths = pinLengths(minDigits);
   const [step, setStep] = useState<Step>({ name: "length" });
   const [mismatch, setMismatch] = useState<string | null>(null);
 
@@ -63,23 +71,42 @@ export function PinSetup({
 
         {intro ? <p className="screen__intro">{intro}</p> : null}
 
-        <section className="card">
-          <h2 className="card__title">{t.settings.security.pinLength}</h2>
-          <div className="segmented" role="group" aria-label={t.settings.security.pinLength}>
-            {[4, 6].map((digits) => (
+        {lengths.length === 1 ? (
+          // One length is no question. Where the record could be copied off
+          // the device, four digits are too few to stand between it and a
+          // patient guesser, and the person is told so.
+          <section className="card">
+            <h2 className="card__title">{t.settings.security.pinLengthSix}</h2>
+            <p className="card__body">{t.pin.sixOnly}</p>
+            <div className="button-row">
               <button
-                key={digits}
                 type="button"
-                className="segmented__option"
-                onClick={() => setStep({ name: "choose", digits })}
+                className="button button--primary"
+                onClick={() => setStep({ name: "choose", digits: lengths[0] })}
               >
-                {digits === 4
-                  ? t.settings.security.pinLengthFour
-                  : t.settings.security.pinLengthSix}
+                {t.pin.continue}
               </button>
-            ))}
-          </div>
-        </section>
+            </div>
+          </section>
+        ) : (
+          <section className="card">
+            <h2 className="card__title">{t.settings.security.pinLength}</h2>
+            <div className="segmented" role="group" aria-label={t.settings.security.pinLength}>
+              {lengths.map((digits) => (
+                <button
+                  key={digits}
+                  type="button"
+                  className="segmented__option"
+                  onClick={() => setStep({ name: "choose", digits })}
+                >
+                  {digits === 4
+                    ? t.settings.security.pinLengthFour
+                    : t.settings.security.pinLengthSix}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
         {error ? <p className="card__note card__note--warning">{error}</p> : null}
       </div>

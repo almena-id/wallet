@@ -13,7 +13,8 @@
 //! sign with, so keeping it is enough, and it cannot be turned back into words.
 //!
 //! Two things open the record and neither of them is the record: a PIN, and —
-//! where the platform has somewhere to keep a key — the device. Either is
+//! where the system keeps a key behind its own presence check ([`presence`]) —
+//! the device. Either is
 //! enough, which is what lets a sensor that stops recognising somebody not be
 //! the end of an identity, and a forgotten PIN not be either. The format is in
 //! [`record`]; where it is kept is [`store`].
@@ -47,10 +48,35 @@ use tauri::{Manager, Runtime, State};
 use zeroize::Zeroizing;
 
 use crate::identity::{Held, Identity};
+use presence::Keeper as _;
 use record::Record;
 
 /// The two lengths a PIN can have.
 pub(super) const LENGTHS: [u8; 2] = [4, 6];
+
+/// **The shortest PIN a new or changed one may be, given where the record is
+/// kept.**
+///
+/// Four digits are ten thousand guesses. Behind hardware that never lets the
+/// record off the device ([`store::hardware_bound`]) only ten of them are ever
+/// answered, so four are enough. Anywhere a process running as the same user
+/// can copy the record, all ten thousand can be tried offline — Argon2id at
+/// 64 MiB makes each one cost, not impossible — so a PIN is six digits there,
+/// a hundred times the work. A record already holding four is opened as
+/// before, and the interface then asks for a longer one (`lengthen`).
+pub(super) const fn shortest(home: Option<store::Home>) -> u8 {
+    if store::hardware_bound(home) {
+        LENGTHS[0]
+    } else {
+        LENGTHS[1]
+    }
+}
+
+/// What `vault_destroy` must be handed, so that nothing removes an identity by
+/// calling it without meaning to — a stray `invoke`, a screen that forgot to
+/// ask. The interface sends it only from the sign-out screen, once somebody
+/// has confirmed there.
+const DESTROY: &str = "sign-out";
 
 /// Serialises everything that reads the record and writes it back.
 ///
@@ -76,6 +102,10 @@ pub enum VaultError {
     PinLength,
     /// Something other than digits.
     PinNotDigits,
+    /// Shorter than this device lets a new PIN be — see [`shortest`].
+    PinTooShort,
+    /// Asked to remove the identity without the confirmation that says so.
+    Unconfirmed,
     /// Asked to write down an identity while none is open.
     NoIdentity,
     /// Asked to open with the device, and the device holds no key.
@@ -88,6 +118,11 @@ pub enum VaultError {
     /// The device would not hand the key back: a face not recognised, a prompt
     /// dismissed.
     DeviceRefused,
+    /// The device's copy can no longer come back — a fingerprint or face
+    /// enrolled since it was armed, Windows Hello reset — so it no longer opens
+    /// the wallet and has been turned off. The PIN still does.
+    #[cfg_attr(not(any(target_os = "android", windows, test)), allow(dead_code))]
+    DeviceChanged,
     /// Asked for digits on a record that has none.
     NoPin,
     /// The iPhone has no passcode, so its lock cannot be the wallet's.
@@ -112,11 +147,14 @@ impl VaultError {
             Self::Exists => "vault_exists",
             Self::PinLength => "vault_pin_length",
             Self::PinNotDigits => "vault_pin_not_digits",
+            Self::PinTooShort => "vault_pin_too_short",
+            Self::Unconfirmed => "vault_unconfirmed",
             Self::NoIdentity => "vault_no_identity",
             Self::NoDeviceKey => "vault_no_device_key",
             Self::DeviceUnproven => "vault_device_unproven",
             Self::NoDeviceStore => "vault_no_device_store",
             Self::DeviceRefused => "vault_device_refused",
+            Self::DeviceChanged => "vault_device_changed",
             Self::NoPin => "vault_no_pin",
             Self::NoPasscode => "vault_no_passcode",
             Self::Unreadable => "vault_unreadable",
@@ -152,12 +190,26 @@ pub struct VaultStatus {
     pub pin: bool,
     /// How long the PIN is, so the keypad can be drawn before it is typed.
     pub digits: Option<u8>,
+    /// The shortest PIN this device takes when one is chosen or changed.
+    pub min_digits: u8,
+    /// **Whether the PIN is shorter than this device now asks for**: a wallet
+    /// that chose four digits where the record can be copied off. It still
+    /// opens; once it has, the interface asks for a longer one and does not let
+    /// the wallet be used until there is.
+    pub lengthen: bool,
     /// Whether the device's own lock can be the wallet's, with no PIN: an iPhone.
     pub device_lock: bool,
     /// Whether the device is holding a key, and so whether a face opens this.
     pub device_key: bool,
     /// Whether this platform can offer opening with the device at all.
     pub device_unlock: bool,
+    /// **Whether the device's copy can no longer come back**: armed, and since
+    /// then a fingerprint or face was enrolled, or Windows Hello was reset.
+    /// `device_key` is then false; the record is disarmed at the next opening.
+    pub device_changed: bool,
+    /// Which system recognises the person here, so the interface names it as
+    /// that system does: `apple`, `android`, `windows`; none on Linux.
+    pub biometrics: Option<&'static str>,
     /// Wrong PINs left before the record is destroyed.
     pub attempts_left: u8,
     /// Where the record is kept: the platform's secret store or a private file.
@@ -175,9 +227,13 @@ impl VaultStatus {
             problem,
             pin: false,
             digits: None,
+            min_digits: shortest(None),
+            lengthen: false,
             device_lock: store::device_lockable(),
             device_key: false,
             device_unlock: false,
+            device_changed: false,
+            biometrics: presence::KIND.map(presence::Kind::name),
             attempts_left: record::ATTEMPTS,
             home: None,
             version: None,
@@ -191,7 +247,9 @@ impl VaultStatus {
 /// will not release it until somebody has been recognised, so reading it here
 /// would raise Face ID on every launch before the lock screen was even drawn —
 /// and a prompt somebody cancelled would then be indistinguishable from a wallet
-/// that was never armed. The record's own note of what it armed is the answer.
+/// that was never armed. The record's own note of what it armed is the answer,
+/// and on Android and Windows the system is asked only whether that copy can
+/// still come back ([`presence::Keeper::changed`]), which shows nothing.
 #[tauri::command(async)]
 pub fn vault_status<R: Runtime>(app: tauri::AppHandle<R>, gate: State<'_, Gate>) -> VaultStatus {
     let _held = gate.0.lock();
@@ -220,7 +278,10 @@ pub fn vault_create<R: Runtime>(
     pin: Option<Zeroizing<String>>,
 ) -> Result<VaultStatus, VaultError> {
     let _guard = gate.0.lock();
-    let digits = pin.as_deref().map(|pin| check(pin)).transpose()?;
+    let digits = pin
+        .as_deref()
+        .map(|pin| check(pin, shortest(None)))
+        .transpose()?;
     if pin.is_none() && !store::device_lockable() {
         return Err(VaultError::NoDeviceStore);
     }
@@ -268,6 +329,15 @@ pub fn vault_open<R: Runtime>(
     let seed = record.seed(&key)?;
     to_device_lock(&app, &record, &key);
 
+    // A copy the system can no longer hand back is turned off now that the PIN
+    // has opened it, so the lock screen stops offering it.
+    let keeper = presence::system(&app, None);
+    if presence::changed(&keeper, &record) {
+        if let Ok(disarmed) = presence::disarm(&keeper, record) {
+            let _ = store::write(&app, &disarmed.write());
+        }
+    }
+
     Ok(crate::identity::adopt(seed, &held))
 }
 
@@ -276,26 +346,32 @@ pub fn vault_open<R: Runtime>(
 ///
 /// **The prompt is the lock, not a screen in front of it.** On iOS the item is
 /// stored with `require-user-presence`, so this call is where the face is asked
-/// for — see [`store`].
+/// for — see [`store`]; on Android it is a `BiometricPrompt` unlocking the
+/// Keystore cipher, on Windows the Hello signature ([`presence`]). `prompt` is
+/// the words Android's prompt shows.
 ///
 /// # Errors
 ///
 /// [`VaultError::NoDeviceKey`] when the device is holding nothing, which is also
-/// what a prompt somebody refused looks like from here.
+/// what a prompt somebody refused looks like from here, and
+/// [`VaultError::DeviceChanged`] when its copy can no longer come back — the
+/// record is then written down disarmed, and the PIN is the way in.
 #[tauri::command(async)]
 pub fn vault_open_with_device<R: Runtime>(
     app: tauri::AppHandle<R>,
     held: State<'_, Held>,
     gate: State<'_, Gate>,
+    prompt: Option<presence::Prompt>,
 ) -> Result<Identity, VaultError> {
     let _guard = gate.0.lock();
     let (record, _) = load(&app)?.ok_or(VaultError::Nothing)?;
-    let key = store::device_key()?;
-    let key: Zeroizing<[u8; 32]> = Zeroizing::new(
-        key.as_slice()
-            .try_into()
-            .map_err(|_| VaultError::NoDeviceKey)?,
-    );
+    let key = match presence::open(&presence::system(&app, prompt), &record)? {
+        presence::Opened::Key(key) => key,
+        presence::Opened::Changed(disarmed) => {
+            store::write(&app, &disarmed.write())?;
+            return Err(VaultError::DeviceChanged);
+        }
+    };
     let seed = record.seed(&key)?;
     to_device_lock(&app, &record, &key);
 
@@ -334,7 +410,8 @@ pub fn vault_change_pin<R: Runtime>(
     next: Zeroizing<String>,
 ) -> Result<VaultStatus, VaultError> {
     let _guard = gate.0.lock();
-    let digits = check(&next)?;
+    let home = load(&app)?.map(|(_, home)| home);
+    let digits = check(&next, shortest(home))?;
 
     let (record, key) = attempt(&app, &held, &current)?;
     let changed = record.rewrap(&key, &next, digits)?;
@@ -347,12 +424,15 @@ pub fn vault_change_pin<R: Runtime>(
 ///
 /// Arming needs the PIN, because arming means handing the platform a key that
 /// opens the wallet — a wallet somebody left unlocked on a table must not be
-/// able to have a second way in added to it.
+/// able to have a second way in added to it. How it is armed and proven is
+/// [`presence::arm`], the same on every platform; `prompt` is the words
+/// Android's prompt shows.
 ///
 /// # Errors
 ///
 /// [`VaultError::NoDeviceStore`] where the platform has nowhere to keep a key,
-/// and [`VaultError::WrongPin`] when the digits given do not open the record.
+/// [`VaultError::WrongPin`] when the digits given do not open the record, and
+/// [`VaultError::DeviceUnproven`] when nobody was recognised.
 #[tauri::command(async)]
 pub fn vault_set_device<R: Runtime>(
     app: tauri::AppHandle<R>,
@@ -360,69 +440,114 @@ pub fn vault_set_device<R: Runtime>(
     gate: State<'_, Gate>,
     enabled: bool,
     pin: Option<Zeroizing<String>>,
+    prompt: Option<presence::Prompt>,
 ) -> Result<VaultStatus, VaultError> {
     let _guard = gate.0.lock();
+    let keeper = presence::system(&app, prompt);
 
     // Where the device's lock is the only one, taking its key away would leave
     // nothing that opens the record.
     if !load(&app)?.ok_or(VaultError::Nothing)?.0.has_pin() {
         return Err(VaultError::NoPin);
     }
-    if enabled && !device_unlock() {
+    if enabled && !keeper.available() {
         return Err(VaultError::NoDeviceStore);
     }
 
-    let mut record = if enabled {
+    let record = if enabled {
         // Through the same door as every other PIN, so this screen cannot be
         // used to guess at one forever.
         let (record, key) = attempt(&app, &held, &pin.ok_or(VaultError::WrongPin)?)?;
-        store::set_device_key(Some(&*key))?;
-
-        // **Armed by proving it opens.** The key was just written behind the
-        // system's own presence check, so asking for it back is what raises the
-        // prompt — and answering it is the only evidence that the person turning
-        // this on is the person it will let in. A wallet left unlocked on a desk
-        // must not be able to have somebody else's face added to it.
-        //
-        // Anything other than the key coming back means it is not armed: a face
-        // refused, a prompt dismissed, a sensor that would not answer. The key
-        // goes rather than sitting there half-turned-on.
-        match store::device_key() {
-            Ok(proof) if proof.as_slice() == key.as_slice() => record,
-            _ => {
-                let _ = store::set_device_key(None);
-                return Err(VaultError::DeviceUnproven);
-            }
-        }
+        // **Armed by proving it opens**: answering the system's own prompt is
+        // the only evidence that the person turning this on is the person it
+        // will let in. A wallet left unlocked on a desk must not be able to
+        // have somebody else's face added to it.
+        presence::arm(&keeper, record, &key)?
     } else {
-        store::set_device_key(None)?;
-        load(&app)?.ok_or(VaultError::Nothing)?.0
+        presence::disarm(&keeper, load(&app)?.ok_or(VaultError::Nothing)?.0)?
     };
 
-    record.device_wrap = enabled;
     store::write(&app, &record.write())?;
 
     Ok(status(&app))
+}
+
+/// Confirms that the person in front of the open wallet is its holder, before
+/// something that asks for more than an unlocked wallet: checking the recovery
+/// phrase (`identity::identity_check_phrase`), for a few minutes from now.
+///
+/// With `pin`, through [`attempt`] like every other PIN, so it is counted.
+/// Without, the device's own check — biometrics, or an iPhone's Face ID and
+/// passcode — and the key it hands back must open the record. `prompt` is the
+/// words Android's prompt shows.
+///
+/// # Errors
+///
+/// [`VaultError::WrongPin`] (or [`VaultError::Destroyed`]) for digits that do
+/// not open the record, [`VaultError::NoDeviceKey`] or
+/// [`VaultError::DeviceRefused`] when the device did not recognise anybody, and
+/// [`VaultError::DeviceChanged`] when its copy can no longer come back.
+#[tauri::command(async)]
+pub fn vault_confirm<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    held: State<'_, Held>,
+    gate: State<'_, Gate>,
+    pin: Option<Zeroizing<String>>,
+    prompt: Option<presence::Prompt>,
+) -> Result<(), VaultError> {
+    let _guard = gate.0.lock();
+    if let Some(pin) = pin {
+        attempt(&app, &held, &pin)?;
+    } else {
+        let (record, _) = load(&app)?.ok_or(VaultError::Nothing)?;
+        let key = match presence::open(&presence::system(&app, prompt), &record)? {
+            presence::Opened::Key(key) => key,
+            presence::Opened::Changed(disarmed) => {
+                store::write(&app, &disarmed.write())?;
+                return Err(VaultError::DeviceChanged);
+            }
+        };
+        // A key that does not open the record proves nothing.
+        record.seed(&key)?;
+    }
+    held.confirm();
+    Ok(())
 }
 
 /// Takes the identity off the device.
 ///
 /// Signing out is this and nothing else: the record, the device key, what
 /// messaging wrote down and the seed in memory all go, and the phrase is what
-/// is left.
+/// is left. **It asks to be told so** ([`DESTROY`]): it cannot be undone, and
+/// a call that does not say what it is for removes nothing.
+///
+/// # Errors
+///
+/// [`VaultError::Unconfirmed`] when `confirm` is not [`DESTROY`].
 #[tauri::command(async)]
 pub fn vault_destroy<R: Runtime>(
     app: tauri::AppHandle<R>,
     held: State<'_, Held>,
     gate: State<'_, Gate>,
-) -> VaultStatus {
+    confirm: Option<String>,
+) -> Result<VaultStatus, VaultError> {
+    confirmed(confirm.as_deref())?;
     let _guard = gate.0.lock();
 
     store::clear(&app);
     crate::messaging::clear(&app);
     held.forget();
 
-    status(&app)
+    Ok(status(&app))
+}
+
+/// Whether `vault_destroy` was told what it is for.
+fn confirmed(confirm: Option<&str>) -> Result<(), VaultError> {
+    if confirm == Some(DESTROY) {
+        Ok(())
+    } else {
+        Err(VaultError::Unconfirmed)
+    }
 }
 
 /// **The only place a PIN is ever checked.**
@@ -501,30 +626,9 @@ pub fn manage<R: Runtime>(app: &tauri::AppHandle<R>) {
     app.manage(Gate::default());
 }
 
-/// Whether the wallet may offer to open without the PIN on this platform.
-///
-/// **Only where the system enforces it.** The device key is stored so that it is
-/// not handed back until somebody has been recognised: the prompt is the lock,
-/// not a screen this wallet drew in front of one. Two things have to be true
-/// before that sentence is, and both are asked here rather than assumed:
-///
-/// - there is a store that will hold the key behind its own presence check —
-///   on macOS that is the data protection keychain and only a signed build
-///   reaches it, which is why [`store::has_device_store`] is a probe and not a
-///   `cfg!`;
-/// - and the machine can actually recognise a person. A Mac with no sensor
-///   would fall back to the login password, which is a lock but not the one the
-///   switch says it is.
-///
-/// Where either is false the PIN is the only way in, and the interface says so.
-/// Windows and Linux have stores that hand their items to whoever is logged in,
-/// with no prompt at all; Android has no store this side can reach yet.
-fn device_unlock() -> bool {
-    store::has_device_store() && presence::available()
-}
-
-/// Whether the digits are ones this wallet takes, and how many there are.
-fn check(pin: &str) -> Result<u8, VaultError> {
+/// Whether the digits are ones this wallet takes for a new PIN, at least
+/// `shortest` of them, and how many there are.
+fn check(pin: &str, shortest: u8) -> Result<u8, VaultError> {
     let digits = u8::try_from(pin.chars().count()).map_err(|_| VaultError::PinLength)?;
     if !LENGTHS.contains(&digits) {
         return Err(VaultError::PinLength);
@@ -532,24 +636,44 @@ fn check(pin: &str) -> Result<u8, VaultError> {
     if !pin.chars().all(|character| character.is_ascii_digit()) {
         return Err(VaultError::PinNotDigits);
     }
+    if digits < shortest {
+        return Err(VaultError::PinTooShort);
+    }
 
     Ok(digits)
 }
 
+/// Whether a record's PIN is shorter than one chosen where it is kept may be.
+fn too_short(record: &Record, home: store::Home) -> bool {
+    record.has_pin() && record.digits.unwrap_or(0) < shortest(Some(home))
+}
+
+/// **Whether the wallet may offer to open without the PIN** is the keeper's
+/// [`presence::Keeper::available`]: only where the system enforces it, and only
+/// where the machine can actually recognise a person — see [`presence`]. Where
+/// it is false the PIN is the only way in, and the interface says so.
 fn status<R: Runtime>(app: &tauri::AppHandle<R>) -> VaultStatus {
     match load(app) {
-        Ok(Some((record, home))) => VaultStatus {
-            exists: true,
-            problem: None,
-            pin: record.has_pin(),
-            digits: record.digits,
-            device_lock: store::device_lockable(),
-            device_key: record.device_wrap,
-            device_unlock: device_unlock(),
-            attempts_left: record.left(),
-            home: Some(home.name()),
-            version: Some(record.version),
-        },
+        Ok(Some((record, home))) => {
+            let keeper = presence::system(app, None);
+            let changed = presence::changed(&keeper, &record);
+            VaultStatus {
+                exists: true,
+                problem: None,
+                pin: record.has_pin(),
+                digits: record.digits,
+                min_digits: shortest(Some(home)),
+                lengthen: too_short(&record, home),
+                device_lock: store::device_lockable(),
+                device_key: record.device_wrap && !changed,
+                device_unlock: keeper.available(),
+                device_changed: changed,
+                biometrics: presence::KIND.map(presence::Kind::name),
+                attempts_left: record.left(),
+                home: Some(home.name()),
+                version: Some(record.version),
+            }
+        }
         Ok(None) => VaultStatus::nothing(None),
         Err(failure) => VaultStatus::nothing(Some(failure.code())),
     }
@@ -627,15 +751,68 @@ mod tests {
 
     #[test]
     fn only_four_and_six_digits_are_taken() {
-        assert_eq!(check("1234").expect("four digits"), 4);
-        assert_eq!(check("123456").expect("six digits"), 6);
+        assert_eq!(check("1234", 4).expect("four digits"), 4);
+        assert_eq!(check("123456", 4).expect("six digits"), 6);
 
-        assert!(matches!(check("123"), Err(VaultError::PinLength)));
-        assert!(matches!(check("12345"), Err(VaultError::PinLength)));
-        assert!(matches!(check(""), Err(VaultError::PinLength)));
-        assert!(matches!(check("12a4"), Err(VaultError::PinNotDigits)));
+        assert!(matches!(check("123", 4), Err(VaultError::PinLength)));
+        assert!(matches!(check("12345", 4), Err(VaultError::PinLength)));
+        assert!(matches!(check("", 4), Err(VaultError::PinLength)));
+        assert!(matches!(check("12a4", 4), Err(VaultError::PinNotDigits)));
         // Four characters, but not four digits anybody can type on the keypad.
-        assert!(matches!(check("１２３４"), Err(VaultError::PinNotDigits)));
+        assert!(matches!(
+            check("１２３４", 4),
+            Err(VaultError::PinNotDigits)
+        ));
+    }
+
+    #[test]
+    fn four_digits_are_refused_where_the_record_can_be_copied_off() {
+        assert!(matches!(check("1234", 6), Err(VaultError::PinTooShort)));
+        assert_eq!(check("123456", 6).expect("six digits"), 6);
+        // Not digits is said before too short: it is the first thing wrong.
+        assert!(matches!(check("12a4", 6), Err(VaultError::PinNotDigits)));
+    }
+
+    #[test]
+    fn the_shortest_pin_follows_where_the_record_is_kept() {
+        use store::Home;
+
+        // A plain file is a file on every platform.
+        assert_eq!(shortest(Some(Home::File)), 6);
+        if cfg!(target_os = "ios") {
+            assert_eq!(shortest(Some(Home::Store)), 4);
+            assert_eq!(shortest(None), 4);
+        } else if cfg!(target_os = "android") {
+            assert_eq!(shortest(Some(Home::Keystore)), 4);
+            assert_eq!(shortest(None), 4);
+        } else {
+            // A computer's secret store hands the record to its user.
+            assert_eq!(shortest(Some(Home::Store)), 6);
+            assert_eq!(shortest(None), 6);
+        }
+    }
+
+    #[test]
+    fn a_short_pin_is_asked_to_be_lengthened_only_where_it_is_too_short() {
+        let seed = [7u8; 64];
+        let (four, _) = Record::seal(&seed, "2468", 4).unwrap();
+        let (six, _) = Record::seal(&seed, "246813", 6).unwrap();
+        let (device, _) = Record::seal_device(&seed).unwrap();
+
+        assert!(too_short(&four, store::Home::File));
+        assert!(!too_short(&six, store::Home::File));
+        // No PIN, nothing to lengthen.
+        assert!(!too_short(&device, store::Home::File));
+    }
+
+    #[test]
+    fn signing_out_has_to_be_meant() {
+        assert!(confirmed(Some(DESTROY)).is_ok());
+        assert!(matches!(confirmed(None), Err(VaultError::Unconfirmed)));
+        assert!(matches!(
+            confirmed(Some("yes")),
+            Err(VaultError::Unconfirmed)
+        ));
     }
 
     #[test]

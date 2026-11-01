@@ -1,6 +1,7 @@
 import { accents, defaultAccent, type Accent } from "../../appearance";
 import { CheckIcon } from "../../components/icons";
-import { useTranslations } from "../../i18n";
+import { useI18n } from "../../i18n";
+import { catalogues, locales, systemLanguage } from "../../i18n/locales";
 import { themes, type Theme } from "../../theme";
 
 type AppearanceSettingsProps = {
@@ -10,14 +11,18 @@ type AppearanceSettingsProps = {
   onThemeChange: (theme: Theme) => void;
 };
 
-/** The identity colour and the light or dark the wallet is read in. */
+/**
+ * The identity colour, the light or dark the wallet is read in, and its
+ * language. The language is the interface's own (`useI18n`), so it is not
+ * handed down like the others.
+ */
 export function AppearanceSettings({
   accent,
   onAccentChange,
   theme,
   onThemeChange,
 }: AppearanceSettingsProps) {
-  const t = useTranslations();
+  const { t, language, setLanguage } = useI18n();
 
   return (
     <>
@@ -70,6 +75,33 @@ export function AppearanceSettings({
               onClick={() => onThemeChange(option)}
             >
               {t.settings.appearance.theme[option]}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="card" aria-labelledby="appearance-language">
+        <h2 className="card__title" id="appearance-language">
+          {t.settings.appearance.language.title}
+        </h2>
+        <div className="segmented" role="radiogroup" aria-labelledby="appearance-language">
+          {[systemLanguage, ...locales].map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              aria-checked={option === language}
+              // Each language is named in itself, so somebody who cannot read
+              // the one on screen still finds theirs.
+              lang={option === systemLanguage ? undefined : option}
+              className={
+                option === language ? "segmented__option is-active" : "segmented__option"
+              }
+              onClick={() => setLanguage(option)}
+            >
+              {option === systemLanguage
+                ? t.settings.appearance.language.system
+                : catalogues[option].settings.appearance.language.self}
             </button>
           ))}
         </div>

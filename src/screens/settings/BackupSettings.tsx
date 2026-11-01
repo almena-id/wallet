@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { backupErrorCode, exportBackup, importBackup } from "../../backup";
+import { backupErrorCode, exportBackup, importBackup, markBackedUp } from "../../backup";
 import { useTranslations } from "../../i18n";
 import { fill } from "../../i18n/format";
 
@@ -40,7 +40,16 @@ export function BackupSettings() {
             type="button"
             className="button button--primary"
             disabled={busy}
-            onClick={() => void run(async () => ((await exportBackup()) ? copy.exported : null))}
+            onClick={() =>
+              void run(async () => {
+                if (!(await exportBackup())) {
+                  return null;
+                }
+                // Home's reminder is quiet until something new arrives.
+                markBackedUp();
+                return copy.exported;
+              })
+            }
           >
             {copy.export}
           </button>

@@ -116,19 +116,39 @@ async fn run<R: Runtime>(app: tauri::AppHandle<R>) {
     let mut backoff = BACKOFF_MIN;
     loop {
         let started = Instant::now();
-        match session(&app).await {
-            Ok(()) => return,
-            Err(
-                MessagingError::Locked | MessagingError::NotConnected | MessagingError::Unreadable,
-            ) => return,
-            Err(_) => {}
+        let ended = session(&app).await;
+        if over(&ended) {
+            return;
         }
-        if started.elapsed() >= STEADY {
-            backoff = BACKOFF_MIN;
-        }
-        tokio::time::sleep(backoff).await;
-        backoff = (backoff * 2).min(BACKOFF_MAX);
+        let (wait, next) = retry(backoff, started.elapsed());
+        tokio::time::sleep(wait).await;
+        backoff = next;
     }
+}
+
+/// Whether a session that ended so is the last: the mediator has no socket,
+/// the wallet is locked, there is no mediator, or what it holds cannot be
+/// read — none of which another try would change.
+fn over(ended: &Result<(), MessagingError>) -> bool {
+    matches!(
+        ended,
+        Ok(())
+            | Err(MessagingError::Locked
+                | MessagingError::NotConnected
+                | MessagingError::Unreadable)
+    )
+}
+
+/// How long to wait before the next try after a session that lasted `lasted`,
+/// and the wait after that: doubling up to [`BACKOFF_MAX`], and back to
+/// [`BACKOFF_MIN`] once a session held for [`STEADY`].
+fn retry(backoff: Duration, lasted: Duration) -> (Duration, Duration) {
+    let wait = if lasted >= STEADY {
+        BACKOFF_MIN
+    } else {
+        backoff
+    };
+    (wait, (wait * 2).min(BACKOFF_MAX))
 }
 
 /// One socket, from connecting until it fails. Returns `Ok` only when the
@@ -351,5 +371,39 @@ impl Socket {
                 Err(_) => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_failing_mediator_is_tried_less_and_less_often_up_to_a_minute() {
+        let quick = Duration::from_secs(1);
+        let mut backoff = BACKOFF_MIN;
+        let mut waits = Vec::new();
+        for _ in 0..8 {
+            let (wait, next) = retry(backoff, quick);
+            waits.push(wait.as_secs());
+            backoff = next;
+        }
+        assert_eq!(waits, [2, 4, 8, 16, 32, 60, 60, 60]);
+    }
+
+    #[test]
+    fn a_session_that_held_starts_the_count_again() {
+        let (wait, next) = retry(BACKOFF_MAX, STEADY);
+        assert_eq!((wait, next), (BACKOFF_MIN, BACKOFF_MIN * 2));
+    }
+
+    #[test]
+    fn only_what_another_try_cannot_change_ends_live_delivery() {
+        assert!(over(&Ok(())));
+        assert!(over(&Err(MessagingError::Locked)));
+        assert!(over(&Err(MessagingError::NotConnected)));
+        assert!(over(&Err(MessagingError::Unreadable)));
+        // A mediator that did not answer is tried again.
+        assert!(!over(&Err(MessagingError::Storage)));
     }
 }

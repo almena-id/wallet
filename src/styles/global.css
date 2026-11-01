@@ -1552,6 +1552,28 @@ body {
   border-bottom: 0;
 }
 
+/* Which of several credentials goes: one per line, the one picked raised as in
+   a segmented control. */
+.sheet__choice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.sheet__choice .card__subtitle {
+  margin: 4px 10px;
+}
+
+.sheet__choice .segmented__option {
+  border-radius: var(--radius-control);
+  text-align: start;
+}
+
 .sheet .button-row {
   margin-top: 6px;
 }

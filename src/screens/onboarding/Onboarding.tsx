@@ -39,6 +39,8 @@ type OnboardingProps = {
    * asked for unless the phone turns out to have no passcode.
    */
   deviceLock: boolean;
+  /** The shortest PIN this device takes (`VaultStatus.minDigits`). */
+  minDigits: number;
   /** Hands over the identity: the wallet opens on the dashboard with it. */
   onReady: (identity: Identity) => void;
 };
@@ -47,7 +49,7 @@ type OnboardingProps = {
  * The way in: make an identity from new words, or bring one back from words
  * somebody already has.
  */
-export function Onboarding({ deviceLock, onReady }: OnboardingProps) {
+export function Onboarding({ deviceLock, minDigits, onReady }: OnboardingProps) {
   const { t, locale } = useI18n();
   const [step, setStep] = useState<Step>({ name: "welcome" });
   const [error, setError] = useState<string | null>(null);
@@ -252,6 +254,7 @@ export function Onboarding({ deviceLock, onReady }: OnboardingProps) {
           error={error}
           busy={busy}
           busyLabel={t.onboarding.protect.saving}
+          minDigits={minDigits}
           onChosen={(pin) => protect(step.identity, pin)}
         />
       );

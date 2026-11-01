@@ -173,3 +173,61 @@ pub fn read(input: &str) -> Result<Mnemonic, IdentityError> {
     // phrase in Spanish is not asked to remember that they did.
     Mnemonic::parse_normalized(&joined).map_err(|_| IdentityError::Checksum)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_twelve_and_twenty_four_words_are_lengths() {
+        assert_eq!(Length::of(12).unwrap(), Length::Twelve);
+        assert_eq!(Length::of(24).unwrap(), Length::TwentyFour);
+        for words in [0, 11, 15, 18, 21, 25] {
+            assert!(matches!(Length::of(words), Err(IdentityError::WordCount)));
+        }
+    }
+
+    #[test]
+    fn every_wordlist_has_a_tag_of_its_own() {
+        let mut tags: Vec<&str> = Language::ALL.iter().map(|l| tag(*l)).collect();
+        tags.sort_unstable();
+        tags.dedup();
+        assert_eq!(tags.len(), Language::ALL.len());
+    }
+
+    #[test]
+    fn a_phrase_is_read_however_it_was_pasted() {
+        let made = generate(Language::English, Length::Twelve).unwrap();
+        let words = made.to_string();
+        let messy = format!("  {}\n", words.to_uppercase().replace(' ', " \t\n "));
+        assert_eq!(read(&messy).unwrap().to_entropy(), made.to_entropy());
+    }
+
+    #[test]
+    fn a_phrase_in_another_language_is_read_without_saying_which() {
+        let made = generate(Language::Spanish, Length::TwentyFour).unwrap();
+        let read = read(&made.to_string()).unwrap();
+        assert_eq!(read.language(), Language::Spanish);
+        assert_eq!(read.word_count(), 24);
+    }
+
+    #[test]
+    fn a_count_is_said_before_a_checksum() {
+        assert!(matches!(
+            read("abandon abandon"),
+            Err(IdentityError::WordCount)
+        ));
+        assert!(matches!(read(""), Err(IdentityError::WordCount)));
+        // Twelve real words in an order no phrase has.
+        let wrong = ["abandon"; 12].join(" ");
+        assert!(matches!(read(&wrong), Err(IdentityError::Checksum)));
+    }
+
+    #[test]
+    fn two_new_phrases_are_never_the_same() {
+        let one = generate(Language::English, Length::Twelve).unwrap();
+        let two = generate(Language::English, Length::Twelve).unwrap();
+        assert_ne!(one.to_entropy(), two.to_entropy());
+        assert_eq!(one.word_count(), 12);
+    }
+}

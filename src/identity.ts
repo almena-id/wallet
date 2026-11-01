@@ -54,6 +54,27 @@ export function restoreIdentity(input: string): Promise<Identity> {
   return invoke<Identity>("identity_restore", { input });
 }
 
+/**
+ * Whether the words typed are this wallet's phrase. The Rust side derives them
+ * as a restore would and compares; they are kept nowhere. It answers only
+ * once the holder was confirmed (`confirmVault`), else `identity_unconfirmed`.
+ */
+export function checkPhrase(input: string): Promise<boolean> {
+  return invoke<boolean>("identity_check_phrase", { input });
+}
+
+/** What checking a phrase came to, for the screen to word. */
+export type PhraseVerdict = "match" | "mismatch" | IdentityErrorCode;
+
+/** {@link checkPhrase}, its refusals turned into a verdict like its answers. */
+export async function phraseVerdict(input: string): Promise<PhraseVerdict> {
+  try {
+    return (await checkPhrase(input)) ? "match" : "mismatch";
+  } catch (failure) {
+    return errorCode(failure);
+  }
+}
+
 /** Forgets a phrase that was being shown, for somebody who left the flow. */
 export function discardDraft(): Promise<void> {
   return invoke<void>("identity_discard").catch(() => undefined);
@@ -78,6 +99,8 @@ export type IdentityErrorCode =
   | "identity_word_count"
   | "identity_checksum"
   | "identity_no_draft"
+  | "identity_unconfirmed"
+  | "identity_locked"
   | "identity_unknown";
 
 const CODES: IdentityErrorCode[] = [
@@ -85,6 +108,8 @@ const CODES: IdentityErrorCode[] = [
   "identity_word_count",
   "identity_checksum",
   "identity_no_draft",
+  "identity_unconfirmed",
+  "identity_locked",
 ];
 
 /** Whatever a rejected command threw, as a code this interface has a word for. */

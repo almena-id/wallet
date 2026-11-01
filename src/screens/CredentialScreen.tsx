@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { BackButton } from "../components/BackButton";
 import { CredentialCard, StatusChip } from "../components/CredentialCard";
@@ -12,6 +12,7 @@ import {
   type HeldCredential,
 } from "../credentials";
 import { useI18n } from "../i18n";
+import { listPresented, presentedOf, recipientLabel, type Presentation } from "../presented";
 
 type CredentialScreenProps = {
   credential: HeldCredential;
@@ -35,6 +36,14 @@ export function CredentialScreen({ credential, checking, onCheck, onRemove, onBa
   const [asking, setAsking] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [removeFailed, setRemoveFailed] = useState(false);
+  // Where it has been presented: read from the log on the device, never sent.
+  const [log, setLog] = useState<Presentation[] | null>(null);
+  useEffect(() => {
+    listPresented()
+      .then(setLog)
+      .catch(() => setLog([]));
+  }, []);
+  const presented = log ? presentedOf(log, credential.id) : [];
 
   const name = credentialName(credential, locale);
   const issuer = issuerLabel(credential);
@@ -137,6 +146,33 @@ export function CredentialScreen({ credential, checking, onCheck, onRemove, onBa
               <div key={claim} className="detail-list__row">
                 <dt>{claim}</dt>
                 <dd>{shown(value)}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </section>
+
+      <section className="card" aria-label={copy.presented}>
+        <h2 className="card__title">{copy.presented}</h2>
+        {log !== null && presented.length === 0 ? (
+          <p className="card__body">{copy.neverPresented}</p>
+        ) : (
+          <dl className="detail-list">
+            {presented.map(({ presentation, claims: sent }) => (
+              <div key={presentation.id} className="detail-list__row">
+                <dt>{new Date(presentation.at * 1000).toLocaleString(locale)}</dt>
+                <dd>
+                  {recipientLabel(presentation)}
+                  <small className="detail-list__aside">
+                    {[
+                      presentation.verified === false ? copy.presentedUnverified : null,
+                      sent.length > 0 ? sent.join(", ") : null,
+                      presentation.portal,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </small>
+                </dd>
               </div>
             ))}
           </dl>

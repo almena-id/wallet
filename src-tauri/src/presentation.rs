@@ -2,12 +2,14 @@
 //! `purpose: "present"`): an OpenID4VP request whose DCQL query names, per
 //! credential, a format, the `vct`s it takes and the claims it wants.
 //!
-//! **What goes.** For each credential set of the query, the first of its
-//! options this wallet can answer: an SD-JWT VC (`dc+sd-jwt`) it holds, still
-//! valid, whose `vct` the query names. Of it only the disclosures the query
-//! asks for are sent — selective disclosure — and nothing else this wallet
-//! holds. The sheet shows exactly that before anything is sent, and the same
-//! choice is made again on Accept from the same credentials.
+//! **What goes.** For each credential set of the query, every held
+//! credential that answers one of its options ([`offers`]): an SD-JWT VC
+//! (`dc+sd-jwt`), still valid, whose `vct` the query names. The first is
+//! offered, and where there are several the holder picks ([`picked`]). Of the
+//! one chosen only the disclosures the query asks for are sent — selective
+//! disclosure — and nothing else this wallet holds. The sheet shows exactly
+//! that before anything is sent, and Accept sends what the sheet showed: the
+//! offers are kept from when the request was read, never worked out again.
 //!
 //! **Bound to the holder.** Each presentation ends with a key-binding JWT
 //! (`typ: kb+jwt`): `iat`, the request's `aud` and `nonce`, and `sd_hash` (the
@@ -61,33 +63,80 @@ fn asked(query: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// A held credential that answers `query`, if any: the format and a `vct` it
+/// The held credentials that answer `query`: the format and a `vct` it
 /// names, still valid at `now`, not known to be revoked or suspended, and
 /// still signed by a key its issuer lists.
-fn answering<'a>(query: &Value, held: &'a [Credential], now: u64) -> Option<&'a Credential> {
+fn answering<'a>(query: &Value, held: &'a [Credential], now: u64) -> Vec<&'a Credential> {
     if query["format"].as_str() != Some("dc+sd-jwt") {
-        return None;
+        return Vec::new();
     }
     let wanted: Vec<&str> = query["meta"]["vct_values"]
-        .as_array()?
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
         .iter()
         .filter_map(Value::as_str)
         .collect();
-    held.iter().find(|credential| {
-        credential.format == "dc+sd-jwt"
-            && credential.valid_until > now
-            && !matches!(
-                credential.checked.status,
-                Some(Status::Revoked | Status::Suspended)
-            )
-            && credential.checked.problem != Some(Unchecked::Signature)
-            && vct_of(&credential.credential).is_some_and(|vct| wanted.contains(&vct.as_str()))
-    })
+    held.iter()
+        .filter(|credential| {
+            credential.format == "dc+sd-jwt"
+                && credential.valid_until > now
+                && !matches!(
+                    credential.checked.status,
+                    Some(Status::Revoked | Status::Suspended)
+                )
+                && credential.checked.problem != Some(Unchecked::Signature)
+                && vct_of(&credential.credential).is_some_and(|vct| wanted.contains(&vct.as_str()))
+        })
+        .collect()
 }
 
-/// What this wallet would present for `dcql`, and whether every required
-/// credential set is answered.
+/// One credential set this wallet can answer, by its place in the query:
+/// every held credential that would do, the first the one offered.
+#[derive(Debug, Clone)]
+pub struct Offer {
+    pub set: usize,
+    pub options: Vec<Chosen>,
+}
+
+/// What this wallet would present for `dcql` — the first option of each
+/// [`offers`] — and whether every required credential set is answered.
+#[cfg(test)]
 pub fn choose(dcql: &Value, held: &[Credential], now: u64) -> (Vec<Chosen>, bool) {
+    let (offers, complete) = offers(dcql, held, now);
+    let chosen = picked(&offers, &std::collections::BTreeMap::new()).unwrap_or_default();
+    (chosen, complete)
+}
+
+/// The credential each offer presents: the one `choice` names for its set
+/// (by credential id), else its first. `None` when a choice names one that
+/// was not offered for that set, or a set that was not offered at all.
+pub fn picked(
+    offers: &[Offer],
+    choice: &std::collections::BTreeMap<usize, String>,
+) -> Option<Vec<Chosen>> {
+    if choice
+        .keys()
+        .any(|set| !offers.iter().any(|offer| offer.set == *set))
+    {
+        return None;
+    }
+    offers
+        .iter()
+        .map(|offer| match choice.get(&offer.set) {
+            Some(id) => offer
+                .options
+                .iter()
+                .find(|option| option.credential.id == *id)
+                .cloned(),
+            None => offer.options.first().cloned(),
+        })
+        .collect()
+}
+
+/// Every credential set of `dcql` this wallet can answer, with each held
+/// credential that would answer it, and whether every required set is.
+pub fn offers(dcql: &Value, held: &[Credential], now: u64) -> (Vec<Offer>, bool) {
     let queries: Vec<&Value> = dcql["credentials"]
         .as_array()
         .map(|all| all.iter().collect())
@@ -110,36 +159,49 @@ pub fn choose(dcql: &Value, held: &[Credential], now: u64) -> (Vec<Chosen>, bool
                 .map(|id| serde_json::json!({"options": [[id]], "required": true}))
                 .collect()
         });
-    let mut chosen = Vec::new();
+    let mut offered = Vec::new();
     let mut complete = true;
-    for set in sets {
-        let options = set["options"].as_array().cloned().unwrap_or_default();
+    for (index, set) in sets.iter().enumerate() {
+        let mut found: Vec<Chosen> = Vec::new();
         // Each option is a list of query ids; here, one each.
-        let picked = options.iter().find_map(|option| {
-            let id = option[0].as_str()?;
-            let query = by_id(id)?;
-            answering(query, held, now).map(|credential| (id.to_owned(), query, credential))
-        });
-        match picked {
-            Some((id, query, credential)) => {
-                let wanted = asked(query);
-                let claims = credential
-                    .claims
-                    .iter()
-                    .filter(|(name, _)| wanted.contains(name))
-                    .map(|(name, value)| (name.clone(), value.clone()))
-                    .collect();
-                chosen.push(Chosen {
-                    query: id,
+        for option in set["options"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+        {
+            let Some((id, query)) = option[0].as_str().and_then(|id| Some((id, by_id(id)?))) else {
+                continue;
+            };
+            let wanted = asked(query);
+            for credential in answering(query, held, now) {
+                // One credential is one choice, whichever option it answers first.
+                if found.iter().any(|seen| seen.credential.id == credential.id) {
+                    continue;
+                }
+                found.push(Chosen {
+                    query: id.to_owned(),
                     credential: credential.clone(),
-                    claims,
+                    claims: credential
+                        .claims
+                        .iter()
+                        .filter(|(name, _)| wanted.contains(name))
+                        .map(|(name, value)| (name.clone(), value.clone()))
+                        .collect(),
                 });
             }
-            None if set["required"].as_bool().unwrap_or(true) => complete = false,
-            None => {}
+        }
+        if found.is_empty() {
+            if set["required"].as_bool().unwrap_or(true) {
+                complete = false;
+            }
+        } else {
+            offered.push(Offer {
+                set: index,
+                options: found,
+            });
         }
     }
-    (chosen, complete)
+    (offered, complete)
 }
 
 /// The SD-JWT as presented: the issuer's JWS and only the disclosures of the
@@ -277,6 +339,36 @@ mod tests {
         assert!(choose(&dcql(false), &[dropped], 5).0.is_empty());
         let (none, complete) = choose(&dcql(false), &[held(4)], 5);
         assert!(none.is_empty() && !complete);
+    }
+
+    #[test]
+    fn with_several_that_answer_the_holder_picks_and_only_among_them() {
+        let first = held(10);
+        let mut second = held(20);
+        second.id = "y".into();
+        let (offers, complete) = offers(&dcql(false), &[first, second], 5);
+        assert!(complete);
+        assert_eq!(offers.len(), 1);
+        assert_eq!(offers[0].set, 0);
+        let ids: Vec<&str> = offers[0]
+            .options
+            .iter()
+            .map(|option| option.credential.id.as_str())
+            .collect();
+        assert_eq!(ids, ["x", "y"]);
+
+        // Nothing said: the first. Said: that one.
+        let default = picked(&offers, &BTreeMap::new()).unwrap();
+        assert_eq!(default[0].credential.id, "x");
+        let chosen = picked(&offers, &BTreeMap::from([(0, "y".to_owned())])).unwrap();
+        assert_eq!(chosen[0].credential.id, "y");
+        assert_eq!(
+            chosen[0].claims,
+            vec![("member_number".to_owned(), json!("0042"))]
+        );
+        // Not one offered, or a set nothing was offered for.
+        assert!(picked(&offers, &BTreeMap::from([(0, "z".to_owned())])).is_none());
+        assert!(picked(&offers, &BTreeMap::from([(1, "x".to_owned())])).is_none());
     }
 
     #[test]

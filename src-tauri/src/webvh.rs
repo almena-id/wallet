@@ -25,7 +25,7 @@
 //! Witnesses are not supported: a log that asks for them is refused rather
 //! than half believed. Whatever does not hold refuses the whole log.
 
-use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, VerifyingKey};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
@@ -121,7 +121,9 @@ fn proves(entry: &Map<String, Value>, proof: &Value, signers: &[String]) -> bool
         ));
         let signature =
             Signature::from_slice(&bs58::decode(value.strip_prefix('z')?).into_vec().ok()?).ok()?;
-        ed25519(key)?.verify(&hashed, &signature).ok()
+        // Strict: no small-order keys, no non-canonical `R` — a signature
+        // only one key could have made.
+        ed25519(key)?.verify_strict(&hashed, &signature).ok()
     };
     check().is_some()
 }

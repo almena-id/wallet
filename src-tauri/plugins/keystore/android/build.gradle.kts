@@ -23,4 +23,7 @@ android {
 
 dependencies {
     implementation(project(":tauri-android"))
+    // BiometricPrompt with a CryptoObject, for the biometric key. It brings
+    // androidx.fragment (FragmentActivity) and androidx.core with it.
+    implementation("androidx.biometric:biometric:1.1.0")
 }

@@ -14,11 +14,17 @@ pub(crate) mod keys;
 mod phrase;
 
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use bip39::Mnemonic;
 use serde::{Serialize, Serializer};
+use subtle::ConstantTimeEq;
 use tauri::{Manager, State};
 use zeroize::Zeroizing;
+
+/// How long a PIN or the device, once given, lets the phrase be checked
+/// against the open identity ([`identity_check_phrase`]).
+const CONFIRMED_FOR: Duration = Duration::from_secs(5 * 60);
 
 /// What can go wrong, as codes rather than prose.
 ///
@@ -34,6 +40,11 @@ pub enum IdentityError {
     Checksum,
     /// Asked to finish a creation that was never started.
     NoDraft,
+    /// Asked to check the phrase without the PIN or the device given first
+    /// ([`crate::vault::vault_confirm`]), or too long ago.
+    Unconfirmed,
+    /// No identity is open, so there is nothing to check the phrase against.
+    Locked,
 }
 
 impl IdentityError {
@@ -43,6 +54,8 @@ impl IdentityError {
             Self::WordCount => "identity_word_count",
             Self::Checksum => "identity_checksum",
             Self::NoDraft => "identity_no_draft",
+            Self::Unconfirmed => "identity_unconfirmed",
+            Self::Locked => "identity_locked",
         }
     }
 }
@@ -64,8 +77,11 @@ pub struct Draft(Mutex<Option<Mnemonic>>);
 /// Every key this wallet ever signs with comes from here, so it never crosses
 /// to the interface and it never reaches disk. Signing out drops it, and so
 /// does closing the wallet.
+///
+/// Beside it, when the PIN or the device was last given to check the phrase
+/// against it: let go of with the seed, so a lock ends it too.
 #[derive(Default)]
-pub struct Held(Mutex<Option<Zeroizing<[u8; 64]>>>);
+pub struct Held(Mutex<Option<Zeroizing<[u8; 64]>>>, Mutex<Option<Instant>>);
 
 impl Held {
     /// The seed itself, for the one caller that has business with it.
@@ -87,6 +103,31 @@ impl Held {
             .0
             .lock()
             .expect("the seed lock is never held across a panic") = None;
+        self.unconfirm();
+    }
+
+    /// Notes that the person just gave the PIN or the device: what
+    /// [`identity_check_phrase`] asks for, for [`CONFIRMED_FOR`].
+    pub(crate) fn confirm(&self) {
+        *self
+            .1
+            .lock()
+            .expect("the confirmation lock is never held across a panic") = Some(Instant::now());
+    }
+
+    fn unconfirm(&self) {
+        *self
+            .1
+            .lock()
+            .expect("the confirmation lock is never held across a panic") = None;
+    }
+
+    /// Whether the PIN or the device was given recently enough.
+    fn confirmed(&self) -> bool {
+        self.1
+            .lock()
+            .expect("the confirmation lock is never held across a panic")
+            .is_some_and(|at| at.elapsed() < CONFIRMED_FOR)
     }
 }
 
@@ -178,6 +219,39 @@ fn restore(input: &str, held: &Held) -> Result<Identity, IdentityError> {
     Ok(from_phrase(&mnemonic, held))
 }
 
+/// Whether the words somebody typed are this wallet's phrase.
+///
+/// The phrase is never kept, so it cannot be shown again; this is how its
+/// holder learns whether what they wrote down still opens this identity. The
+/// words are read and turned into a seed exactly as a restore does, compared
+/// with the open one in constant time, and dropped (wiped) here: they are
+/// neither stored nor logged, and only the answer goes back.
+///
+/// # Errors
+///
+/// [`IdentityError::Unconfirmed`] unless the PIN or the device was given in the
+/// last [`CONFIRMED_FOR`] ([`crate::vault::vault_confirm`]),
+/// [`IdentityError::Locked`] with no identity open, and
+/// [`IdentityError::WordCount`] or [`IdentityError::Checksum`] for words that
+/// are no phrase at all.
+#[tauri::command]
+pub fn identity_check_phrase(
+    input: Zeroizing<String>,
+    held: State<'_, Held>,
+) -> Result<bool, IdentityError> {
+    check_phrase(&input, &held)
+}
+
+/// What `identity_check_phrase` does, reachable from the tests.
+fn check_phrase(input: &str, held: &Held) -> Result<bool, IdentityError> {
+    if !held.confirmed() {
+        return Err(IdentityError::Unconfirmed);
+    }
+    let open = held.seed().ok_or(IdentityError::Locked)?;
+    let typed = seed_of(&phrase::read(input)?);
+    Ok(bool::from(typed.as_slice().ct_eq(open.as_slice())))
+}
+
 /// Forgets the phrase being shown, for somebody who left the flow.
 #[tauri::command]
 pub fn identity_discard(draft: State<'_, Draft>) {
@@ -209,9 +283,15 @@ pub fn manage<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
 /// The identity a phrase produces: BIP-39 seed, one hardened SLIP-0010 step, and
 /// the `did:key` that names the public key it ends at.
 fn from_phrase(mnemonic: &Mnemonic, held: &Held) -> Identity {
+    adopt(seed_of(mnemonic), held)
+}
+
+/// The BIP-39 seed of a phrase: what creating, restoring and checking it all
+/// derive, so the three can never disagree.
+fn seed_of(mnemonic: &Mnemonic) -> Zeroizing<[u8; 64]> {
     // No passphrase. A second secret nobody was told to write down is a second
     // way to lose an identity, and the words are already the whole of it.
-    adopt(Zeroizing::new(mnemonic.to_seed_normalized("")), held)
+    Zeroizing::new(mnemonic.to_seed_normalized(""))
 }
 
 /// The identity a seed names, held open from here on.
@@ -226,11 +306,13 @@ pub(crate) fn adopt(seed: Zeroizing<[u8; 64]>, held: &Held) -> Identity {
     let did = format!("did:key:{public_key}");
 
     // Kept for as long as the wallet is open: every request answered from now
-    // on is signed with a key derived from here.
+    // on is signed with a key derived from here. A confirmation given for
+    // whatever was open before does not carry over to it.
     *held
         .0
         .lock()
         .expect("the seed lock is never held across a panic") = Some(seed);
+    held.unconfirm();
 
     Identity {
         document: document(&did, &public_key),
@@ -403,5 +485,70 @@ mod tests {
                 "{length:?}"
             );
         }
+    }
+
+    #[test]
+    fn the_phrase_is_checked_only_once_the_person_is_confirmed() {
+        let held = Held::default();
+        restore(PHRASE, &held).expect("a valid phrase");
+        assert!(matches!(
+            check_phrase(PHRASE, &held),
+            Err(IdentityError::Unconfirmed)
+        ));
+
+        held.confirm();
+        assert!(check_phrase(PHRASE, &held).expect("checked"));
+        // However it was typed, as a restore reads it.
+        assert!(check_phrase(&format!("  {}  ", PHRASE.to_uppercase()), &held).expect("checked"));
+    }
+
+    #[test]
+    fn another_phrase_is_not_this_wallets() {
+        let held = Held::default();
+        restore(PHRASE, &held).expect("a valid phrase");
+        held.confirm();
+        let other = phrase::generate(bip39::Language::English, phrase::Length::Twelve)
+            .expect("randomness")
+            .to_string();
+        assert!(!check_phrase(&other, &held).expect("checked"));
+        assert!(matches!(
+            check_phrase("abandon abandon abandon", &held),
+            Err(IdentityError::WordCount)
+        ));
+        assert!(matches!(
+            check_phrase(&["abandon"; 12].join(" "), &held),
+            Err(IdentityError::Checksum)
+        ));
+    }
+
+    #[test]
+    fn a_confirmation_ends_with_the_identity_and_in_time() {
+        let held = Held::default();
+        held.confirm();
+        assert!(matches!(
+            check_phrase(PHRASE, &held),
+            Err(IdentityError::Locked)
+        ));
+
+        // Opening an identity does not inherit a confirmation given before it.
+        restore(PHRASE, &held).expect("a valid phrase");
+        assert!(matches!(
+            check_phrase(PHRASE, &held),
+            Err(IdentityError::Unconfirmed)
+        ));
+
+        held.confirm();
+        held.forget();
+        restore(PHRASE, &held).expect("a valid phrase");
+        assert!(matches!(
+            check_phrase(PHRASE, &held),
+            Err(IdentityError::Unconfirmed)
+        ));
+
+        *held.1.lock().unwrap() = Instant::now().checked_sub(CONFIRMED_FOR);
+        assert!(matches!(
+            check_phrase(PHRASE, &held),
+            Err(IdentityError::Unconfirmed)
+        ));
     }
 }
