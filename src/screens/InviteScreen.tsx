@@ -17,7 +17,7 @@ type InviteScreenProps = {
  *
  * **It names the contact card, never the identity or a pairwise.** Whoever
  * uses it is answered from a DID made for them alone, so the same code can be
- * shown to anybody, printed, or — one day — published in the directory.
+ * shown to anybody or printed.
  */
 export function InviteScreen({ onBack }: InviteScreenProps) {
   const t = useTranslations();

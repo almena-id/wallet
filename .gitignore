@@ -26,6 +26,9 @@ dist-ssr
 # Task fingerprint cache and deploy scratch
 .task/
 
+# Store artefacts from `task release:android` and `task release:ios`
+/release/
+
 # Local overrides for development (e.g. VITE_MEDIATOR)
 .env.local
 

@@ -549,12 +549,7 @@
       "contacts": "Contacts",
       "empty": "No contacts yet. Invite somebody, or accept their invitation.",
       "pending": "Waiting for them to answer",
-      "since": "Since {date}",
-      "directory": {
-        "title": "Search the directory",
-        "placeholder": "Who are you looking for?",
-        "unavailable": "The directory is not available yet. For now, share an invitation."
-      }
+      "since": "Since {date}"
     },
     "invite": {
       "title": "Your invitation",

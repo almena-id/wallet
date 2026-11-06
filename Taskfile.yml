@@ -7,7 +7,9 @@ version: "3"
 #   macOS     task build:macos     signed for this machine, so Touch ID works
 #             task release:macos   signed with Developer ID and notarized, to hand out
 #   Android   task init:android    once per checkout, then task deploy:android
+#             task release:android VERSION=2026.11.1   the .aab for Google Play
 #   iOS       task init:ios        once per checkout, then task deploy:ios
+#             task release:ios VERSION=2026.11.1       the .ipa for App Store Connect
 #
 # Desktop bundles are built on the platform they are for: `task build` on
 # macOS gives .app/.dmg, on Linux .deb/.rpm/.AppImage, on Windows .msi/.exe.
@@ -47,10 +49,24 @@ version: "3"
 #   NOTARY_API_ISSUER       its issuer ID,
 #   NOTARY_API_KEY_PATH     and the absolute path to its AuthKey_….p8.
 #
-#   **Named apart from Tauri's own `APPLE_*` variables on purpose.** Tauri reads
-#   those from the environment on every build, so with them in this file a plain
-#   `task build` would sign — and try to notarize — too. Each task hands them to
-#   Tauri under Tauri's names, for that build alone.
+#   `task release:android` — the bundle for Google Play, signed with the upload key:
+#
+#   ANDROID_UPLOAD_KEYSTORE           the absolute path to upload.jks.
+#   ANDROID_UPLOAD_KEY_ALIAS          its key's alias; `upload` if not given.
+#   ANDROID_UPLOAD_KEYSTORE_PASSWORD  optional, as is ANDROID_UPLOAD_KEY_PASSWORD:
+#                                     jarsigner asks for what is not here.
+#
+#   `task release:ios` — the archive for App Store Connect:
+#
+#   IOS_RELEASE_CERTIFICATE           the absolute path to the Apple Distribution .p12.
+#   IOS_RELEASE_CERTIFICATE_PASSWORD  the password it was exported with.
+#   IOS_RELEASE_PROFILE               the App Store Connect provisioning profile
+#                                     for id.almena.wallet.
+#
+#   **Named apart from Tauri's own `APPLE_*` and `IOS_*` variables on purpose.**
+#   Tauri reads those from the environment on every build, so with them in this
+#   file a plain `task build` would sign — and try to notarize — too. Each task
+#   hands them to Tauri under Tauri's names, for that build alone.
 dotenv: [".env.local"]
 
 tasks:
@@ -339,10 +355,10 @@ tasks:
       - cd src-tauri && cargo clean
 
   clean:all:
-    desc: Leave the repository as cloned — clean, plus node_modules, .env.local, the signing scratch, the native projects' build output and the Task checksums (the Android keystore properties are kept)
+    desc: Leave the repository as cloned — clean, plus node_modules, .env.local, the release artefacts, the signing scratch, the native projects' build output and the Task checksums (the Android keystore properties are kept)
     cmds:
       - task: clean
-      - rm -rf node_modules .task src-tauri/.signing src-tauri/gen/schemas
+      - rm -rf node_modules .task release src-tauri/.signing src-tauri/gen/schemas
       - rm -rf src-tauri/gen/android/.gradle src-tauri/gen/android/build src-tauri/gen/android/app/build src-tauri/gen/android/.cxx src-tauri/gen/android/app/.cxx src-tauri/gen/android/local.properties
       - rm -rf src-tauri/gen/apple/build src-tauri/gen/apple/Externals
       - find . -maxdepth 1 -name '.env*' ! -name '.env.example' -exec rm -f {} +
@@ -729,3 +745,196 @@ tasks:
           xcrun devicectl device install app --device "$udid" "$app"
         fi
         echo "Installed on $label. Open it from the home screen."
+
+  # --------------------------------------------------------------------------
+  # Store artefacts, built on this machine and left in release/
+  #
+  # The same builds as the android and ios jobs of .github/workflows/release.yml.
+  # The version and the production push entitlement are stamped for the build
+  # alone: the files they touch are put back afterwards, byte for byte, whether
+  # it worked or not. A build interrupted too hard to do so is put right by the
+  # next one. Uploading stays by hand: see docs/releasing.md.
+  # --------------------------------------------------------------------------
+
+  release:keep:
+    internal: true
+    silent: true
+    desc: Keep the files a release stamps
+    cmds:
+      - mkdir -p .task && tar -cf .task/release-keep.tar {{.FILES}}
+
+  release:restore:
+    internal: true
+    silent: true
+    desc: Put back what a release stamped, if there is anything to put back
+    cmds:
+      - |
+        if [ -f .task/release-keep.tar ]; then
+          tar -xf .task/release-keep.tar
+          rm -f .task/release-keep.tar
+        fi
+
+  release:android:
+    desc: "Build the Android bundle for Google Play, signed with the upload key, into release/ (VERSION=2026.11.1)"
+    silent: true
+    deps: [install]
+    interactive: true
+    vars: *android-toolchain
+    preconditions:
+      - sh: printf '%s' '{{.VERSION}}' | grep -Eq '^[0-9]{4}[.][0-9]{2}[.][0-9]+$'
+        msg: 'Say which version, as year.month.sequence: task release:android VERSION=2026.11.1'
+      - sh: test -d src-tauri/gen/android
+        msg: 'The Android project is not initialised yet. Run: task init:android'
+      - sh: test -n '{{.ANDROID_JDK}}'
+        msg: |
+          No JDK between 17 and 24 was found, and Gradle will not build without one.
+          Install it, for example `brew install openjdk@17`.
+      - sh: test -f src-tauri/gen/android/app/google-services.json
+        msg: |
+          No Firebase project. Without it the app builds and never gets a push
+          token, which is not a build to publish. Firebase console > Add app >
+          Android, package id.almena.wallet, and save the file as
+          src-tauri/gen/android/app/google-services.json (it is not committed).
+      - sh: test -f '{{.ANDROID_UPLOAD_KEYSTORE}}'
+        msg: |
+          No upload key. Make one, outside the repository, and keep a copy offline:
+
+            keytool -genkeypair -v -keystore upload.jks -alias upload -keyalg RSA -keysize 4096 -validity 10000
+
+          Then name it in wallet/.env.local:
+
+            ANDROID_UPLOAD_KEYSTORE=/absolute/path/to/upload.jks
+    cmds:
+      - task: release:restore
+      # The deep-link plugin rewrites the manifest's indentation at every build.
+      - task: release:keep
+        vars:
+          FILES: >-
+            src-tauri/tauri.conf.json
+            src-tauri/gen/android/app/src/main/AndroidManifest.xml
+      - defer: { task: release:restore }
+      - |
+        set -e
+        export ANDROID_HOME='{{.ANDROID_SDK}}'
+        export NDK_HOME='{{.ANDROID_NDK}}'
+        export JAVA_HOME='{{.ANDROID_JDK}}'
+        export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
+
+        node .github/scripts/stamp-version.mjs '{{.VERSION}}'
+
+        # So what gets signed can only be what this run produced.
+        outputs=src-tauri/gen/android/app/build/outputs
+        rm -rf "$outputs/bundle" "$outputs/mapping"
+
+        # 64-bit ARM (every current phone), 32-bit ARM (older ones) and x86_64
+        # (Chromebooks, emulators), in one bundle Google Play splits per device.
+        pnpm tauri android build --aab --target aarch64 armv7 x86_64
+
+        aab=$(find "$outputs/bundle" -name '*-release.aab' | head -n 1)
+        [ -n "$aab" ] || { echo "No release bundle was produced." >&2; exit 1; }
+        mkdir -p release
+        out='release/almena-wallet-{{.VERSION}}.aab'
+        cp "$aab" "$out"
+
+        # Google Play re-signs what it delivers with the app signing key it
+        # keeps; this signature only proves the upload is ours. The passwords go
+        # by the name of their variable, so they are on no command line.
+        set -- -keystore '{{.ANDROID_UPLOAD_KEYSTORE}}' -sigalg SHA256withRSA -digestalg SHA-256
+        if [ -n "$ANDROID_UPLOAD_KEYSTORE_PASSWORD" ]; then
+          set -- "$@" -storepass:env ANDROID_UPLOAD_KEYSTORE_PASSWORD
+        fi
+        if [ -n "$ANDROID_UPLOAD_KEY_PASSWORD" ]; then
+          set -- "$@" -keypass:env ANDROID_UPLOAD_KEY_PASSWORD
+        fi
+        jarsigner "$@" "$out" '{{.ANDROID_UPLOAD_KEY_ALIAS | default "upload"}}'
+        # An unsigned file passes `-verify` too, saying so; only these words
+        # mean it is signed.
+        jarsigner -verify "$out" | grep -q 'jar verified'
+
+        # R8's map from the shrunk names back to the real ones, for Play's
+        # crash reports.
+        mapping=$(find "$outputs/mapping" -name mapping.txt 2>/dev/null | head -n 1)
+        if [ -n "$mapping" ]; then cp "$mapping" 'release/almena-wallet-{{.VERSION}}-mapping.txt'; fi
+
+        echo "Signed: $out"
+
+  release:ios:
+    desc: "Build the iOS archive for App Store Connect, into release/ (VERSION=2026.11.1)"
+    silent: true
+    deps: [install]
+    env:
+      # `TEAM=<id>` on the command line wins; otherwise whatever .env.local or
+      # the shell already says.
+      APPLE_DEVELOPMENT_TEAM: '{{.TEAM | default .APPLE_DEVELOPMENT_TEAM}}'
+    preconditions:
+      - sh: printf '%s' '{{.VERSION}}' | grep -Eq '^[0-9]{4}[.][0-9]{2}[.][0-9]+$'
+        msg: 'Say which version, as year.month.sequence: task release:ios VERSION=2026.11.1'
+      - sh: test "$(uname)" = Darwin
+        msg: 'This builds an iOS archive, and only macOS can sign one.'
+      - sh: test -d src-tauri/gen/apple
+        msg: 'The iOS project is not initialised yet. Run: task init:ios'
+      - sh: test -n "$APPLE_DEVELOPMENT_TEAM"
+        msg: |
+          No Apple development team. Write it once into wallet/.env.local:
+
+            APPLE_DEVELOPMENT_TEAM=XXXXXXXXXX
+
+          It is the Team ID in developer.apple.com > Membership.
+      - sh: 'test -f "{{.IOS_RELEASE_CERTIFICATE}}" && test -n "$IOS_RELEASE_CERTIFICATE_PASSWORD"'
+        msg: |
+          No Apple Distribution certificate. Make one at developer.apple.com >
+          Certificates, open it, export it from Keychain Access as a .p12 outside
+          the repository, and name it in wallet/.env.local:
+
+            IOS_RELEASE_CERTIFICATE=/absolute/path/to/distribution.p12
+            IOS_RELEASE_CERTIFICATE_PASSWORD=the-password-it-was-exported-with
+      - sh: 'test -f "{{.IOS_RELEASE_PROFILE}}"'
+        msg: |
+          No provisioning profile. Make an App Store Connect profile for the iOS
+          App ID id.almena.wallet at developer.apple.com, with that certificate,
+          download it, and name it in wallet/.env.local:
+
+            IOS_RELEASE_PROFILE=/absolute/path/to/wallet.mobileprovision
+    cmds:
+      - task: release:restore
+      # Tauri writes the export method, the signing settings and the version into
+      # the committed Xcode project, on top of the two stamped here.
+      - task: release:keep
+        vars:
+          FILES: >-
+            src-tauri/tauri.conf.json
+            src-tauri/gen/apple/ExportOptions.plist
+            src-tauri/gen/apple/project.yml
+            src-tauri/gen/apple/wallet.xcodeproj/project.pbxproj
+            src-tauri/gen/apple/wallet_iOS/Info.plist
+            src-tauri/gen/apple/wallet_iOS/wallet_iOS.entitlements
+      - defer: { task: release:restore }
+      - |
+        set -e
+        node .github/scripts/stamp-version.mjs '{{.VERSION}}'
+
+        # The committed entitlement says development, which is what a build on a
+        # cable needs. An App Store profile grants production only, and a build
+        # whose entitlements ask for more is refused.
+        plutil -replace aps-environment -string production src-tauri/gen/apple/wallet_iOS/wallet_iOS.entitlements
+
+        # A build reuses the previous output directory and refuses to overwrite
+        # an app bundle left there by a build for the other kind of target; and
+        # what gets copied can only be what this run produced.
+        rm -rf src-tauri/gen/apple/build
+
+        # Tauri imports the certificate into a keychain of its own and installs
+        # the profile, then archives and exports with manual signing.
+        IOS_CERTIFICATE=$(base64 -i '{{.IOS_RELEASE_CERTIFICATE}}')
+        IOS_MOBILE_PROVISION=$(base64 -i '{{.IOS_RELEASE_PROFILE}}')
+        IOS_CERTIFICATE_PASSWORD="$IOS_RELEASE_CERTIFICATE_PASSWORD"
+        export IOS_CERTIFICATE IOS_MOBILE_PROVISION IOS_CERTIFICATE_PASSWORD
+        pnpm tauri ios build -t aarch64 --export-method app-store-connect
+
+        ipa=$(find src-tauri/gen/apple/build -maxdepth 2 -name '*.ipa' | head -n 1)
+        [ -n "$ipa" ] || { echo "No .ipa was produced." >&2; exit 1; }
+        mkdir -p release
+        out='release/almena-wallet-{{.VERSION}}.ipa'
+        cp "$ipa" "$out"
+
+        echo "Signed: $out"

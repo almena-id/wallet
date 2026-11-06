@@ -14,8 +14,8 @@ type NewConversationScreenProps = {
 };
 
 /**
- * Where a conversation starts: with somebody found in the directory, or with
- * somebody this wallet already has a relationship with.
+ * Where a conversation starts: with somebody this wallet already has a
+ * relationship with.
  *
  * It syncs as it opens, so a relationship somebody opened by accepting this
  * wallet's invitation is in the list by the time it is drawn.
@@ -24,8 +24,6 @@ export function NewConversationScreen({ onBack, onOpen }: NewConversationScreenP
   const { t, locale } = useI18n();
   const [contacts, setContacts] = useState<Contact[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [searched, setSearched] = useState(false);
 
   useEffect(() => {
     let current = true;
@@ -53,41 +51,6 @@ export function NewConversationScreen({ onBack, onOpen }: NewConversationScreenP
       </header>
 
       {error ? <p className="card__note card__note--warning">{error}</p> : null}
-
-      <form
-        className="card"
-        aria-labelledby="new-directory"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setSearched(query.trim().length > 0);
-        }}
-      >
-        <h2 className="card__title" id="new-directory">
-          {t.conversations.new.directory.title}
-        </h2>
-        {/* Searched with the keyboard's own key: the card is the title and
-            the box, nothing else. */}
-        <input
-          className="field__input"
-          type="search"
-          enterKeyHint="search"
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setSearched(false);
-          }}
-          placeholder={t.conversations.new.directory.placeholder}
-          aria-labelledby="new-directory"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-        />
-        {/* The directory is not published yet; the search is here so the
-            screen has its final shape, and says so when it is used. */}
-        {searched ? (
-          <p className="card__note">{t.conversations.new.directory.unavailable}</p>
-        ) : null}
-      </form>
 
       <section className="card" aria-labelledby="new-contacts">
         <h2 className="card__title" id="new-contacts">
