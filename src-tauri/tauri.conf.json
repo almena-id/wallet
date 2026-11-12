@@ -31,7 +31,6 @@
         "style-src": "'self'",
         "img-src": "'self' data: blob:",
         "font-src": "'self' data:",
-        "media-src": "'self' blob: mediastream:",
         "connect-src": "ipc: http://ipc.localhost",
         "object-src": "'none'",
         "frame-src": "'none'",

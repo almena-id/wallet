@@ -207,65 +207,6 @@ export function PlusIcon({ className }: IconProps) {
   );
 }
 
-/** A handset: a voice call. */
-export function PhoneIcon({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <path d="M6.6 4h2.6l1.4 3.8-1.9 1.3a11 11 0 0 0 5.2 5.2l1.3-1.9 3.8 1.4v2.6A1.6 1.6 0 0 1 17.4 18 13.6 13.6 0 0 1 5 5.6 1.6 1.6 0 0 1 6.6 4z" />
-    </svg>
-  );
-}
-
-/** The handset put down: ending a call. */
-export function HangUpIcon({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <path d="M3.4 13.6c4.8-4.1 12.4-4.1 17.2 0l-1.6 2.7-3.5-1.1-.4-2.4a10 10 0 0 0-6.2 0l-.4 2.4-3.5 1.1z" />
-    </svg>
-  );
-}
-
-/** A camera: a video call. */
-export function VideoIcon({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <rect x="3.5" y="6.5" width="12" height="11" rx="2" />
-      <path d="m15.5 10.5 5-3v9l-5-3" />
-    </svg>
-  );
-}
-
-/** The camera, crossed out: it is off. */
-export function VideoOffIcon({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <path d="M15.5 12.8v2.7a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h1.3" />
-      <path d="M10 6.5h3.5a2 2 0 0 1 2 2v2l5-3v9" />
-      <path d="m4 4 16 16" />
-    </svg>
-  );
-}
-
-export function MicIcon({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <rect x="9" y="3.5" width="6" height="11" rx="3" />
-      <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v2.5" />
-    </svg>
-  );
-}
-
-/** The microphone, crossed out: it is muted. */
-export function MicOffIcon({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <path d="M15 10.5V6.5a3 3 0 0 0-5.8-1.1M9 9v2.5a3 3 0 0 0 4.6 2.5" />
-      <path d="M5.5 11.5a6.5 6.5 0 0 0 10.4 5.2M18.3 13.4a6.5 6.5 0 0 0 .2-1.9M12 18v2.5" />
-      <path d="m4 4 16 16" />
-    </svg>
-  );
-}
-
 /** A credential with nothing to say what kind: a rosette with a tick (lucide's badge-check). */
 export function BadgeCheckIcon({ className }: IconProps) {
   return (

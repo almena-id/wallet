@@ -46,9 +46,10 @@ pub struct Entry {
     pub notice: Option<super::notice::Notice>,
 }
 
-/// The id of the conversation this wallet has as `ours`.
-pub fn id(ours: &str) -> String {
-    Sha256::digest(ours.as_bytes())[..16]
+/// The id of the conversation of the relationship opened with `origin`:
+/// the same wherever the relationship moves.
+pub fn id(origin: &str) -> String {
+    Sha256::digest(origin.as_bytes())[..16]
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()

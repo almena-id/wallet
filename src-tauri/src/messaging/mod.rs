@@ -1,5 +1,5 @@
-//! Messaging: the wallet's mediation with a DIDComm mediator, and the
-//! relationships it has through it.
+//! Messaging: the wallet's mediations with DIDComm mediators, and the
+//! relationships it has through them.
 //!
 //! A wallet has no address of its own, so it gets one from a mediator: it asks
 //! for mediation (Coordinate Mediation 3.0), registers the DIDs it can be
@@ -7,6 +7,18 @@
 //! message in a `forward` to the mediator, which queues it until the wallet
 //! picks it up (Message Pickup 3.0). The protocols, and what the mediator
 //! requires of them, are in the mediator's SPEC.md (§3 and §6).
+//!
+//! **One mediator, and changing it.** A wallet has one mediator. Each
+//! relationship records the mediator its pairwise was derived for
+//! ([`peer`]), so choosing another moves them: the wallet registers the
+//! pairwise it gets at the new one and tells the counterparty with a message
+//! from it carrying `from_prior` — a JWT the old pairwise signs, DIDComm's
+//! DID rotation — and keeps collecting the old mediator for
+//! [`state::GRACE_SECS`], so nothing sent before the counterparty learned of
+//! the move is lost. A counterparty's move reaches this wallet the same way:
+//! any message whose `from_prior` the counterparty's current DID signed moves
+//! the relationship to the DID that sent it. The state can hold more than
+//! one mediation only while one is being left.
 //!
 //! - [`peer`]: the DIDs the wallet speaks as — inbox, contact card, pairwise —
 //!   all derived from the seed.
@@ -21,14 +33,11 @@
 //! - [`photo`]: the picture the wallet shows for its own identity.
 //! - [`push`]: the device token the mediator notifies while the wallet is not
 //!   running.
-//! - [`call`]: the signalling of calls, and the TURN credentials they are
-//!   relayed with (`SPEC.md` §3).
 //!
 //! Everything here needs the wallet open: every key and the state key come
 //! from the seed, which is only held while it is.
 
 pub(crate) mod backup;
-mod call;
 mod chat;
 mod contacts;
 mod conversation;
@@ -40,18 +49,18 @@ mod photo;
 mod push;
 pub(crate) mod state;
 
-use almena_didcomm::{unpack, InMemorySecrets, Message, Urgency};
+use almena_didcomm::{unpack, InMemorySecrets, Message};
 use serde::{Serialize, Serializer};
 use serde_json::json;
 use tauri::async_runtime::Mutex;
-use tauri::{Emitter, Manager, Runtime, State};
+use tauri::{Manager, Runtime, State};
 use zeroize::Zeroizing;
 
 use crate::identity::Held;
 use conversation::Entry;
 use mediator::Mediator;
 use peer::Peer;
-use state::{Last, Mediation, Relationship};
+use state::{Last, Mediation, Previous, Relationship, GRACE_SECS};
 
 const STATUS_REQUEST: &str = "https://didcomm.org/messagepickup/3.0/status-request";
 
@@ -77,7 +86,7 @@ enum Sender {
 /// The rule every message inside a relationship is taken by: it is for one of
 /// our pairwise DIDs (`to`) and from that relationship's counterparty.
 fn sender(relationships: &[Relationship], to: &[String], from: Option<&str>) -> Sender {
-    let Some(at) = relationships.iter().position(|r| to.contains(&r.ours)) else {
+    let Some(at) = relationships.iter().position(|r| r.is_for(to)) else {
         return Sender::Nobody;
     };
     let relationship = &relationships[at];
@@ -125,11 +134,17 @@ pub enum MessagingError {
     /// The mediator takes no new wallets for now (`mediate-deny`): it is at
     /// capacity. The wallets it already serves keep working.
     MediatorFull,
+    /// The mediator is private: it takes only the wallets its administrators
+    /// invite, and this request answered no invitation of theirs.
+    MediatorPrivate,
     /// The counterparty could not be written to: its DID did not resolve,
     /// named no mailbox, or the mailbox did not take the message.
     CounterpartyUnreachable,
     /// Asked for something that needs a mediation this wallet does not have.
     NotConnected,
+    /// The mailbox holds as many DIDs as its mediator allows: no new contact
+    /// fits there.
+    MailboxFull,
     /// Written to somebody who has not answered the invitation yet.
     Pending,
     /// A contact or a message this wallet does not have.
@@ -146,8 +161,6 @@ pub enum MessagingError {
     Storage,
     /// The system would not supply randomness.
     Entropy,
-    /// The mediator offers no TURN relay, so no call can be placed.
-    CallsUnavailable,
 }
 
 impl MessagingError {
@@ -160,8 +173,10 @@ impl MessagingError {
             Self::MediatorUnreachable => "messaging_mediator_unreachable",
             Self::MediatorRefused => "messaging_mediator_refused",
             Self::MediatorFull => "messaging_mediator_full",
+            Self::MediatorPrivate => "messaging_mediator_private",
             Self::CounterpartyUnreachable => "messaging_counterparty_unreachable",
             Self::NotConnected => "messaging_not_connected",
+            Self::MailboxFull => "messaging_mailbox_full",
             Self::Pending => "messaging_pending",
             Self::ContactUnknown => "messaging_contact_unknown",
             Self::MessageInvalid => "messaging_message_invalid",
@@ -170,7 +185,6 @@ impl MessagingError {
             Self::Unreadable => "messaging_unreadable",
             Self::Storage => "messaging_storage",
             Self::Entropy => "messaging_entropy",
-            Self::CallsUnavailable => "messaging_calls_unavailable",
         }
     }
 }
@@ -187,21 +201,68 @@ impl Serialize for MessagingError {
 #[derive(Default)]
 pub struct Gate(Mutex<()>);
 
-/// The mediation as the interface shows it.
+/// The mediation as the interface shows it, with the one being left after
+/// a change, while it is.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediatorStatus {
-    /// The mediator's DID, when there is a mediation.
+    /// The default mediator's DID, when there is a mediation.
     pub mediator: Option<String>,
     /// The inbox DID registered with it.
     pub inbox: Option<String>,
+    /// Every mediation, the current one first.
+    pub mediators: Vec<MediatorEntry>,
 }
 
-impl From<Option<&Mediation>> for MediatorStatus {
-    fn from(mediation: Option<&Mediation>) -> Self {
+/// One mediation in the list.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediatorEntry {
+    pub mediator: String,
+    pub inbox: String,
+    /// The wallet's mediator: not one being left.
+    pub default: bool,
+    /// Being left: still collected until then, its relationships moving away.
+    pub leaving: Option<u64>,
+    /// Relationships that go through it.
+    pub contacts: usize,
+    /// The addresses (DIDs) this wallet holds there: its inbox, its contact
+    /// card and one per contact.
+    pub dids: u64,
+    /// How many its mediator lets it hold. Unknown for a mediator that does
+    /// not say.
+    pub max_dids: Option<u64>,
+}
+
+impl From<&state::State> for MediatorStatus {
+    fn from(state: &state::State) -> Self {
+        let default = state.default_mediation();
         Self {
-            mediator: mediation.map(|m| m.mediator.clone()),
-            inbox: mediation.map(|m| m.inbox.clone()),
+            mediator: default.map(|m| m.mediator.clone()),
+            inbox: default.map(|m| m.inbox.clone()),
+            mediators: state
+                .mediations
+                .iter()
+                .map(|m| MediatorEntry {
+                    mediator: m.mediator.clone(),
+                    inbox: m.inbox.clone(),
+                    default: default.is_some_and(|d| d.mediator == m.mediator),
+                    leaving: m.leaving,
+                    // The card counts whether or not it was shown yet: its
+                    // place is kept for it.
+                    dids: 2 + state
+                        .relationships
+                        .iter()
+                        .filter(|r| r.mediator == m.mediator)
+                        .count() as u64,
+                    max_dids: m.max_dids,
+                    contacts: state
+                        .relationships
+                        .iter()
+                        .filter(|r| r.mediator == m.mediator)
+                        .count(),
+                })
+                .collect(),
         }
     }
 }
@@ -235,13 +296,15 @@ pub struct Contact {
     pub last: Option<Last>,
     /// Its history was deleted; the inbox leaves it out until it has news.
     pub cleared: bool,
+    /// The mediator it goes through.
+    pub mediator: String,
 }
 
 impl From<&Relationship> for Contact {
     fn from(relationship: &Relationship) -> Self {
         let fingerprint = contacts::name(&relationship.origin);
         Self {
-            id: conversation::id(&relationship.ours),
+            id: relationship.id(),
             name: relationship
                 .alias
                 .clone()
@@ -255,6 +318,7 @@ impl From<&Relationship> for Contact {
             unread: relationship.unread,
             last: relationship.last.clone(),
             cleared: relationship.cleared,
+            mediator: relationship.mediator.clone(),
         }
     }
 }
@@ -294,7 +358,7 @@ pub struct Synced {
     pub contacts: Vec<Contact>,
 }
 
-/// The mediation this wallet has, if any. Reads the device only.
+/// The mediation this wallet has. Reads the device only.
 #[tauri::command]
 pub fn mediator_status<R: Runtime>(
     app: tauri::AppHandle<R>,
@@ -302,14 +366,19 @@ pub fn mediator_status<R: Runtime>(
 ) -> Result<MediatorStatus, MessagingError> {
     let seed = seed(&held)?;
     let state = state::read(&app, &seed)?;
-    Ok(state.mediation.as_ref().into())
+    Ok(MediatorStatus::from(&state))
 }
 
-/// Connects to the mediator somebody pasted: asks for mediation, registers the
-/// inbox with it, and writes down that it did.
+/// Connects to the mediator somebody pasted — asks for mediation, registers
+/// the inbox with it — and makes it the wallet's mediator. A wallet has one:
+/// when it had another, its relationships move to the new one (as far as
+/// each counterparty can be told now; the rest are tried again on every
+/// sync) and the old one is still collected for [`GRACE_SECS`], so nothing
+/// sent there before the move is lost.
 ///
 /// Asking again is harmless: the mediator grants the same mediation to the same
-/// inbox and answers `no_change` to a DID it already has.
+/// inbox and answers `no_change` to a DID it already has. A mediator being
+/// left that is chosen again is simply kept.
 #[tauri::command]
 pub async fn mediator_connect<R: Runtime>(
     app: tauri::AppHandle<R>,
@@ -322,33 +391,64 @@ pub async fn mediator_connect<R: Runtime>(
 
     let _guard = gate.0.lock().await;
     let mut state = state::read(&app, &seed)?;
-    state.mediation = Some(mediation);
+    let now = almena_didcomm::message::now();
+    let previous: Vec<String> = state
+        .mediations
+        .iter()
+        .filter(|m| m.leaving.is_none() && m.mediator != mediation.mediator)
+        .map(|m| m.mediator.clone())
+        .collect();
+    state
+        .mediations
+        .retain(|m| m.mediator != mediation.mediator);
+    for old in &mut state.mediations {
+        old.leaving.get_or_insert(now + GRACE_SECS);
+    }
+    state.mediations.insert(0, mediation);
+    for old in &previous {
+        relocate_all(&seed, &mut state, old, now).await;
+    }
     state::write(&app, &seed, &state)?;
 
-    // Live delivery gave up for want of a mediation, or follows the old one:
-    // without this nothing arrives live — a call included — until the wallet
-    // next comes to the front.
+    // Live delivery gave up for want of a mediation, or does not follow the
+    // new one yet: without this nothing arrives live from it until the
+    // wallet next comes to the front.
     app.state::<live::Live>().restart(app.clone());
 
-    Ok(state.mediation.as_ref().into())
+    Ok(MediatorStatus::from(&state))
 }
 
-/// Asks the mediator how many messages it is holding for this wallet.
+/// Asks the mediators how many messages they are holding for this wallet, in
+/// all — the one being left included; the ones that do not answer are left
+/// out.
 #[tauri::command]
 pub async fn mediator_check<R: Runtime>(
     app: tauri::AppHandle<R>,
     held: State<'_, Held>,
 ) -> Result<Waiting, MessagingError> {
     let seed = seed(&held)?;
-    let mediation = state::read(&app, &seed)?
-        .mediation
-        .ok_or(MessagingError::NotConnected)?;
-    waiting(&seed, &mediation.mediator).await
+    let state = state::read(&app, &seed)?;
+    if state.mediations.is_empty() {
+        return Err(MessagingError::NotConnected);
+    }
+    let mut total = None;
+    let mut failure = MessagingError::MediatorUnreachable;
+    for mediation in &state.mediations {
+        match waiting(&seed, mediation).await {
+            Ok(waiting) => *total.get_or_insert(0) += waiting.message_count,
+            Err(error) => failure = error,
+        }
+    }
+    total
+        .map(|message_count| Waiting { message_count })
+        .ok_or(failure)
 }
 
 /// Leaves the mediator: takes the inbox off its recipients if it answers, and
 /// forgets the mediation either way — a mediator that is gone must not keep a
-/// wallet from choosing another.
+/// wallet from choosing another. Its relationships have nowhere to go: they
+/// stay, unreachable, until another mediator is chosen and they move there.
+/// One still being left after a change goes on being collected.
 #[tauri::command]
 pub async fn mediator_disconnect<R: Runtime>(
     app: tauri::AppHandle<R>,
@@ -358,62 +458,80 @@ pub async fn mediator_disconnect<R: Runtime>(
     let seed = seed(&held)?;
     let _guard = gate.0.lock().await;
     let mut state = state::read(&app, &seed)?;
-
-    if let Some(mediation) = &state.mediation {
-        if let Ok(mediator) = Mediator::resolve(&mediation.mediator).await {
-            if let Ok(inbox) = Peer::inbox(&seed, &mediator.did) {
-                let _ = push::register(&mediator, &inbox, None, None).await;
-                let _ = mediator.recipient(&inbox, &inbox, "remove").await;
-            }
+    let at = state
+        .mediations
+        .iter()
+        .position(|m| m.leaving.is_none())
+        .ok_or(MessagingError::NotConnected)?;
+    let mediation = state.mediations.remove(at);
+    if let Ok(mediator) = Mediator::resolve(&mediation.mediator).await {
+        if let Ok(inbox) = Peer::inbox(&seed, &mediator.did) {
+            let _ = push::register(&mediator, &inbox, None).await;
+            let _ = mediator.recipient(&inbox, &inbox, "remove").await;
         }
     }
-    push::forget(&app);
-
-    state.mediation = None;
+    if state.mediations.is_empty() {
+        push::forget(&app);
+    }
     state::write(&app, &seed, &state)?;
-    Ok(MediatorStatus::from(None))
+    app.state::<live::Live>().restart(app.clone());
+    Ok(MediatorStatus::from(&state))
 }
 
-/// Registers this device's push token with the mediation, asking for
-/// permission to notify the first time. Returns whether the mediator will now
+/// Registers this device's push token with every mediation, asking for
+/// permission to notify the first time. Returns whether a mediator will now
 /// notify it: not on desktop, not without a mediation, not when permission was
-/// refused, and not with a mediator that does not push for this platform.
+/// refused, and not with mediators that do not push for this platform.
 #[tauri::command]
 pub async fn push_register<R: Runtime>(
     app: tauri::AppHandle<R>,
     held: State<'_, Held>,
 ) -> Result<bool, MessagingError> {
     let seed = seed(&held)?;
-    let Some(mediation) = state::read(&app, &seed)?.mediation else {
+    let mediations = state::read(&app, &seed)?.mediations;
+    if mediations.is_empty() {
         return Ok(false);
-    };
+    }
     let Some(token) = push::token(&app).await else {
         return Ok(false);
     };
-    let mediator = Mediator::resolve(&mediation.mediator).await?;
-    let inbox = Peer::inbox(&seed, &mediator.did)?;
-    mediator.ensure(&inbox, None).await?;
-    let voip = push::voip_token(&app);
-    match push::register(&mediator, &inbox, Some(&token), voip.as_deref()).await {
-        Ok(()) => Ok(true),
-        Err(MessagingError::MediatorRefused) => Ok(false),
-        Err(error) => Err(error),
+    let mut registered = false;
+    let mut failure = None;
+    for mediation in &mediations {
+        let result = async {
+            let mediator = Mediator::resolve(&mediation.mediator).await?;
+            let inbox = Peer::inbox(&seed, &mediator.did)?;
+            mediator.ensure(&inbox, None).await?;
+            push::register(&mediator, &inbox, Some(&token)).await
+        }
+        .await;
+        match result {
+            Ok(()) => registered = true,
+            Err(MessagingError::MediatorRefused) => {}
+            Err(error) => failure = Some(error),
+        }
+    }
+    match failure {
+        Some(error) if !registered => Err(error),
+        _ => Ok(registered),
     }
 }
 
-/// Takes this device off the mediation's pushes, as far as the mediator can be
-/// reached, and tells the system no more are wanted. For signing out: an
-/// identity that has left the device must not keep waking it.
+/// Takes this device off every mediation's pushes, as far as the mediators
+/// can be reached, and tells the system no more are wanted. For signing out:
+/// an identity that has left the device must not keep waking it.
 #[tauri::command]
 pub async fn push_unregister<R: Runtime>(
     app: tauri::AppHandle<R>,
     held: State<'_, Held>,
 ) -> Result<(), MessagingError> {
     let seed = seed(&held)?;
-    if let Some(mediation) = state::read(&app, &seed)?.mediation {
-        let mediator = Mediator::resolve(&mediation.mediator).await?;
-        let inbox = Peer::inbox(&seed, &mediator.did)?;
-        let _ = push::register(&mediator, &inbox, None, None).await;
+    for mediation in state::read(&app, &seed)?.mediations {
+        if let Ok(mediator) = Mediator::resolve(&mediation.mediator).await {
+            if let Ok(inbox) = Peer::inbox(&seed, &mediator.did) {
+                let _ = push::register(&mediator, &inbox, None).await;
+            }
+        }
     }
     push::forget(&app);
     Ok(())
@@ -439,10 +557,11 @@ pub async fn invitation_show<R: Runtime>(
 ) -> Result<Shown, MessagingError> {
     let seed = seed(&held)?;
     let mediation = state::read(&app, &seed)?
-        .mediation
+        .default_mediation()
+        .cloned()
         .ok_or(MessagingError::NotConnected)?;
     Ok(Shown {
-        url: invitation(&seed, &mediation.mediator).await?,
+        url: invitation(&seed, &mediation).await?,
     })
 }
 
@@ -485,8 +604,8 @@ pub enum LinkDetails {
     Mediator {
         mediator: String,
         current: Option<String>,
-        /// Relationships whose DIDs route through the current mediator: a new
-        /// one would stop collecting what they send.
+        /// Relationships that go through the current mediator: they move to
+        /// the new one.
         contacts: usize,
     },
     Unknown,
@@ -504,7 +623,7 @@ pub fn link_details<R: Runtime>(
     let state = state::read(&app, &seed)?;
 
     if let Ok(invitation) = contacts::read(&input) {
-        let own = state.mediation.as_ref().is_some_and(|mediation| {
+        let own = state.mediations.iter().any(|mediation| {
             Peer::card(&seed, &mediation.mediator).is_ok_and(|card| card.did == invitation.from)
         });
         return Ok(LinkDetails::Contact {
@@ -519,10 +638,15 @@ pub fn link_details<R: Runtime>(
     }
     if let Ok(target) = mediator::target(&input) {
         if target.invitation.is_some() {
+            let current = state.default_mediation().map(|m| m.mediator.clone());
             return Ok(LinkDetails::Mediator {
+                contacts: state
+                    .relationships
+                    .iter()
+                    .filter(|r| Some(&r.mediator) == current.as_ref())
+                    .count(),
                 mediator: target.did,
-                current: state.mediation.map(|m| m.mediator),
-                contacts: state.relationships.len(),
+                current,
             });
         }
     }
@@ -758,59 +882,6 @@ pub async fn profile_write<R: Runtime>(
     Ok(Profile { name, unreached })
 }
 
-/// The TURN servers a call is relayed through, as `RTCIceServer`s, from this
-/// wallet's own mediator. Asked for before each call: the credentials expire.
-#[tauri::command]
-pub async fn call_ice_servers<R: Runtime>(
-    app: tauri::AppHandle<R>,
-    held: State<'_, Held>,
-) -> Result<serde_json::Value, MessagingError> {
-    let seed = seed(&held)?;
-    let mediation = state::read(&app, &seed)?
-        .mediation
-        .ok_or(MessagingError::NotConnected)?;
-    let mediator = Mediator::resolve(&mediation.mediator).await?;
-    let inbox = Peer::inbox(&seed, &mediator.did)?;
-    mediator.ensure(&inbox, None).await?;
-    call::ice_servers(&mediator, &inbox).await
-}
-
-/// Says `signal` to the contact of the conversation `id`, in the call `call`
-/// — none for an offer, which starts one. Returns the call's id.
-///
-/// Reads the state without the [`Gate`]: nothing is written, and a call must
-/// not wait for a sync.
-#[tauri::command]
-pub async fn call_send<R: Runtime>(
-    app: tauri::AppHandle<R>,
-    held: State<'_, Held>,
-    id: String,
-    call: Option<String>,
-    signal: call::Signal,
-) -> Result<String, MessagingError> {
-    let seed = seed(&held)?;
-    let state = state::read(&app, &seed)?;
-    let mediation = state
-        .mediation
-        .as_ref()
-        .ok_or(MessagingError::NotConnected)?;
-    let relationship = find(&state.relationships, &id)?;
-    if relationship.pending {
-        return Err(MessagingError::Pending);
-    }
-    // An offer is marked as a call on its `forward`, so their mediator rings
-    // their phone even while the wallet there is closed and cannot read it;
-    // that mediator learns a call is coming, and nothing about it.
-    let urgency = match signal {
-        call::Signal::Offer { .. } => Urgency::Call,
-        call::Signal::Answer { .. } | call::Signal::Hangup { .. } => Urgency::Normal,
-    };
-    let message = call::message(call.as_deref(), &signal)?;
-    let call = message.thid().to_owned();
-    deliver_with(&seed, mediation, relationship, message, urgency).await?;
-    Ok(call)
-}
-
 /// Registers the lock the commands that change the state hold, and the live
 /// session.
 pub fn manage<R: Runtime>(app: &tauri::AppHandle<R>) {
@@ -856,17 +927,19 @@ async fn mediate(seed: &[u8; 64], input: &str) -> Result<Mediation, MessagingErr
     let mediator = Mediator::resolve(&target.did).await?;
     let inbox = Peer::inbox(seed, &mediator.did)?;
 
-    mediator.ensure(&inbox, target.invitation).await?;
+    let max_dids = mediator.ensure(&inbox, target.invitation).await?;
 
     Ok(Mediation {
         mediator: mediator.did,
         inbox: inbox.did,
+        leaving: None,
+        max_dids,
     })
 }
 
 /// How many messages the mediator is holding for the inbox.
-async fn waiting(seed: &[u8; 64], mediator: &str) -> Result<Waiting, MessagingError> {
-    let mediator = Mediator::resolve(mediator).await?;
+async fn waiting(seed: &[u8; 64], mediation: &Mediation) -> Result<Waiting, MessagingError> {
+    let mediator = Mediator::resolve(&mediation.mediator).await?;
     let inbox = Peer::inbox(seed, &mediator.did)?;
 
     let status = mediator
@@ -881,8 +954,8 @@ async fn waiting(seed: &[u8; 64], mediator: &str) -> Result<Waiting, MessagingEr
 }
 
 /// Registers the contact card and returns the invitation that names it.
-async fn invitation(seed: &[u8; 64], mediator: &str) -> Result<String, MessagingError> {
-    let mediator = Mediator::resolve(mediator).await?;
+async fn invitation(seed: &[u8; 64], mediation: &Mediation) -> Result<String, MessagingError> {
+    let mediator = Mediator::resolve(&mediation.mediator).await?;
     let inbox = Peer::inbox(seed, &mediator.did)?;
     let card = Peer::card(seed, &mediator.did)?;
     mediator.ensure(&inbox, None).await?;
@@ -898,8 +971,7 @@ async fn accept(
     invitation: &contacts::Invitation,
 ) -> Result<Relationship, MessagingError> {
     let mediation = state
-        .mediation
-        .as_ref()
+        .default_mediation()
         .ok_or(MessagingError::NotConnected)?;
     let mediator = Mediator::resolve(&mediation.mediator).await?;
     let inbox = Peer::inbox(seed, &mediator.did)?;
@@ -931,8 +1003,9 @@ fn web_name(did: &str) -> String {
 }
 
 /// Where an issuer this wallet is pairing with (`registry.rs`, `pair`) may
-/// write to it: the pairwise for the issuer's DID, registered with this
-/// wallet's mediator, and the relationship it opens — named as the issuer,
+/// write to it: the pairwise for the issuer's DID, registered with the
+/// mediator the relationship with it goes through (the default for a new
+/// one), and the relationship it opens — named as the issuer,
 /// open from the start, its counterparty the issuer's `did:web` name. Its
 /// DID goes in the pairing token; `None` when there is no mediator or it
 /// cannot be reached, and the pairing goes on without notices.
@@ -945,23 +1018,32 @@ pub(crate) async fn issuer_channel<R: Runtime>(
     let gate = app.try_state::<Gate>()?;
     let _guard = gate.0.lock().await;
     let mut state = state::read(app, seed).ok()?;
-    let mediation = state.mediation.clone()?;
-    let mediator = Mediator::resolve(&mediation.mediator).await.ok()?;
+    let found = state
+        .relationships
+        .iter()
+        .find(|r| r.origin == issuer)
+        .filter(|r| state.mediation(&r.mediator).is_some())
+        .cloned();
+    let through = match &found {
+        Some(found) => found.mediator.clone(),
+        None => state.default_mediation()?.mediator.clone(),
+    };
+    let mediator = Mediator::resolve(&through).await.ok()?;
     let inbox = Peer::inbox(seed, &mediator.did).ok()?;
     mediator.ensure(&inbox, None).await.ok()?;
     let pairwise = Peer::pairwise(seed, &mediator.did, issuer).ok()?;
     mediator.register(&inbox, &pairwise).await.ok()?;
     let name: String = name.chars().take(chat::NAME_CHARS).collect();
-    let relationship = match state.relationships.iter().find(|r| r.origin == issuer) {
+    let relationship = match found {
         Some(found) => Relationship {
             theirs: web_name(issuer),
             name: Some(name),
-            ..found.clone()
+            ..found
         },
         None => Relationship {
             origin: issuer.to_owned(),
             name: Some(name),
-            ..Relationship::new(pairwise.did.clone(), web_name(issuer), false)
+            ..Relationship::new(&mediator.did, pairwise.did.clone(), web_name(issuer), false)
         },
     };
     upsert(&mut state.relationships, relationship);
@@ -987,10 +1069,10 @@ pub(crate) fn notice_of<R: Runtime>(
         .ok_or(MessagingError::ContactUnknown)
 }
 
-/// A message of text that arrived, for the relationship this wallet is `ours`
-/// in.
+/// A message of text that arrived, for the relationship whose conversation
+/// is `id`.
 struct Arrival {
-    ours: String,
+    id: String,
     entry: Entry,
 }
 
@@ -1000,27 +1082,65 @@ struct Outcome {
     /// Relationships opened, confirmed or renamed.
     changed: usize,
     arrivals: Vec<Arrival>,
-    /// Call signals, handed to the interface as they are.
-    calls: Vec<call::Incoming>,
 }
 
-/// Picks up and handles what is waiting: the protocol half of
-/// [`messages_sync`]. Relationships are changed in `state`; the texts that
+/// Picks up and handles what is waiting at every mediator: the protocol half
+/// of [`messages_sync`]. Relationships are changed in `state`; the texts that
 /// arrived are returned, for the caller to write into their conversations.
+/// Then what a move left behind is settled ([`settle`]).
 ///
-/// When the mediator stops answering after the first round, what was taken
-/// so far is returned and the rest waits for the next sync.
+/// A mediator that does not answer is skipped, and what waits there waits
+/// for the next sync; when none answers, that is the error.
 async fn sync(seed: &[u8; 64], state: &mut state::State) -> Result<Outcome, MessagingError> {
-    let mediation = state
-        .mediation
-        .clone()
-        .ok_or(MessagingError::NotConnected)?;
-    let mediator = Mediator::resolve(&mediation.mediator).await?;
+    if state.mediations.is_empty() {
+        return Err(MessagingError::NotConnected);
+    }
+    let mut outcome = Outcome::default();
+    let mut reached = false;
+    let mut failure = MessagingError::MediatorUnreachable;
+    let mediators: Vec<String> = state
+        .mediations
+        .iter()
+        .map(|m| m.mediator.clone())
+        .collect();
+    for mediator in mediators {
+        match sync_at(seed, state, &mediator, &mut outcome).await {
+            Ok(()) => reached = true,
+            Err(error) => failure = error,
+        }
+    }
+    outcome.changed += settle(seed, state, almena_didcomm::message::now()).await;
+    if reached {
+        Ok(outcome)
+    } else {
+        Err(failure)
+    }
+}
+
+/// Picks up and handles what is waiting at the mediator `mediator`, into
+/// `outcome`. When it stops answering after the first round, what was taken
+/// so far stays and the rest waits for the next sync.
+async fn sync_at(
+    seed: &[u8; 64],
+    state: &mut state::State,
+    mediator: &str,
+    outcome: &mut Outcome,
+) -> Result<(), MessagingError> {
+    let mediator = Mediator::resolve(mediator).await?;
     let inbox = Peer::inbox(seed, &mediator.did)?;
     let card = Peer::card(seed, &mediator.did)?;
-    mediator.ensure(&inbox, None).await?;
+    let max_dids = mediator.ensure(&inbox, None).await?;
+    // The mediator's limit may have changed since: keep the one it says now.
+    if let Some(held) = state
+        .mediations
+        .iter_mut()
+        .find(|m| m.mediator == mediator.did)
+        .filter(|m| m.max_dids != max_dids)
+    {
+        held.max_dids = max_dids;
+        outcome.changed += 1;
+    }
 
-    let mut outcome = Outcome::default();
     for round in 0..SYNC_ROUNDS {
         let deliveries = match mediator.deliveries(&inbox).await {
             Ok(deliveries) => deliveries,
@@ -1031,16 +1151,7 @@ async fn sync(seed: &[u8; 64], state: &mut state::State) -> Result<Outcome, Mess
             break;
         }
 
-        let received = handle(
-            seed,
-            state,
-            &mediator,
-            &inbox,
-            &card,
-            deliveries,
-            &mut outcome,
-        )
-        .await?;
+        let received = handle(seed, state, &mediator, &inbox, &card, deliveries, outcome).await?;
 
         // Nothing taken this round means what is left is for a later version;
         // asking again would only bring the same messages back.
@@ -1052,8 +1163,142 @@ async fn sync(seed: &[u8; 64], state: &mut state::State) -> Result<Outcome, Mess
             break;
         }
     }
+    Ok(())
+}
 
-    Ok(outcome)
+/// Moves the relationship at `at` to `mediator`: registers its pairwise
+/// there, tells the counterparty from it — a profile message carrying
+/// `from_prior`, which the pairwise it leaves signs — and keeps the old one
+/// collected for [`GRACE_SECS`]. Nothing changes when the counterparty cannot
+/// be told.
+async fn relocate(
+    seed: &[u8; 64],
+    state: &mut state::State,
+    at: usize,
+    mediator: &str,
+    now: u64,
+) -> Result<(), MessagingError> {
+    let relationship = &state.relationships[at];
+    if relationship.mediator == mediator {
+        return Ok(());
+    }
+    if relationship.pending {
+        return Err(MessagingError::Pending);
+    }
+    if !state
+        .mediation(mediator)
+        .is_some_and(|m| m.leaving.is_none())
+    {
+        return Err(MessagingError::NotConnected);
+    }
+    let target = Mediator::resolve(mediator).await?;
+    let inbox = Peer::inbox(seed, &target.did)?;
+    target.ensure(&inbox, None).await?;
+    let new = Peer::pairwise(seed, &target.did, &relationship.origin)?;
+    target.register(&inbox, &new).await?;
+
+    let old = relationship.pairwise(seed)?;
+    let rotation = almena_didcomm::FromPrior::new(&old.did, &new.did)
+        .pack(None, target.resolver(), &old.secrets())
+        .await
+        .map_err(|_| MessagingError::Keys)?;
+    let mut message = chat::profile(state.profile.as_deref(), false);
+    message.from_prior = Some(rotation);
+    contacts::send(&target, &new, &relationship.theirs, message).await?;
+
+    let relationship = &mut state.relationships[at];
+    relationship.previous = Some(Previous {
+        ours: std::mem::replace(&mut relationship.ours, new.did),
+        mediator: std::mem::replace(&mut relationship.mediator, target.did),
+        until: now + GRACE_SECS,
+    });
+    Ok(())
+}
+
+/// Moves every relationship that goes through `leaving` to the default
+/// mediator, as far as each counterparty can be told now. Returns how many
+/// moved.
+async fn relocate_all(seed: &[u8; 64], state: &mut state::State, leaving: &str, now: u64) -> usize {
+    let Some(to) = state.default_mediation().map(|m| m.mediator.clone()) else {
+        return 0;
+    };
+    let mut moved = 0;
+    for at in 0..state.relationships.len() {
+        let relationship = &state.relationships[at];
+        if relationship.mediator != leaving || relationship.pending {
+            continue;
+        }
+        if relocate(seed, state, at, &to, now).await.is_ok() {
+            moved += 1;
+        }
+    }
+    moved
+}
+
+/// What moves leave behind, once their time is up: a pairwise left at
+/// another mediator is unregistered there and forgotten, and a mediator
+/// being left whose relationships have all moved — or that has nothing left
+/// to collect — is left for good: its card and inbox unregistered, its
+/// pushes off. Relationships still on a mediator being left are moved again
+/// first. Returns how many relationships changed.
+async fn settle(seed: &[u8; 64], state: &mut state::State, now: u64) -> usize {
+    let mut changed = 0;
+    let leaving: Vec<String> = state
+        .mediations
+        .iter()
+        .filter(|m| m.leaving.is_some())
+        .map(|m| m.mediator.clone())
+        .collect();
+    for mediator in &leaving {
+        changed += relocate_all(seed, state, mediator, now).await;
+    }
+
+    for relationship in &mut state.relationships {
+        let Some(previous) = relationship
+            .previous
+            .take_if(|previous| previous.until <= now)
+        else {
+            continue;
+        };
+        if let Ok(mediator) = Mediator::resolve(&previous.mediator).await {
+            if let (Ok(inbox), Ok(old)) = (
+                Peer::inbox(seed, &mediator.did),
+                Peer::pairwise(seed, &mediator.did, &relationship.origin),
+            ) {
+                let _ = mediator.recipient(&inbox, &old, "remove").await;
+            }
+        }
+        changed += 1;
+    }
+
+    let mut gone = Vec::new();
+    for mediation in &state.mediations {
+        let Some(until) = mediation.leaving else {
+            continue;
+        };
+        let still_used = state.relationships.iter().any(|r| {
+            r.mediator == mediation.mediator
+                || r.previous
+                    .as_ref()
+                    .is_some_and(|p| p.mediator == mediation.mediator)
+        });
+        if until > now && still_used {
+            continue;
+        }
+        if let Ok(mediator) = Mediator::resolve(&mediation.mediator).await {
+            if let (Ok(inbox), Ok(card)) = (
+                Peer::inbox(seed, &mediator.did),
+                Peer::card(seed, &mediator.did),
+            ) {
+                let _ = push::register(&mediator, &inbox, None).await;
+                let _ = mediator.recipient(&inbox, &card, "remove").await;
+                let _ = mediator.recipient(&inbox, &inbox, "remove").await;
+            }
+        }
+        gone.push(mediation.mediator.clone());
+    }
+    state.mediations.retain(|m| !gone.contains(&m.mediator));
+    changed
 }
 
 /// Handles one batch of `(queue id, envelope)` pairs — from a `delivery`,
@@ -1072,13 +1317,21 @@ async fn handle(
     deliveries: Vec<(String, String)>,
     outcome: &mut Outcome,
 ) -> Result<Vec<String>, MessagingError> {
-    // Every DID a message can be for: the card and each pairwise, derived
-    // again rather than kept.
+    // Every DID a message here can be for: the inbox, the card, and the
+    // pairwise of each relationship through this mediator — or that left it
+    // and is still collected — derived again rather than kept.
     let mut secrets = InMemorySecrets::new();
     inbox.add_to(&mut secrets);
     card.add_to(&mut secrets);
     for relationship in &state.relationships {
-        Peer::pairwise(seed, &mediator.did, &relationship.origin)?.add_to(&mut secrets);
+        let here = relationship.mediator == mediator.did
+            || relationship
+                .previous
+                .as_ref()
+                .is_some_and(|previous| previous.mediator == mediator.did);
+        if here {
+            Peer::pairwise(seed, &mediator.did, &relationship.origin)?.add_to(&mut secrets);
+        }
     }
 
     let mut received = Vec::new();
@@ -1092,6 +1345,23 @@ async fn handle(
             continue;
         }
         let to = message.to.clone().unwrap_or_default();
+
+        // DID rotation: the counterparty's current DID signed that the
+        // conversation moves to the DID that sent this — the card's answer
+        // to an accepted invitation, or a counterparty that moved to another
+        // mediator. Whatever the message is, it is read as from the new one.
+        if let Some(rotation) = &metadata.from_prior {
+            if message.from.as_deref() == Some(rotation.sub.as_str()) {
+                if let Some(relationship) = state
+                    .relationships
+                    .iter_mut()
+                    .find(|r| r.is_for(&to) && r.theirs == rotation.iss)
+                {
+                    relationship.theirs = rotation.sub.clone();
+                    outcome.changed += 1;
+                }
+            }
+        }
 
         match message.type_.as_str() {
             contacts::PING if to.contains(&card.did) => {
@@ -1112,7 +1382,7 @@ async fn handle(
                 }
                 // A sender that cannot be answered now is left queued and
                 // tried again on the next sync, without holding up the rest.
-                if let Ok(relationship) = contacts::welcome(
+                match contacts::welcome(
                     seed,
                     mediator,
                     inbox,
@@ -1123,50 +1393,27 @@ async fn handle(
                 )
                 .await
                 {
-                    upsert(&mut state.relationships, relationship);
-                    outcome.changed += 1;
-                    received.push(id);
+                    Ok(relationship) => {
+                        upsert(&mut state.relationships, relationship);
+                        outcome.changed += 1;
+                        received.push(id);
+                    }
+                    // No room for another contact here: it will not fit on
+                    // a later sync either, so it is dropped, not kept.
+                    Err(MessagingError::MailboxFull) => received.push(id),
+                    Err(_) => {}
                 }
             }
             contacts::PING_RESPONSE => {
-                if let Some(relationship) = state
-                    .relationships
-                    .iter_mut()
-                    .find(|r| to.contains(&r.ours))
-                {
-                    // The rotation the invitation's card signed: the
-                    // conversation moves to the pairwise that sent this.
-                    if let Some(rotation) = &metadata.from_prior {
-                        if rotation.iss == relationship.theirs
-                            && message.from.as_deref() == Some(rotation.sub.as_str())
-                        {
-                            relationship.theirs = rotation.sub.clone();
-                        }
-                    }
+                // The card's rotation, read above, moved the conversation to
+                // the pairwise that sent this.
+                if let Some(relationship) = state.relationships.iter_mut().find(|r| r.is_for(&to)) {
                     if relationship.pending
                         && message.from.as_deref() == Some(relationship.theirs.as_str())
                     {
                         relationship.pending = false;
                         outcome.changed += 1;
                     }
-                }
-                received.push(id);
-            }
-            call::OFFER | call::ANSWER | call::HANGUP => {
-                // Not from their pairwise: nobody to ring for, and a call
-                // signal is worth nothing later, so it is never kept queued.
-                let Sender::Theirs(at) = sender(&state.relationships, &to, message.from.as_deref())
-                else {
-                    received.push(id);
-                    continue;
-                };
-                let relationship = &state.relationships[at];
-                if let Some((call, signal)) = call::read(&message, almena_didcomm::message::now()) {
-                    outcome.calls.push(call::Incoming {
-                        contact: conversation::id(&relationship.ours),
-                        call,
-                        signal,
-                    });
                 }
                 received.push(id);
             }
@@ -1184,7 +1431,7 @@ async fn handle(
                 if message.type_ == chat::TEXT {
                     if let Some(content) = chat::read_text(&message) {
                         outcome.arrivals.push(Arrival {
-                            ours: relationship.ours.clone(),
+                            id: relationship.id(),
                             entry: Entry {
                                 id: message.id.clone(),
                                 mine: false,
@@ -1213,9 +1460,7 @@ async fn handle(
                     if chat::wants_ours(&message) {
                         // Not sent back is not worth holding the rest up
                         // for: the next change of name reaches them.
-                        if let Ok(pairwise) =
-                            Peer::pairwise(seed, &mediator.did, &relationship.origin)
-                        {
+                        if let Ok(pairwise) = relationship.pairwise(seed) {
                             let _ = chat::send_profile(
                                 mediator,
                                 &pairwise,
@@ -1235,12 +1480,12 @@ async fn handle(
                 let from_them = state
                     .relationships
                     .iter()
-                    .find(|r| to.contains(&r.ours))
+                    .find(|r| r.is_for(&to))
                     .filter(|r| message.from.as_deref() == Some(r.theirs.as_str()));
                 if let (Some(relationship), Some(read)) = (from_them, notice::read(&message)) {
                     let now = almena_didcomm::message::now();
                     outcome.arrivals.push(Arrival {
-                        ours: relationship.ours.clone(),
+                        id: relationship.id(),
                         entry: Entry {
                             id: message.id.clone(),
                             mine: false,
@@ -1284,15 +1529,12 @@ fn apply<R: Runtime>(
 ) -> Result<Applied, MessagingError> {
     let mut changed = outcome.changed;
     let mut fresh = Vec::new();
-    for incoming in outcome.calls {
-        let _ = app.emit(call::SIGNAL, incoming);
-    }
     let mut failure = None;
     for arrival in outcome.arrivals {
         let Some(relationship) = state
             .relationships
             .iter_mut()
-            .find(|r| r.ours == arrival.ours)
+            .find(|r| r.id() == arrival.id)
         else {
             continue;
         };
@@ -1302,12 +1544,7 @@ fn apply<R: Runtime>(
             mine: false,
             notice: arrival.entry.notice.as_ref().map(|n| n.status.clone()),
         };
-        match conversation::put(
-            app,
-            seed,
-            &conversation::id(&relationship.ours),
-            arrival.entry,
-        ) {
+        match conversation::put(app, seed, &arrival.id, arrival.entry) {
             Ok(true) => {
                 relationship.unread += 1;
                 relationship.cleared = false;
@@ -1344,18 +1581,12 @@ async fn written<R: Runtime>(
     mut entry: Entry,
     message: Message,
 ) -> Result<Entry, MessagingError> {
-    let mediation = state
-        .mediation
-        .clone()
-        .ok_or(MessagingError::NotConnected)?;
     let relationship = find_mut(&mut state.relationships, id)?;
     if relationship.pending {
         return Err(MessagingError::Pending);
     }
 
-    entry.failed = deliver(seed, &mediation, relationship, message)
-        .await
-        .is_err();
+    entry.failed = deliver(seed, relationship, message).await.is_err();
     conversation::put(app, seed, id, entry.clone())?;
     relationship.cleared = false;
     if relationship.last.as_ref().is_none_or(|l| l.at <= entry.at) {
@@ -1373,41 +1604,24 @@ async fn written<R: Runtime>(
 /// Sends `message` to the counterparty of `relationship`, from its pairwise.
 async fn deliver(
     seed: &[u8; 64],
-    mediation: &Mediation,
     relationship: &Relationship,
     message: Message,
 ) -> Result<(), MessagingError> {
-    deliver_with(seed, mediation, relationship, message, Urgency::Normal).await
-}
-
-/// [`deliver`], with the urgency its `forward` carries.
-async fn deliver_with(
-    seed: &[u8; 64],
-    mediation: &Mediation,
-    relationship: &Relationship,
-    message: Message,
-    urgency: Urgency,
-) -> Result<(), MessagingError> {
-    let mediator = Mediator::resolve(&mediation.mediator).await?;
-    let from = Peer::pairwise(seed, &mediator.did, &relationship.origin)?;
-    contacts::send_with(&mediator, &from, &relationship.theirs, message, urgency).await
+    let mediator = Mediator::resolve(&relationship.mediator).await?;
+    let from = relationship.pairwise(seed)?;
+    contacts::send(&mediator, &from, &relationship.theirs, message).await
 }
 
 /// Sends this wallet's name to every contact that has answered. Returns how
 /// many it could not be sent to.
 async fn announce(seed: &[u8; 64], state: &state::State) -> usize {
-    let open: Vec<&Relationship> = state.relationships.iter().filter(|r| !r.pending).collect();
-    let Some(mediation) = &state.mediation else {
-        return open.len();
-    };
-    let Ok(mediator) = Mediator::resolve(&mediation.mediator).await else {
-        return open.len();
-    };
-
     let mut unreached = 0;
-    for relationship in open {
-        let sent = match Peer::pairwise(seed, &mediator.did, &relationship.origin) {
-            Ok(from) => chat::send_profile(
+    for relationship in state.relationships.iter().filter(|r| !r.pending) {
+        let sent = match (
+            Mediator::resolve(&relationship.mediator).await,
+            relationship.pairwise(seed),
+        ) {
+            (Ok(mediator), Ok(from)) => chat::send_profile(
                 &mediator,
                 &from,
                 &relationship.theirs,
@@ -1416,7 +1630,7 @@ async fn announce(seed: &[u8; 64], state: &state::State) -> usize {
             )
             .await
             .is_ok(),
-            Err(_) => false,
+            _ => false,
         };
         if !sent {
             unreached += 1;
@@ -1431,7 +1645,7 @@ fn find<'a>(
 ) -> Result<&'a Relationship, MessagingError> {
     relationships
         .iter()
-        .find(|r| conversation::id(&r.ours) == id)
+        .find(|r| r.id() == id)
         .ok_or(MessagingError::ContactUnknown)
 }
 
@@ -1441,7 +1655,7 @@ fn find_mut<'a>(
 ) -> Result<&'a mut Relationship, MessagingError> {
     relationships
         .iter_mut()
-        .find(|r| conversation::id(&r.ours) == id)
+        .find(|r| r.id() == id)
         .ok_or(MessagingError::ContactUnknown)
 }
 
@@ -1489,13 +1703,29 @@ mod tests {
     #[test]
     fn a_message_is_taken_only_from_the_counterparty_of_the_pairwise_it_is_for() {
         use super::{sender, Relationship, Sender};
-        let open = Relationship::new("did:ours:1".into(), "did:theirs:1".into(), false);
-        let pending = Relationship::new("did:ours:2".into(), "did:card:2".into(), true);
+        let mut open = Relationship::new(
+            "did:web:m",
+            "did:ours:1".into(),
+            "did:theirs:1".into(),
+            false,
+        );
+        open.previous = Some(super::Previous {
+            ours: "did:before:1".into(),
+            mediator: "did:web:old".into(),
+            until: 9,
+        });
+        let pending =
+            Relationship::new("did:web:m", "did:ours:2".into(), "did:card:2".into(), true);
         let all = vec![open, pending];
         let to = |did: &str| vec![did.to_owned()];
 
         assert_eq!(
             sender(&all, &to("did:ours:1"), Some("did:theirs:1")),
+            Sender::Theirs(0)
+        );
+        // To the pairwise it moved away from, while that is collected.
+        assert_eq!(
+            sender(&all, &to("did:before:1"), Some("did:theirs:1")),
             Sender::Theirs(0)
         );
         // Somebody else writing to an open relationship's pairwise.
@@ -1527,7 +1757,7 @@ mod tests {
         let fresh = |welcomed: bool| Relationship {
             since: now - 60,
             welcomed,
-            ..Relationship::new("did:ours".into(), "did:theirs".into(), false)
+            ..Relationship::new("did:web:m", "did:ours".into(), "did:theirs".into(), false)
         };
         let mut old = fresh(true);
         old.since = now - 90_000;
@@ -1584,34 +1814,15 @@ mod tests {
 
         let mediation = mediate(&seed, &address()).await.expect("mediation");
         assert!(mediation.inbox.starts_with("did:peer:2"));
+        // An Almena mediator says how many DIDs the mailbox may hold.
+        assert!(mediation.max_dids.is_some_and(|max| max > 2));
 
         // Asking again is the same mediation, and the inbox is already there.
         let again = mediate(&seed, &address()).await.expect("mediation again");
         assert_eq!(again, mediation);
 
-        let waiting = waiting(&seed, &mediation.mediator)
-            .await
-            .expect("pickup status");
+        let waiting = waiting(&seed, &mediation).await.expect("pickup status");
         assert_eq!(waiting.message_count, 0);
-    }
-
-    /// Needs the mediator started with `ALMENA_TURN_URLS` and
-    /// `ALMENA_TURN_SECRET` set.
-    #[tokio::test]
-    #[ignore = "needs a mediator running, with TURN"]
-    async fn a_mediated_wallet_gets_turn_credentials() {
-        let seed = [12u8; 64];
-        let mediation = mediate(&seed, &address()).await.expect("mediation");
-        let mediator = Mediator::resolve(&mediation.mediator).await.unwrap();
-        let inbox = Peer::inbox(&seed, &mediator.did).unwrap();
-
-        let servers = call::ice_servers(&mediator, &inbox)
-            .await
-            .expect("TURN credentials");
-        let server = &servers[0];
-        assert!(server["urls"][0].as_str().unwrap().starts_with("turn"));
-        assert!(server["username"].as_str().unwrap().contains(':'));
-        assert!(server["credential"].is_string());
     }
 
     /// Two wallets on the same mediator: Bob accepts Alice's invitation, and
@@ -1621,18 +1832,18 @@ mod tests {
     async fn two_wallets_open_a_relationship_through_an_invitation() {
         let (alice_seed, bob_seed) = ([21u8; 64], [22u8; 64]);
         let mut alice = state::State {
-            mediation: Some(mediate(&alice_seed, &address()).await.expect("alice")),
+            mediations: vec![mediate(&alice_seed, &address()).await.expect("alice")],
             profile: Some("Alice".into()),
             relationships: Vec::new(),
         };
         let mut bob = state::State {
-            mediation: Some(mediate(&bob_seed, &address()).await.expect("bob")),
+            mediations: vec![mediate(&bob_seed, &address()).await.expect("bob")],
             profile: Some("Bob".into()),
             relationships: Vec::new(),
         };
-        let mediator = alice.mediation.clone().expect("mediation").mediator;
+        let mediator = mediation_of(&alice).mediator;
 
-        let link = invitation(&alice_seed, &mediator)
+        let link = invitation(&alice_seed, &mediation_of(&alice))
             .await
             .expect("invitation");
         let accepted = accept(&bob_seed, &mut bob, &contacts::read(&link).expect("read"))
@@ -1647,10 +1858,11 @@ mod tests {
                 .changed,
             1
         );
-        // Bob reads the ping-response and Alice's name, and sends his back.
+        // Bob reads the ping-response — the rotation away from the card, and
+        // the relationship confirmed — and Alice's name, and sends his back.
         assert_eq!(
             sync(&bob_seed, &mut bob).await.expect("bob syncs").changed,
-            2
+            3
         );
 
         let (a, b) = (&alice.relationships[0], &bob.relationships[0]);
@@ -1675,7 +1887,7 @@ mod tests {
             0
         );
         assert_eq!(
-            waiting(&bob_seed, &mediator)
+            waiting(&bob_seed, &mediation_of(&bob))
                 .await
                 .expect("status")
                 .message_count,
@@ -1683,10 +1895,8 @@ mod tests {
         );
 
         // Text, both ways, each from the pairwise the other knows.
-        let mediation = alice.mediation.clone().expect("mediation");
         deliver(
             &alice_seed,
-            &mediation,
             &alice.relationships[0],
             chat::text("hola, Bob"),
         )
@@ -1695,17 +1905,11 @@ mod tests {
         let arrived = sync(&bob_seed, &mut bob).await.expect("bob reads").arrivals;
         assert_eq!(arrived.len(), 1);
         assert_eq!(arrived[0].entry.content, "hola, Bob");
-        assert_eq!(arrived[0].ours, bob.relationships[0].ours);
+        assert_eq!(arrived[0].id, bob.relationships[0].id());
 
-        let mediation = bob.mediation.clone().expect("mediation");
-        deliver(
-            &bob_seed,
-            &mediation,
-            &bob.relationships[0],
-            chat::text("hola, Alice"),
-        )
-        .await
-        .expect("bob writes");
+        deliver(&bob_seed, &bob.relationships[0], chat::text("hola, Alice"))
+            .await
+            .expect("bob writes");
         let arrived = sync(&alice_seed, &mut alice)
             .await
             .expect("alice reads")
@@ -1720,14 +1924,9 @@ mod tests {
         second.id = id.clone();
         first.created_time = second.created_time;
         for message in [first, second] {
-            deliver(
-                &alice_seed,
-                &mediation_of(&alice),
-                &alice.relationships[0],
-                message,
-            )
-            .await
-            .expect("sent");
+            deliver(&alice_seed, &alice.relationships[0], message)
+                .await
+                .expect("sent");
         }
         let arrived = sync(&bob_seed, &mut bob).await.expect("bob reads").arrivals;
         assert!(arrived.iter().all(|a| a.entry.id == id));
@@ -1741,16 +1940,16 @@ mod tests {
         let (alice_seed, bob_seed) = ([31u8; 64], [32u8; 64]);
         let (mut alice, mut bob) = (
             state::State {
-                mediation: Some(mediate(&alice_seed, &address()).await.expect("alice")),
+                mediations: vec![mediate(&alice_seed, &address()).await.expect("alice")],
                 ..Default::default()
             },
             state::State {
-                mediation: Some(mediate(&bob_seed, &address()).await.expect("bob")),
+                mediations: vec![mediate(&bob_seed, &address()).await.expect("bob")],
                 ..Default::default()
             },
         );
         let mediator = mediation_of(&alice).mediator;
-        let link = invitation(&alice_seed, &mediator)
+        let link = invitation(&alice_seed, &mediation_of(&alice))
             .await
             .expect("invitation");
         accept(&bob_seed, &mut bob, &contacts::read(&link).expect("read"))
@@ -1768,7 +1967,6 @@ mod tests {
 
         deliver(
             &alice_seed,
-            &mediation_of(&alice),
             &alice.relationships[0],
             chat::text("en directo"),
         )
@@ -1798,7 +1996,7 @@ mod tests {
         // The acknowledgement is answered on the socket; by then it is done.
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         assert_eq!(
-            waiting(&bob_seed, &mediator)
+            waiting(&bob_seed, &mediation_of(&bob))
                 .await
                 .expect("status")
                 .message_count,
@@ -1806,7 +2004,110 @@ mod tests {
         );
     }
 
+    /// The second mediator the move test needs: start another with
+    /// `ALMENA_PORT=8081 ALMENA_PUBLIC_URL=http://localhost:8081 task
+    /// dev:memory` (or set `ALMENA_TEST_MEDIATOR_2`).
+    fn second_address() -> String {
+        std::env::var("ALMENA_TEST_MEDIATOR_2")
+            .unwrap_or_else(|_| "http://localhost:8081".to_owned())
+    }
+
+    /// Alice moves her relationship with Bob to a second mediator: what Bob
+    /// sends before he learns of it still reaches her at the first, the
+    /// rotation moves him to her new pairwise, and once the grace is over
+    /// the old one is let go.
+    #[tokio::test]
+    #[ignore = "needs two mediators running"]
+    async fn a_relationship_moves_to_another_mediator() {
+        let (alice_seed, bob_seed) = ([41u8; 64], [42u8; 64]);
+        let mut alice = state::State {
+            mediations: vec![mediate(&alice_seed, &address()).await.expect("alice")],
+            ..Default::default()
+        };
+        let mut bob = state::State {
+            mediations: vec![mediate(&bob_seed, &address()).await.expect("bob")],
+            ..Default::default()
+        };
+        let link = invitation(&alice_seed, &mediation_of(&alice))
+            .await
+            .expect("invitation");
+        accept(&bob_seed, &mut bob, &contacts::read(&link).expect("read"))
+            .await
+            .expect("accepted");
+        sync(&alice_seed, &mut alice).await.expect("alice syncs");
+        sync(&bob_seed, &mut bob).await.expect("bob syncs");
+        sync(&alice_seed, &mut alice).await.expect("alice again");
+        let first = mediation_of(&alice).mediator;
+        let before = alice.relationships[0].ours.clone();
+
+        // A second mediator becomes the default; the relationship stays.
+        let second = mediate(&alice_seed, &second_address())
+            .await
+            .expect("second mediation");
+        alice.mediations.insert(0, second.clone());
+        assert_eq!(alice.relationships[0].mediator, first);
+
+        let now = almena_didcomm::message::now();
+        relocate(&alice_seed, &mut alice, 0, &second.mediator, now)
+            .await
+            .expect("moved");
+        let moved = alice.relationships[0].clone();
+        assert_eq!(moved.mediator, second.mediator);
+        assert_ne!(moved.ours, before);
+        assert_eq!(
+            moved.previous.as_ref().map(|p| p.ours.as_str()),
+            Some(before.as_str())
+        );
+        // No key in common between the pairwise it left and the new one.
+        assert_eq!(
+            moved.ours,
+            Peer::pairwise(&alice_seed, &second.mediator, &moved.origin)
+                .expect("pairwise")
+                .did
+        );
+
+        // Bob has not synced: he still writes to the old pairwise, and it
+        // still reaches Alice, at the first mediator.
+        assert_eq!(bob.relationships[0].theirs, before);
+        deliver(&bob_seed, &bob.relationships[0], chat::text("¿sigues ahí?"))
+            .await
+            .expect("bob writes to the old one");
+        let arrived = sync(&alice_seed, &mut alice).await.expect("alice reads");
+        assert_eq!(arrived.arrivals.len(), 1);
+        assert_eq!(arrived.arrivals[0].id, moved.id());
+
+        // Bob reads the rotation: from now on he writes to the new pairwise.
+        sync(&bob_seed, &mut bob).await.expect("bob reads the move");
+        assert_eq!(bob.relationships[0].theirs, moved.ours);
+        deliver(&bob_seed, &bob.relationships[0], chat::text("ya te veo"))
+            .await
+            .expect("bob writes to the new one");
+        let mut outcome = Outcome::default();
+        sync_at(&alice_seed, &mut alice, &second.mediator, &mut outcome)
+            .await
+            .expect("alice reads at the second");
+        assert_eq!(outcome.arrivals.len(), 1);
+        assert_eq!(outcome.arrivals[0].entry.content, "ya te veo");
+        // And Alice writes from the new one, which Bob takes.
+        deliver(&alice_seed, &alice.relationships[0], chat::text("perfecto"))
+            .await
+            .expect("alice writes");
+        let arrived = sync(&bob_seed, &mut bob).await.expect("bob reads");
+        assert_eq!(arrived.arrivals.len(), 1);
+
+        // After the grace, the old pairwise is let go.
+        assert_eq!(settle(&alice_seed, &mut alice, now + GRACE_SECS).await, 1);
+        assert_eq!(alice.relationships[0].previous, None);
+
+        // The first mediator taken off the list: nothing goes through it
+        // any more, so it is left for good at once.
+        alice.mediations[1].leaving = Some(now + GRACE_SECS);
+        settle(&alice_seed, &mut alice, now).await;
+        assert_eq!(alice.mediations.len(), 1);
+        assert_eq!(alice.mediations[0].mediator, second.mediator);
+    }
+
     fn mediation_of(state: &state::State) -> Mediation {
-        state.mediation.clone().expect("mediation")
+        state.default_mediation().cloned().expect("mediation")
     }
 }

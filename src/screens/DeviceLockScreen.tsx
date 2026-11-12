@@ -13,8 +13,6 @@ type DeviceLockScreenProps = {
   onUnlock: () => void;
   /** The way out for somebody the phone will not let in. */
   footer?: React.ReactNode;
-  /** A call the phone rang is waiting for the wallet to be unlocked. */
-  calling?: boolean;
 };
 
 /**
@@ -27,7 +25,7 @@ type DeviceLockScreenProps = {
  * nothing to type here — the passcode, when it is asked for, is typed into the
  * system's sheet, never into the wallet.
  */
-export function DeviceLockScreen({ error, busy, onUnlock, footer, calling = false }: DeviceLockScreenProps) {
+export function DeviceLockScreen({ error, busy, onUnlock, footer }: DeviceLockScreenProps) {
   const t = useTranslations();
 
   const latest = useRef({ onUnlock, busy });
@@ -55,7 +53,7 @@ export function DeviceLockScreen({ error, busy, onUnlock, footer, calling = fals
   return (
     <div className="screen screen--pin">
       <h1 className="screen__title screen__title--centred">{t.vault.deviceLock.title}</h1>
-      <p className="pin__subtitle">{calling ? t.pin.callSubtitle : t.vault.deviceLock.subtitle}</p>
+      <p className="pin__subtitle">{t.vault.deviceLock.subtitle}</p>
       <p className={error ? "pin__error" : "pin__error pin__error--empty"}>{error ?? " "}</p>
 
       <div className="button-row">

@@ -216,12 +216,6 @@ tasks:
           <array>
             <string>$APPLE_DEVELOPMENT_TEAM.id.almena.wallet</string>
           </array>
-          <!-- Calls: the hardened runtime keeps the microphone and the camera
-               from any application whose entitlements do not name them. -->
-          <key>com.apple.security.device.audio-input</key>
-          <true/>
-          <key>com.apple.security.device.camera</key>
-          <true/>
         </dict>
         </plist>
         PLIST

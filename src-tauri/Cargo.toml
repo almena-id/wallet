@@ -97,11 +97,6 @@ tauri-plugin-barcode-scanner = "2"
 # the wallet does not use.
 tauri-plugin-notifications = { version = "=0.5.0-rc.14", default-features = false, features = ["push-notifications"] }
 
-# Ringing while the wallet is closed: a full-screen call on Android, PushKit
-# and CallKit on iOS. In this repository: its native halves are in
-# `plugins/call/android` and `plugins/call/ios`.
-almena-call = { path = "plugins/call" }
-
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 # The system's trusted roots, read by a debug build only (`mediator::tls`), so
 # a development service behind a locally trusted CA — the dev Caddy's for

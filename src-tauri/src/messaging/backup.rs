@@ -188,7 +188,7 @@ fn gather<R: Runtime>(
     let messaging = state::read(app, seed)?;
     let mut conversations = BTreeMap::new();
     for relationship in &messaging.relationships {
-        let id = conversation::id(&relationship.ours);
+        let id = relationship.id();
         let entries = conversation::read(app, seed, &id)?;
         if !entries.is_empty() {
             conversations.insert(id, entries);
@@ -208,8 +208,10 @@ fn gather<R: Runtime>(
 /// has is kept as it is.
 fn merged(mut into: Contents, from: Contents) -> (Contents, Restored) {
     let mut restored = Restored::default();
-    if into.messaging.mediation.is_none() {
-        into.messaging.mediation = from.messaging.mediation;
+    for mediation in from.messaging.mediations {
+        if into.messaging.mediation(&mediation.mediator).is_none() {
+            into.messaging.mediations.push(mediation);
+        }
     }
     if into.messaging.profile.is_none() {
         into.messaging.profile = from.messaging.profile;
@@ -219,7 +221,7 @@ fn merged(mut into: Contents, from: Contents) -> (Contents, Restored) {
             .messaging
             .relationships
             .iter()
-            .any(|r| r.ours == relationship.ours)
+            .any(|r| r.origin == relationship.origin)
         {
             into.messaging.relationships.push(relationship);
             restored.contacts += 1;
@@ -316,11 +318,13 @@ mod tests {
         Contents {
             made: 1,
             messaging: Messaging {
-                mediation: None,
+                mediations: Vec::new(),
                 profile: profile.map(str::to_owned),
                 relationships: ours
                     .iter()
-                    .map(|o| Relationship::new((*o).into(), "did:theirs".into(), false))
+                    .map(|o| {
+                        Relationship::new("did:web:m.example", (*o).into(), (*o).into(), false)
+                    })
                     .collect(),
             },
             conversations,

@@ -56,7 +56,7 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Almena Wallet uses the camera to read QR codes and for video calls.</string>
+	<string>Almena Wallet uses the camera to read QR codes.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -70,11 +70,5 @@
 	</array>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Almena Wallet uses Face ID to open without the PIN.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Almena Wallet uses the microphone for calls.</string>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>voip</string>
-	</array>
 </dict>
 </plist>

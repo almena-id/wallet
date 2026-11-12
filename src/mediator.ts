@@ -3,14 +3,34 @@ import { invoke } from "@tauri-apps/api/core";
 
 /**
  * The wallet's mediation: which mediator holds its messages while it is not
- * listening. Everything behind these calls happens on the Rust side, with keys
- * derived from the seed — see `src-tauri/src/messaging`.
+ * listening. A wallet has one; after a change, the previous one is still
+ * collected for a while, and is listed until it is let go. Everything behind
+ * these calls happens on the Rust side, with keys derived from the seed —
+ * see `src-tauri/src/messaging`.
  */
 export type MediatorStatus = {
   /** The mediator's DID, when there is a mediation. */
   mediator: string | null;
   /** The inbox DID registered with it. */
   inbox: string | null;
+  /** The mediation, and one being left after a change. */
+  mediators: MediatorEntry[];
+};
+
+/** A mediation: the wallet's, or one being left. */
+export type MediatorEntry = {
+  mediator: string;
+  inbox: string;
+  /** The wallet's mediator, not one being left. */
+  default: boolean;
+  /** Being left: still collected until then (seconds since the epoch). */
+  leaving: number | null;
+  /** Relationships that go through it. */
+  contacts: number;
+  /** The addresses (DIDs) the wallet holds there: inbox, card, one per contact. */
+  dids: number;
+  /** How many its mediator lets it hold, when it says. */
+  maxDids: number | null;
 };
 
 /** What is waiting at the mediator. */
@@ -35,12 +55,16 @@ export function readMediator(): Promise<MediatorStatus> {
   return invoke<MediatorStatus>("mediator_status");
 }
 
-/** Asks the mediator `input` names for mediation and registers the inbox with it. */
+/**
+ * Asks the mediator `input` names for mediation, registers the inbox with it
+ * and makes it the wallet's mediator. Contacts through the previous one move
+ * to it, and the previous one is still collected for 30 days.
+ */
 export function connectMediator(input: string): Promise<MediatorStatus> {
   return invoke<MediatorStatus>("mediator_connect", { input });
 }
 
-/** Asks the mediator how many messages it is holding. */
+/** Asks the mediators how many messages they are holding, in all. */
 export function checkMediator(): Promise<Waiting> {
   return invoke<Waiting>("mediator_check");
 }
@@ -62,8 +86,10 @@ export type MessagingErrorCode =
   | "messaging_mediator_unreachable"
   | "messaging_mediator_refused"
   | "messaging_mediator_full"
+  | "messaging_mediator_private"
   | "messaging_counterparty_unreachable"
   | "messaging_not_connected"
+  | "messaging_mailbox_full"
   | "messaging_pending"
   | "messaging_contact_unknown"
   | "messaging_message_invalid"
@@ -72,7 +98,6 @@ export type MessagingErrorCode =
   | "messaging_unreadable"
   | "messaging_storage"
   | "messaging_entropy"
-  | "messaging_calls_unavailable"
   | "messaging_unknown";
 
 const CODES: MessagingErrorCode[] = [
@@ -83,8 +108,10 @@ const CODES: MessagingErrorCode[] = [
   "messaging_mediator_unreachable",
   "messaging_mediator_refused",
   "messaging_mediator_full",
+  "messaging_mediator_private",
   "messaging_counterparty_unreachable",
   "messaging_not_connected",
+  "messaging_mailbox_full",
   "messaging_pending",
   "messaging_contact_unknown",
   "messaging_message_invalid",
@@ -93,7 +120,6 @@ const CODES: MessagingErrorCode[] = [
   "messaging_unreadable",
   "messaging_storage",
   "messaging_entropy",
-  "messaging_calls_unavailable",
 ];
 
 /** Whatever a rejected command threw, as a code this interface has a word for. */

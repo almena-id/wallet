@@ -132,15 +132,15 @@
       "current": "Ahora usas",
       "none": "Ninguno",
       "same": "Ya estás conectado a este mediador.",
-      "blocked": {
-        "one": "Tienes {count} contacto a través de tu mediador actual. Cambiarlo desde un enlace aún no es posible: dejarían de llegar sus mensajes.",
-        "other": "Tienes {count} contactos a través de tu mediador actual. Cambiarlo desde un enlace aún no es posible: dejarían de llegar sus mensajes."
+      "move": {
+        "one": "Tu {count} contacto se muda a este mediador. Lo que llegue al actual se sigue recogiendo durante 30 días.",
+        "other": "Tus {count} contactos se mudan a este mediador. Lo que llegue al actual se sigue recogiendo durante 30 días."
       }
     },
     "registry": {
       "signInTitle": "Entrar en {name}",
       "linkTitle": "Vincular este wallet a {name}",
-      "aRegistry": "un registro",
+      "aRegistry": "un portal",
       "signInLead": "Entras con una clave que este wallet guarda solo para este portal.",
       "linkLead": "Tu cuenta allí aceptará este wallet como forma de entrar.",
       "portal": "Portal",
@@ -152,10 +152,10 @@
       "errors": {
         "registry_locked": "Abre primero el wallet.",
         "registry_unreadable": "No se puede leer esta solicitud.",
-        "registry_insecure": "Este registro no se alcanza de forma segura.",
-        "registry_unreachable": "No se puede contactar con el registro. Inténtalo de nuevo en un momento.",
+        "registry_insecure": "Este sitio no se alcanza de forma segura.",
+        "registry_unreachable": "No se puede contactar con el sitio. Inténtalo de nuevo en un momento.",
         "registry_expired": "Esta solicitud ha caducado. Pide un código nuevo.",
-        "registry_refused": "El registro no aceptó la respuesta.",
+        "registry_refused": "El sitio no aceptó la respuesta.",
         "registry_not_a_signer": "Este wallet no es de los que pueden firmarlo.",
         "registry_not_the_holder": "Esta solicitud se empezó con otro wallet.",
         "registry_nothing_to_present": "Este wallet todavía no guarda credenciales.",
@@ -351,6 +351,14 @@
       "none": "Sin conectar. Un mediador guarda tus mensajes mientras este dispositivo está desconectado, y es la dirección en la que te encuentran los demás. No puede leerlos: van cifrados para ti.",
       "connect": "Conectar con un mediador",
       "nameLabel": "Conectado a",
+      "addressesLabel": "Direcciones",
+      "addressesOf": "{count} de {max}",
+      "addressesHint": "Cada contacto ocupa una dirección en el mediador; tu buzón y tu invitación ocupan una cada uno.",
+      "contactsNear": {
+        "one": "Queda sitio para {count} contacto más en este mediador. Cuando se llene, cambia a uno con más espacio.",
+        "other": "Queda sitio para {count} contactos más en este mediador. Cuando se llene, cambia a uno con más espacio."
+      },
+      "contactsFull": "Tu buzón en este mediador está lleno: no cabe ningún contacto nuevo. Cambia a un mediador con más espacio.",
       "waitingLabel": "Esperando",
       "waiting": {
         "one": "{count} mensaje",
@@ -359,7 +367,14 @@
       "waitingUnknown": "—",
       "check": "Buscar mensajes",
       "checking": "Buscando…",
-      "disconnect": "Desconectar"
+      "change": "Cambiar de mediador",
+      "previous": "Tu mediador anterior, {name}, se sigue revisando hasta el {date}, para que no se pierda nada de lo que tus contactos enviaron allí antes del cambio.",
+      "disconnect": "Desconectar",
+      "disconnectContacts": {
+        "one": "Tu {count} contacto no podrá escribirte hasta que vuelvas a conectar un mediador.",
+        "other": "Tus {count} contactos no podrán escribirte hasta que vuelvas a conectar un mediador."
+      },
+      "disconnectEmpty": "No tendrás dirección para contactos nuevos hasta que vuelvas a conectar un mediador."
     },
     "backup": {
       "exportTitle": "Hacer una copia",
@@ -444,7 +459,6 @@
     "repeatSubtitle": "Para que un desliz no se convierta en un candado que nadie abre.",
     "unlockTitle": "Tu PIN",
     "unlockSubtitle": "El wallet está bloqueado.",
-    "callSubtitle": "Te están llamando. Desbloquea el wallet para contestar.",
     "mismatch": "Esos dos no coinciden. Empieza de nuevo.",
     "progress": "{typed} de {digits} dígitos escritos",
     "delete": "Borrar",
@@ -528,7 +542,9 @@
       "messaging_mediator_unreachable": "No se ha podido contactar con el mediador. Revisa la conexión y la dirección, e inténtalo otra vez.",
       "messaging_mediator_refused": "El mediador ha rechazado la petición.",
       "messaging_mediator_full": "Este mediador está lleno y ahora no admite wallets nuevos. Inténtalo más tarde o elige otro mediador.",
+      "messaging_mediator_private": "Este mediador es privado: guarda los buzones de los wallets que invitan sus administradores. Pide una invitación a uno de ellos y ábrela con este wallet.",
       "messaging_not_connected": "Este wallet no está conectado a ningún mediador.",
+      "messaging_mailbox_full": "Tu buzón en este mediador está lleno: no cabe ningún contacto nuevo. Cambia a un mediador con más espacio en Perfil → Mensajería.",
       "messaging_keys": "No se han podido usar las claves para hablar con el mediador.",
       "messaging_unreadable": "No se ha podido leer lo que este dispositivo guarda sobre el mediador.",
       "messaging_storage": "No se ha podido guardar el mediador en este dispositivo.",
@@ -539,8 +555,7 @@
       "messaging_pending": "Todavía no ha respondido a tu invitación. Podrás escribirle cuando lo haga.",
       "messaging_contact_unknown": "Ese contacto no está en este dispositivo.",
       "messaging_message_invalid": "Un mensaje no puede estar vacío ni pasar de 4.000 caracteres.",
-      "messaging_photo_invalid": "Esa imagen no es una que el wallet pueda guardar. Prueba con otra.",
-      "messaging_calls_unavailable": "Tu mediador no retransmite llamadas, así que no se puede llamar."
+      "messaging_photo_invalid": "Esa imagen no es una que el wallet pueda guardar. Prueba con otra."
     }
   },
   "conversations": {
@@ -601,35 +616,6 @@
         "rejected": "Solicitud no aceptada",
         "issued": "Credencial lista para recoger"
       }
-    }
-  },
-  "calls": {
-    "audio": "Llamada de voz",
-    "video": "Videollamada",
-    "calling": "Llamando…",
-    "incomingAudio": "Llamada de voz entrante",
-    "incomingVideo": "Videollamada entrante",
-    "connecting": "Conectando…",
-    "accept": "Aceptar",
-    "decline": "Rechazar",
-    "hangUp": "Colgar",
-    "mute": "Silenciar",
-    "unmute": "Activar micrófono",
-    "cameraOff": "Apagar cámara",
-    "cameraOn": "Encender cámara",
-    "ended": {
-      "ended": "Llamada finalizada",
-      "cancelled": "Llamada cancelada",
-      "unanswered": "Sin respuesta",
-      "declined": "Rechazada",
-      "busy": "Ocupado",
-      "failed": "La llamada se ha cortado",
-      "missed": "Llamada perdida"
-    },
-    "errors": {
-      "call_media": "No se ha podido usar el micrófono o la cámara. Revisa los permisos.",
-      "call_relay": "No se ha podido llegar al relé de llamadas.",
-      "call_failed": "La llamada no ha podido conectar."
     }
   },
   "biometrics": {

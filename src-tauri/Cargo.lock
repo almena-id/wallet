@@ -88,15 +88,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "almena-call"
-version = "0.1.0"
-dependencies = [
- "serde",
- "tauri",
- "tauri-plugin",
-]
-
-[[package]]
 name = "almena-didcomm"
 version = "0.1.0"
 source = "git+https://github.com/almena-id/mediator?rev=96fb5fc28ad637719665191688e7ed286d438772#96fb5fc28ad637719665191688e7ed286d438772"
@@ -6112,7 +6103,6 @@ dependencies = [
 name = "wallet"
 version = "0.1.0"
 dependencies = [
- "almena-call",
  "almena-didcomm",
  "almena-keystore",
  "apple-native-keyring-store",

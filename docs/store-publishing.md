@@ -37,16 +37,11 @@ current when a permission, a data flow or a capability is added.
 - **Permissions and their reasons.** Every permission the app asks for needs a
   reason the person reads when it is asked:
   - iOS, in `src-tauri/Info.ios.plist`: the camera (`NSCameraUsageDescription`:
-    scanning codes, video calls), the microphone (`NSMicrophoneUsageDescription`:
-    calls) and Face ID (`NSFaceIDUsageDescription`). Anything added there must
+    scanning codes) and Face ID (`NSFaceIDUsageDescription`). Anything added there must
     be used, and its text must say what for.
   - Android, in the generated `AndroidManifest.xml`: `INTERNET`, the camera
-    (`CAMERA`, and `VIBRATE` from the scanner plugin), the microphone and the
-    audio route during calls (`RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`) and
-    notifications (`POST_NOTIFICATIONS`, added by the push plugin), and
-    `USE_FULL_SCREEN_INTENT` (`plugins/call`): an incoming call takes the screen.
-    Google Play grants it only to calling and alarm apps, from Android 14: the
-    Play Console's full-screen intent declaration must say the app makes calls.
+    (`CAMERA`, and `VIBRATE` from the scanner plugin) and notifications
+    (`POST_NOTIFICATIONS`, added by the push plugin).
     `USE_BIOMETRIC` (`plugins/keystore`, and androidx.biometric's own
     manifest, which also carries the older `USE_FINGERPRINT`): a normal
     permission, granted at install with no dialog, which lets the wallet show
@@ -68,11 +63,6 @@ current when a permission, a data flow or a capability is added.
   Until it does, Android does not verify the links and the browser opens them
   (a page offering the `almena://` link), so nothing breaks. Neither sends
   anything off the device: the system fetches those files, not the wallet.
-- **Calls while closed.** On iOS the app declares the `voip` background mode
-  (`Info.ios.plist`) and rings through PushKit and CallKit; App Review checks
-  that every VoIP push shows a call, which it does. CallKit is not allowed on
-  the China storefront: leave it out of that storefront, or ship a build
-  without it there.
 - **The iOS privacy manifest.** `src-tauri/PrivacyInfo.xcprivacy`, put into the
   Xcode project by `push/sync.sh`: no tracking, no data types collected, and the
   required-reason APIs the runtime reaches (file timestamps, `C617.1`; the
@@ -120,13 +110,6 @@ current when a permission, a data flow or a capability is added.
     credentials (`presented.rs`), shown on the credential's screen; it is sent
     nowhere, travels only inside a backup the person makes, and goes with the
     identity;
-  - a call's audio and video go end-to-end encrypted (DTLS-SRTP) through TURN
-    relays: the wallet's own mediator's relay sees the device's IP address, the
-    other side sees only that relay — the related address a relayed candidate
-    would carry is written as `0.0.0.0` (`messaging/call.rs`, `SPEC.md` §3);
-  - a call offer is marked as a call on its `forward`, so the callee's
-    mediator learns that a call is coming and when (not from whom, nor
-    anything in it), and sends a call push to the callee's phone;
   - a backup (Profile → Backup, or the reminder Home shows once a new
     credential is in no backup yet) is a file written only where the person
     chooses in the system's save sheet, sealed so that only their phrase opens

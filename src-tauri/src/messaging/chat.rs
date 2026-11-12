@@ -37,6 +37,18 @@ pub fn read_text(message: &Message) -> Option<String> {
         .map(|content| content.chars().take(TEXT_CHARS).collect())
 }
 
+/// This wallet's name — or that it has none — as a profile message.
+pub fn profile(name: Option<&str>, send_back_yours: bool) -> Message {
+    Message::new(
+        PROFILE,
+        json!({
+            // An empty name removes the one sent before, as the protocol says.
+            "profile": {"displayName": name.unwrap_or_default()},
+            "send_back_yours": send_back_yours,
+        }),
+    )
+}
+
 /// Sends this wallet's name — or says it has none — from `from` to `to`.
 pub async fn send_profile(
     mediator: &Mediator,
@@ -45,15 +57,7 @@ pub async fn send_profile(
     name: Option<&str>,
     send_back_yours: bool,
 ) -> Result<(), MessagingError> {
-    let message = Message::new(
-        PROFILE,
-        json!({
-            // An empty name removes the one sent before, as the protocol says.
-            "profile": {"displayName": name.unwrap_or_default()},
-            "send_back_yours": send_back_yours,
-        }),
-    );
-    contacts::send(mediator, from, to, message).await
+    contacts::send(mediator, from, to, profile(name, send_back_yours)).await
 }
 
 /// What a profile says about the name: `None` when it says nothing, `Some(None)`

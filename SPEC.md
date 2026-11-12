@@ -1,120 +1,35 @@
 # Almena Wallet Specification
 
-Version: draft 1 (2026-09-25) · Status: describes `wallet` as implemented.
+Version: draft 3 (2026-11-11) · Status: describes `wallet` as implemented.
 
 This document specifies the protocols Almena wallets speak **to each other**, on top of [DIDComm Messaging v2.0][didcomm]. What a wallet says to its mediator, and what the mediator requires of it, is the mediator's specification (`SPEC.md` in [almena-id/mediator][mediator]); this one does not restate it.
 
-For now it holds one protocol, calls (§3). The others the wallet speaks — the handshake that opens a relationship, Basic Message 2.0, User Profile 1.0 — are described in `AGENTS.md` until they are written down here.
+For now it holds only the rule every such protocol shares (§2). The protocols the wallet speaks — the handshake that opens a relationship, Basic Message 2.0, User Profile 1.0 — are described in `AGENTS.md` until they are written down here. Calls (Call 1.0, `https://almena.id/protocols/call/1.0`) were specified here until 2026-11-10, when they were removed from the wallet; a message of that protocol from an older wallet is now a type this wallet does not speak, acknowledged and dropped.
 
 The key words MUST, MUST NOT, SHOULD, SHOULD NOT and MAY are to be interpreted as described in [RFC 2119][rfc2119] and [RFC 8174][rfc8174].
 
 ## 1. Sources
 
-### 1.1 Normative
-
 | Ref | Document | Used for |
 |---|---|---|
 | [DIDComm] | [DIF DIDComm Messaging v2.0][didcomm] | Messages, envelopes, threads (`thid`), `expires_time`. |
-| [WebRTC] | [W3C WebRTC: Real-Time Communication in Browsers][webrtc] | The API calls are placed with: `RTCPeerConnection`, `RTCIceServer`, `iceTransportPolicy`. |
-| [JSEP] | [RFC 8829][rfc8829], JavaScript Session Establishment Protocol | Offers and answers as SDP. |
-| [ICE] | [RFC 8445][rfc8445] | Connectivity; here, relayed candidates only. |
-| [TURN] | [RFC 8656][rfc8656] | The relay every call goes through. |
-| [ICE SDP] | [RFC 8839][rfc8839] | The `a=candidate` grammar: its type, `raddr` and `rport`. |
-| [Mediator] | The Almena Mediator Specification, §6.9 (TURN 1.0) | Where a wallet gets its TURN credentials. |
-
-### 1.2 Informative
-
-- [RFC 8827][rfc8827] (WebRTC security architecture) and [RFC 5763][rfc5763] (DTLS-SRTP keyed by SDP fingerprints) — why an authenticated SDP authenticates the media.
+| [Mediator] | The Almena Mediator Specification | How messages reach a wallet through its mediator. |
 
 ## 2. Relationships
 
 Everything in this document travels inside a relationship: from this wallet's pairwise DID to the counterparty's, authcrypted, wrapped in `forward`s for the counterparty's mediator. A message is taken only when it is authcrypted and its `from` is the counterparty's current pairwise DID; anything else is ignored.
 
-## 3. Calls
+## 3. Moving a relationship
 
-Voice and video calls between the two wallets of a relationship, one to one. The media flows directly between the two `RTCPeerConnection`s, encrypted end to end with DTLS-SRTP; this protocol carries only the signalling that sets them up.
+Each relationship goes through the wallet's mediator: its pairwise DID is a `did:peer:2` whose service is that mediator, with keys derived for it alone. When the wallet changes mediator, it moves each relationship:
 
-| Protocol | PIURI | Messages |
-|---|---|---|
-| Call 1.0 | `https://almena.id/protocols/call/1.0` | `offer`, `answer`, `hangup` |
+1. derives the pairwise DID for the same counterparty at the new mediator and registers it there;
+2. sends the counterparty, from the new DID, a message carrying `from_prior` ([DIDComm] "DID Rotation"): a JWT whose `iss` is the old pairwise DID and `sub` the new one, signed by the old DID's authentication key. The message is a User Profile 1.0 `profile` with the wallet's current name, so the move also says who is moving;
+3. keeps collecting the old DID at the old mediator for a grace period — the mediator's queue lifetime, 30 days — so whatever the counterparty sent before it learned of the move still arrives; then it unregisters the old DID there.
 
-The PIURI is a fixed name, the same in every environment.
-
-### 3.1 Relay only
-
-- A wallet MUST create its `RTCPeerConnection` with `iceTransportPolicy: "relay"` and the `ice_servers` its own mediator gave it (TURN 1.0, [Mediator] §6.9), asked for before each call.
-- It MUST NOT put a candidate other than `typ relay` in the SDP it sends, and MUST ignore any other in the SDP it receives. The type is the candidate's type field (the eighth field of the `a=candidate` line, after `typ`), not the words found elsewhere in the line.
-- In a relayed candidate it sends it MUST write `raddr` as `0.0.0.0` and `rport` as `0`, as browsers do for a candidate whose address they hide: they are where the relay was reached from — the server-reflexive, public address of the device — and ICE does not use them to connect ([RFC 8839][rfc8839] §5.1). It MUST do the same to what it receives before the SDP reaches its `RTCPeerConnection`.
-
-So neither wallet ever learns the other's IP address: each sees only the other's relay, never even as a related address. Each wallet's own address is seen only by its own mediator's TURN server.
-
-### 3.2 Messages
-
-A call is a thread: the `offer`'s `id` is the call's id, and `answer` and `hangup` carry it as `thid`.
-
-**`offer`** — the caller asks for a call.
-
-```json
-{
-  "type": "https://almena.id/protocols/call/1.0/offer",
-  "id": "<call id>",
-  "created_time": 1760000000,
-  "expires_time": 1760000060,
-  "body": { "media": "video", "sdp": "v=0\r\n…" }
-}
-```
-
-- `media`: `audio` or `video`. A video call sends and receives a camera track besides the microphone; an audio call only the microphone.
-- `sdp`: the complete offer ([JSEP]), its relayed candidates included — ICE gathering is finished before it is sent; there is no trickle ICE.
-- `expires_time` MUST be at most 60 seconds after `created_time`. An offer received after its `expires_time` is ignored: it was a call that is no longer ringing.
-
-**`answer`** — the callee accepts.
-
-```json
-{ "type": "https://almena.id/protocols/call/1.0/answer", "thid": "<call id>", "body": { "sdp": "v=0\r\n…" } }
-```
-
-`sdp` is the complete answer, gathered in full like the offer.
-
-**`hangup`** — either side ends the call, or declines it before it starts.
-
-```json
-{ "type": "https://almena.id/protocols/call/1.0/hangup", "thid": "<call id>", "body": { "reason": "declined" } }
-```
-
-| `reason` | Sent by | When |
-|---|---|---|
-| `ended` | either | The call was hung up after it was answered. |
-| `cancelled` | caller | Hung up before an answer. |
-| `unanswered` | caller | Nobody answered within 45 seconds. |
-| `declined` | callee | Declined. |
-| `busy` | callee | Already in another call. |
-| `failed` | either | The media could not be set up or was lost. |
-
-An unknown `reason` is read as `ended`. A `hangup` or `answer` for a call that is not the current one is ignored.
-
-### 3.3 Rules
-
-- **One call at a time.** An `offer` that arrives during another call is answered with `hangup` `busy`.
-- **Both calling at once.** When a wallet calling a contact receives that contact's `offer` before an answer, the call whose id sorts lower (byte-wise) is kept: the wallet whose own offer has the lower id ignores the other's; the other drops its own offer, sending nothing, and rings with the incoming one.
-- **Ringing.** The callee rings until it answers or declines, the caller hangs up, or the offer expires. The caller gives up after 45 seconds with `unanswered`.
-- **Media.** Microphone and camera can be muted during the call by disabling the track; that is not signalled and needs no renegotiation. An audio call stays audio.
-- **Delivery.** Signalling goes through both mediators like any message. An `offer` is packed with the `forward` header `"urgency": "call"` ([Mediator] §3.4, §6.4), so the callee's mediator, when the callee is not receiving live, rings its phone with a call push instead of the ordinary wake-up: a full-screen incoming call on Android, CallKit on iOS. That mediator learns that a call is coming and when, nothing else. The phone cannot say who is calling — a closed wallet cannot read the offer — and answering opens the wallet, which, once unlocked, picks the offer up and answers it if it has not expired. `answer` and `hangup` carry no urgency.
-
-### 3.4 Security
-
-- The SDP carries the DTLS fingerprints that key the media ([RFC 5763][rfc5763]). It arrives authcrypted from the counterparty's pairwise DID, so the media is authenticated to that relationship with no further step.
-- The TURN servers relay DTLS-SRTP they cannot read. Each sees the addresses of its own wallet and of the other side's relay, and the timing and volume of the call.
-- The mediators see only `forward`s: they do not learn that a call took place.
+A wallet receiving any message whose `from_prior` is valid, whose `iss` is the counterparty's current DID in a relationship the message is for, and whose `sub` is the message's `from`, MUST take `sub` as the counterparty's DID from then on, and SHOULD write to it alone. The rotation the contact card signs when a relationship opens is the same rule. A move that cannot be told — the counterparty unreachable — is not made yet: it is tried again while the old mediator is still collected.
 
 [didcomm]: https://identity.foundation/didcomm-messaging/spec/v2.0/
 [mediator]: https://github.com/almena-id/mediator
-[webrtc]: https://www.w3.org/TR/webrtc/
 [rfc2119]: https://www.rfc-editor.org/rfc/rfc2119
 [rfc8174]: https://www.rfc-editor.org/rfc/rfc8174
-[rfc8829]: https://www.rfc-editor.org/rfc/rfc8829
-[rfc8445]: https://www.rfc-editor.org/rfc/rfc8445
-[rfc8656]: https://www.rfc-editor.org/rfc/rfc8656
-[rfc8839]: https://www.rfc-editor.org/rfc/rfc8839
-[rfc8827]: https://www.rfc-editor.org/rfc/rfc8827
-[rfc5763]: https://www.rfc-editor.org/rfc/rfc5763

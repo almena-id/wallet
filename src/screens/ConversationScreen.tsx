@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { PhoneIcon, SyncIcon, VideoIcon } from "../components/icons";
-import { calls, callsSupported, useCall } from "../call";
+import { SyncIcon } from "../components/icons";
 import { useI18n } from "../i18n";
 import {
   MESSAGE_CHARS,
@@ -50,7 +49,6 @@ export function ConversationScreen({ id, onBack, onContact, onLink }: Conversati
   // Held for the whole send, and read synchronously: `sending` only changes on
   // the next render, so two quick presses of Enter would both see it false.
   const busy = useRef(false);
-  const call = useCall();
   const platform = usePlatform();
 
   // Each read is numbered, and only the latest one is shown: the live event and
@@ -170,8 +168,6 @@ export function ConversationScreen({ id, onBack, onContact, onLink }: Conversati
   }
 
   const contact = conversation?.contact;
-  // Once they have answered the invitation, and not while another call is on.
-  const callable = !!contact && !contact.pending && (call === null || call.phase === "ended");
 
   return (
     <div className="screen screen--conversation">
@@ -189,28 +185,6 @@ export function ConversationScreen({ id, onBack, onContact, onLink }: Conversati
           </span>
           <span className="conversation__name">{contact?.name ?? ""}</span>
         </button>
-        {callsSupported ? (
-          <>
-            <button
-              type="button"
-              className="icon-button"
-              onClick={() => contact && void calls.start(id, contact.name, "audio")}
-              disabled={!callable}
-              aria-label={t.calls.audio}
-            >
-              <PhoneIcon />
-            </button>
-            <button
-              type="button"
-              className="icon-button"
-              onClick={() => contact && void calls.start(id, contact.name, "video")}
-              disabled={!callable}
-              aria-label={t.calls.video}
-            >
-              <VideoIcon />
-            </button>
-          </>
-        ) : null}
         <button
           type="button"
           className="icon-button"

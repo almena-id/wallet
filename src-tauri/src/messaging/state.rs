@@ -1,5 +1,6 @@
-//! What the wallet writes down about its messaging: which mediator it is
-//! connected to, the name it goes by, and who it has a relationship with.
+//! What the wallet writes down about its messaging: the mediators it keeps
+//! a mailbox at, the name it goes by, and who it has a relationship with —
+//! each relationship through one of those mediators.
 //!
 //! **Sealed under a key the seed derives** — `m/2'`, see
 //! [`crate::identity::keys::STATE`] — so it is readable exactly while the
@@ -24,6 +25,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, Runtime};
 
+use super::peer::Peer;
 use super::MessagingError;
 use crate::identity::keys::{self, STATE};
 
@@ -34,7 +36,13 @@ const VERSION: u32 = 1;
 const AAD: &[u8] = b"almena-wallet/messaging/1";
 const NONCE_BYTES: usize = 24;
 
-/// The mediation this wallet has.
+/// How long a relationship moved to another mediator is still collected at
+/// the one it left, and a mediator being left is kept: the mediator's queue
+/// lifetime, so whatever the counterparty sent there before it learned of
+/// the move is picked up.
+pub const GRACE_SECS: u64 = 30 * 86_400;
+
+/// A mediation this wallet has.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Mediation {
@@ -42,16 +50,45 @@ pub struct Mediation {
     pub mediator: String,
     /// The inbox DID registered with it.
     pub inbox: String,
+    /// Being left after a change of mediator: its relationships move to the
+    /// new one, and it is still collected until then (epoch seconds), so
+    /// nothing sent to it before the move is lost.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leaving: Option<u64>,
+    /// How many DIDs it lets this wallet register — its inbox, its card and
+    /// one per contact — as its last grant said; unknown for a mediator that
+    /// does not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_dids: Option<u64>,
 }
 
-/// One relationship: one counterparty, and the pairwise DID this wallet is to
-/// it. No secret is kept: the pairwise keys are derived again from the seed and
-/// `origin` whenever they are needed.
+/// Where a moved relationship was: its pairwise there, and until when it is
+/// still collected.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Previous {
+    pub ours: String,
+    pub mediator: String,
+    pub until: u64,
+}
+
+/// One relationship: one counterparty, the mediator it goes through, and the
+/// pairwise DID this wallet is to it there. No secret is kept: the pairwise
+/// keys are derived again from the seed, the mediator and `origin` whenever
+/// they are needed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Relationship {
+    /// The mediator its pairwise routes through: one of the wallet's
+    /// mediations.
+    #[serde(default)]
+    pub mediator: String,
     /// The pairwise DID this wallet speaks as in it.
     pub ours: String,
+    /// Where it was before it moved to `mediator`, while that is still
+    /// collected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous: Option<Previous>,
     /// The DID the counterparty speaks as. Until it answers, that is the
     /// contact card its invitation named.
     pub theirs: String,
@@ -86,10 +123,13 @@ pub struct Relationship {
 }
 
 impl Relationship {
-    /// A relationship opened just now, with nothing said in it yet.
-    pub fn new(ours: String, theirs: String, pending: bool) -> Self {
+    /// A relationship opened just now through `mediator`, with nothing said
+    /// in it yet.
+    pub fn new(mediator: &str, ours: String, theirs: String, pending: bool) -> Self {
         Self {
+            mediator: mediator.to_owned(),
             ours,
+            previous: None,
             origin: theirs.clone(),
             theirs,
             pending,
@@ -101,6 +141,28 @@ impl Relationship {
             cleared: false,
             welcomed: false,
         }
+    }
+
+    /// Its pairwise through its mediator: derived again from the seed and
+    /// `origin`, never kept.
+    pub fn pairwise(&self, seed: &[u8; 64]) -> Result<Peer, MessagingError> {
+        Peer::pairwise(seed, &self.mediator, &self.origin)
+    }
+
+    /// Its conversation's id: from `origin`, so it stays when the
+    /// relationship moves to another mediator.
+    pub fn id(&self) -> String {
+        super::conversation::id(&self.origin)
+    }
+
+    /// Whether `to` names it: its pairwise, or the one it left while that
+    /// is still collected.
+    pub fn is_for(&self, to: &[String]) -> bool {
+        to.contains(&self.ours)
+            || self
+                .previous
+                .as_ref()
+                .is_some_and(|previous| to.contains(&previous.ours))
     }
 }
 
@@ -121,13 +183,27 @@ pub struct Last {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct State {
-    pub mediation: Option<Mediation>,
+    /// The mediations, the default first: new relationships go through it.
+    #[serde(default)]
+    pub mediations: Vec<Mediation>,
     /// The name this wallet goes by, sent to every contact.
     #[serde(default)]
     pub profile: Option<String>,
     /// Added after the first version of the file, which is read as none.
     #[serde(default)]
     pub relationships: Vec<Relationship>,
+}
+
+impl State {
+    /// The default mediation: the first one not being left.
+    pub fn default_mediation(&self) -> Option<&Mediation> {
+        self.mediations.iter().find(|m| m.leaving.is_none())
+    }
+
+    /// The mediation with `mediator`.
+    pub fn mediation(&self, mediator: &str) -> Option<&Mediation> {
+        self.mediations.iter().find(|m| m.mediator == mediator)
+    }
 }
 
 /// The file on disk: its version and the sealed state.
@@ -286,12 +362,28 @@ mod tests {
 
     fn state() -> State {
         State {
-            mediation: Some(Mediation {
-                mediator: "did:web:mediator.example.com".into(),
-                inbox: "did:peer:2.Vz6Mk".into(),
-            }),
+            mediations: vec![
+                Mediation {
+                    mediator: "did:web:old.example.com".into(),
+                    inbox: "did:peer:2.Vz6Mk.old".into(),
+                    leaving: Some(9),
+                    max_dids: None,
+                },
+                Mediation {
+                    mediator: "did:web:mediator.example.com".into(),
+                    inbox: "did:peer:2.Vz6Mk".into(),
+                    leaving: None,
+                    max_dids: Some(1000),
+                },
+            ],
             relationships: vec![Relationship {
+                mediator: "did:web:mediator.example.com".into(),
                 ours: "did:peer:2.ours".into(),
+                previous: Some(Previous {
+                    ours: "did:peer:2.before".into(),
+                    mediator: "did:web:old.example.com".into(),
+                    until: 9,
+                }),
                 theirs: "did:peer:2.theirs".into(),
                 origin: "did:peer:2.card".into(),
                 pending: true,
@@ -310,6 +402,25 @@ mod tests {
             }],
             profile: Some("Bob".into()),
         }
+    }
+
+    #[test]
+    fn the_default_is_the_first_mediation_not_being_left() {
+        let state = state();
+        assert_eq!(
+            state.default_mediation().map(|m| m.mediator.as_str()),
+            Some("did:web:mediator.example.com")
+        );
+        assert!(state.mediation("did:web:old.example.com").is_some());
+        let relationship = &state.relationships[0];
+        assert!(relationship.is_for(&["did:peer:2.before".into()]));
+        assert!(relationship.is_for(&["did:peer:2.ours".into()]));
+        assert!(!relationship.is_for(&["did:peer:2.card".into()]));
+        assert_eq!(
+            relationship.id(),
+            crate::messaging::conversation::id("did:peer:2.card")
+        );
+        assert_eq!(State::default().default_mediation(), None);
     }
 
     #[test]

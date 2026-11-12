@@ -17,7 +17,7 @@
 //! So the card links nothing: everybody who used it is answered from a
 //! different DID, and nobody learns another's.
 
-use almena_didcomm::{b64, FromPrior, Message, PackOptions, Urgency};
+use almena_didcomm::{b64, FromPrior, Message, PackOptions};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use url::Url;
@@ -139,6 +139,7 @@ pub async fn accept(
     send(mediator, &pairwise, &invitation.from, ping).await?;
 
     Ok(Relationship::new(
+        &mediator.did,
         pairwise.did,
         invitation.from.clone(),
         true,
@@ -184,7 +185,7 @@ pub async fn welcome(
         .cloned()
         .unwrap_or_else(|| Relationship {
             welcomed: true,
-            ..Relationship::new(pairwise.did, sender.to_owned(), false)
+            ..Relationship::new(&mediator.did, pairwise.did, sender.to_owned(), false)
         }))
 }
 
@@ -196,18 +197,6 @@ pub async fn send(
     to: &str,
     message: Message,
 ) -> Result<(), MessagingError> {
-    send_with(mediator, from, to, message, Urgency::Normal).await
-}
-
-/// [`send`], with `urgency` on its `forward`: [`Urgency::Call`] has `to`'s
-/// mediator ring the phone rather than send the ordinary wake-up.
-pub async fn send_with(
-    mediator: &Mediator,
-    from: &Peer,
-    to: &str,
-    message: Message,
-    urgency: Urgency,
-) -> Result<(), MessagingError> {
     let packed = message
         .from(&from.did)
         .to([to])
@@ -217,10 +206,7 @@ pub async fn send_with(
             None,
             mediator.resolver(),
             &from.secrets(),
-            PackOptions {
-                urgency,
-                ..PackOptions::default()
-            },
+            PackOptions::default(),
         )
         .await
         .map_err(|_| MessagingError::CounterpartyUnreachable)?;

@@ -13,7 +13,7 @@ type ContactScreenProps = {
 
 /**
  * A contact: the name they gave, the fingerprint that tells two of the same
- * name apart, and the name this wallet calls them by — which stays on this
+ * name apart, the name this wallet calls them by — which stays on this
  * device and wins over theirs.
  */
 export function ContactScreen({ id, onBack }: ContactScreenProps) {

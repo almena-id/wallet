@@ -1,5 +1,5 @@
-//! Live delivery: a WebSocket to the mediator while the wallet is in front, so
-//! messages arrive as they are sent instead of when somebody asks.
+//! Live delivery: a WebSocket to each mediator while the wallet is in front,
+//! so messages arrive as they are sent instead of when somebody asks.
 //!
 //! **The socket is how messages arrive, not where they are handled.** What the
 //! mediator pushes is a `delivery` like the ones a sync asks for, and it goes
@@ -15,9 +15,11 @@
 //!
 //! The interface starts it when the wallet comes to the front and stops it
 //! when it goes to the back (the mediator's SPEC.md §7.2); signing out
-//! stops it too. Between sessions it waits, [`BACKOFF_MIN`] doubling up to
-//! [`BACKOFF_MAX`], and tries again — unless there is nothing to be live for:
-//! no identity open, no mediation, or a mediator with no socket.
+//! stops it too. Each mediation has its own sessions, one after another:
+//! between them it waits, [`BACKOFF_MIN`] doubling up to [`BACKOFF_MAX`], and
+//! tries again — unless there is nothing to be live for there: no identity
+//! open, the mediation gone, or a mediator with no socket. A change to the
+//! list of mediations restarts them all.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -36,7 +38,7 @@ use tokio_tungstenite::{
 
 use super::mediator::{self, Mediator};
 use super::peer::Peer;
-use super::{apply, handle, listed, seed, state, sync, Gate, MessagingError, Outcome, Synced};
+use super::{apply, handle, listed, seed, state, sync_at, Gate, MessagingError, Outcome, Synced};
 use crate::identity::Held;
 
 const LIVE_DELIVERY_CHANGE: &str = "https://didcomm.org/messagepickup/3.0/live-delivery-change";
@@ -111,12 +113,33 @@ pub fn live_stop(live: State<'_, Live>) {
     live.stop();
 }
 
-/// Sessions, one after another, until there is nothing to be live for.
+/// Sessions with every mediation at once, each until there is nothing to be
+/// live for there.
 async fn run<R: Runtime>(app: tauri::AppHandle<R>) {
+    let mediators = {
+        let Ok(seed) = seed(&app.state::<Held>()) else {
+            return;
+        };
+        let Ok(state) = state::read(&app, &seed) else {
+            return;
+        };
+        state.mediations
+    };
+    futures_util::future::join_all(
+        mediators
+            .into_iter()
+            .map(|mediation| run_at(app.clone(), mediation.mediator)),
+    )
+    .await;
+}
+
+/// Sessions with `mediator`, one after another, until there is nothing to be
+/// live for there.
+async fn run_at<R: Runtime>(app: tauri::AppHandle<R>, mediator: String) {
     let mut backoff = BACKOFF_MIN;
     loop {
         let started = Instant::now();
-        let ended = session(&app).await;
+        let ended = session(&app, &mediator).await;
         if over(&ended) {
             return;
         }
@@ -127,7 +150,7 @@ async fn run<R: Runtime>(app: tauri::AppHandle<R>) {
 }
 
 /// Whether a session that ended so is the last: the mediator has no socket,
-/// the wallet is locked, there is no mediator, or what it holds cannot be
+/// the wallet is locked, the mediation is gone, or what it holds cannot be
 /// read — none of which another try would change.
 fn over(ended: &Result<(), MessagingError>) -> bool {
     matches!(
@@ -151,17 +174,20 @@ fn retry(backoff: Duration, lasted: Duration) -> (Duration, Duration) {
     (wait, (wait * 2).min(BACKOFF_MAX))
 }
 
-/// One socket, from connecting until it fails. Returns `Ok` only when the
-/// mediator has no socket to open.
-async fn session<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<(), MessagingError> {
+/// One socket to `mediator`, from connecting until it fails. Returns `Ok`
+/// only when the mediator has no socket to open.
+async fn session<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    mediator: &str,
+) -> Result<(), MessagingError> {
     let held = app.state::<Held>();
     let gate = app.state::<Gate>();
 
     let seed = seed(&held)?;
-    let mediation = state::read(app, &seed)?
-        .mediation
-        .ok_or(MessagingError::NotConnected)?;
-    let mediator = Mediator::resolve(&mediation.mediator).await?;
+    if state::read(app, &seed)?.mediation(mediator).is_none() {
+        return Err(MessagingError::NotConnected);
+    }
+    let mediator = Mediator::resolve(mediator).await?;
     if mediator.socket.is_none() {
         return Ok(());
     }
@@ -176,7 +202,8 @@ async fn session<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<(), MessagingE
     {
         let _guard = gate.0.lock().await;
         let mut state = state::read(app, &seed)?;
-        let outcome = sync(&seed, &mut state).await?;
+        let mut outcome = Outcome::default();
+        sync_at(&seed, &mut state, &mediator.did, &mut outcome).await?;
         let applied = apply(app, &seed, &mut state, outcome)?;
         announce(app, applied.changed, &state);
         crate::notify::arrived(app, &applied.fresh);

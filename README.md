@@ -19,9 +19,7 @@ are made with an invitation, as a QR code or a link, and each gets a DID of
 its own; with them the wallet exchanges names and text messages, kept on the
 device encrypted. While the wallet is open they arrive live, over a WebSocket to the mediator;
 while it is not, on Android and iOS the mediator sends a push notification that
-says only that something is waiting. Contacts can also call each other, by voice or video, while both
-wallets are open; the call is relayed through each wallet's mediator, so
-neither learns the other's address ([SPEC.md](SPEC.md)).
+says only that something is waiting.
 
 ## Credentials and verification
 

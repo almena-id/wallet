@@ -246,16 +246,20 @@ impl Mediator {
     /// same mediation to the same inbox and answers `no_change` to a DID it
     /// already has; a mediator that forgot the wallet — its mediation expired,
     /// or it was reset — has it back before anything else is asked of it.
+    ///
+    /// Returns how many DIDs the mediation may register, when the mediator
+    /// says (`max_recipient_dids`, an Almena extension to `mediate-grant`).
     pub async fn ensure(
         &self,
         inbox: &Peer,
         invitation: Option<String>,
-    ) -> Result<(), MessagingError> {
+    ) -> Result<Option<u64>, MessagingError> {
         let mut request = Message::new(MEDIATE_REQUEST, json!({}));
         request.pthid = invitation;
         let answer = self.request(inbox, request).await?;
-        granted(&answer, &self.did)?;
-        self.register(inbox, inbox).await
+        let room = granted(&answer, &self.did)?;
+        self.register(inbox, inbox).await?;
+        Ok(room)
     }
 
     /// Resolves DIDs: this mediator's from what was fetched, `did:key` and
@@ -267,7 +271,8 @@ impl Mediator {
 
     /// Adds or removes `peer` as a recipient of the inbox's mediation, and
     /// returns the mediator's result for it (`success`, `no_change`,
-    /// `client_error`, …).
+    /// `client_error`, …), with its `reason` when it gives one (`limit`: the
+    /// mediation holds as many DIDs as it may — an Almena extension).
     ///
     /// A DID other than the inbox itself carries a possession proof: a JWT it
     /// signs, naming this mediator and the inbox — the Almena extension the
@@ -278,7 +283,7 @@ impl Mediator {
         inbox: &Peer,
         peer: &Peer,
         action: &str,
-    ) -> Result<String, MessagingError> {
+    ) -> Result<(String, Option<String>), MessagingError> {
         let mut update = json!({"recipient_did": peer.did, "action": action});
         if action == "add" && peer.did != inbox.did {
             let proof = PossessionProof::new(&peer.did, &self.did, &inbox.did)
@@ -294,25 +299,33 @@ impl Mediator {
                 Message::new(RECIPIENT_UPDATE, json!({"updates": [update]})),
             )
             .await?;
-        let result = reply.body["updated"]
+        let entry = reply.body["updated"]
             .as_array()
             .and_then(|updated| {
                 updated
                     .iter()
                     .find(|entry| entry["recipient_did"] == peer.did.as_str())
             })
-            .and_then(|entry| entry["result"].as_str())
+            .ok_or(MessagingError::MediatorUnreachable)?;
+        let result = entry["result"]
+            .as_str()
             .ok_or(MessagingError::MediatorUnreachable)?;
 
-        Ok(result.to_owned())
+        Ok((
+            result.to_owned(),
+            entry["reason"].as_str().map(str::to_owned),
+        ))
     }
 
     /// Registers `peer` so that messages for it are queued for the inbox.
+    ///
+    /// # Errors
+    ///
+    /// [`MessagingError::MailboxFull`] when the mediation holds as many DIDs
+    /// as it may, [`MessagingError::MediatorRefused`] for any other no.
     pub async fn register(&self, inbox: &Peer, peer: &Peer) -> Result<(), MessagingError> {
-        match self.recipient(inbox, peer, "add").await?.as_str() {
-            "success" | "no_change" => Ok(()),
-            _ => Err(MessagingError::MediatorRefused),
-        }
+        let (result, reason) = self.recipient(inbox, peer, "add").await?;
+        refused(&result, reason.as_deref())
     }
 
     /// The oldest messages waiting for the inbox's mediation, as `(queue id,
@@ -502,22 +515,38 @@ fn is_loopback(url: &Url) -> bool {
 ///
 /// # Errors
 ///
-/// [`MessagingError::MediatorFull`] for a `mediate-deny`, which an Almena
-/// mediator sends only when it takes no new mediations (its SPEC.md §6.1),
-/// and [`MessagingError::MediatorRefused`] for anything else that is not a
+/// [`MessagingError::MediatorPrivate`] for a `mediate-deny` whose `reason`
+/// (an Almena mediator's) is `invitation_required` — a private mediator,
+/// asked without one of its invitations; [`MessagingError::MediatorFull`]
+/// for any other `mediate-deny`, which an Almena mediator sends only when it
+/// takes no new mediations (its SPEC.md §6.1); and [`MessagingError::MediatorRefused`] for anything else that is not a
 /// grant routing through it: every DID's service names this mediator as its
 /// route, and a grant through something else would leave them all pointing at
 /// the wrong place.
-fn granted(answer: &Message, mediator: &str) -> Result<(), MessagingError> {
+/// What a `recipient-update` result means for a DID being added.
+fn refused(result: &str, reason: Option<&str>) -> Result<(), MessagingError> {
+    match (result, reason) {
+        ("success" | "no_change", _) => Ok(()),
+        (_, Some("limit")) => Err(MessagingError::MailboxFull),
+        _ => Err(MessagingError::MediatorRefused),
+    }
+}
+
+/// Whether `answer` grants mediation through `mediator`, and how many DIDs
+/// it may hold when it says.
+fn granted(answer: &Message, mediator: &str) -> Result<Option<u64>, MessagingError> {
     if answer.type_.ends_with("/mediate-deny") {
-        return Err(MessagingError::MediatorFull);
+        return Err(match answer.body["reason"].as_str() {
+            Some("invitation_required") => MessagingError::MediatorPrivate,
+            _ => MessagingError::MediatorFull,
+        });
     }
     let routes_here = answer.type_.ends_with("/mediate-grant")
         && answer.body["routing_did"]
             .as_array()
             .is_some_and(|dids| dids.iter().any(|did| did == mediator));
     if routes_here {
-        Ok(())
+        Ok(answer.body["max_recipient_dids"].as_u64())
     } else {
         Err(MessagingError::MediatorRefused)
     }
@@ -594,10 +623,46 @@ mod tests {
     fn a_deny_says_the_mediator_is_full_and_only_a_grant_through_it_is_one() {
         const COORDINATE: &str = "https://didcomm.org/coordinate-mediation/3.0";
         let answer = |kind: &str, body: Value| Message::new(format!("{COORDINATE}/{kind}"), body);
-        assert!(granted(&answer("mediate-grant", json!({"routing_did": [DID]})), DID).is_ok());
+        assert_eq!(
+            granted(&answer("mediate-grant", json!({"routing_did": [DID]})), DID).unwrap(),
+            None
+        );
+        // An Almena mediator says how many DIDs the mediation may hold.
+        assert_eq!(
+            granted(
+                &answer(
+                    "mediate-grant",
+                    json!({"routing_did": [DID], "max_recipient_dids": 1000})
+                ),
+                DID
+            )
+            .unwrap(),
+            Some(1000)
+        );
+        // And why a DID is not taken, when the mailbox is full.
+        assert!(refused("success", None).is_ok() && refused("no_change", None).is_ok());
+        assert!(matches!(
+            refused("client_error", Some("limit")),
+            Err(MessagingError::MailboxFull)
+        ));
+        assert!(matches!(
+            refused("client_error", None),
+            Err(MessagingError::MediatorRefused)
+        ));
         assert!(matches!(
             granted(&answer("mediate-deny", json!({})), DID),
             Err(MessagingError::MediatorFull)
+        ));
+        assert!(matches!(
+            granted(&answer("mediate-deny", json!({"reason": "full"})), DID),
+            Err(MessagingError::MediatorFull)
+        ));
+        assert!(matches!(
+            granted(
+                &answer("mediate-deny", json!({"reason": "invitation_required"})),
+                DID
+            ),
+            Err(MessagingError::MediatorPrivate)
         ));
         for other in [
             answer(

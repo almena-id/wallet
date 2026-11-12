@@ -34,7 +34,7 @@ export type LinkDetails =
       kind: "mediator";
       mediator: string;
       current: string | null;
-      /** Relationships routed through the current mediator. */
+      /** Relationships through the current mediator: they move to the new one. */
       contacts: number;
     }
   | { kind: "unknown" };

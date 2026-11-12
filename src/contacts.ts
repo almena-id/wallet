@@ -26,6 +26,8 @@ export type Contact = {
   last: Last | null;
   /** Its history was deleted; the inbox leaves it out until it has news. */
   cleared: boolean;
+  /** The mediator it goes through. */
+  mediator: string;
 };
 
 /** The latest message of a conversation. */
@@ -174,3 +176,4 @@ export function readPhoto(): Promise<string | null> {
 export function writePhoto(photo: string | null): Promise<void> {
   return invoke<void>("profile_photo_write", { photo });
 }
+

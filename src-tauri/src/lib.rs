@@ -163,9 +163,6 @@ pub fn run() {
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_notifications::init());
 
-    #[cfg(mobile)]
-    let builder = builder.plugin(almena_call::init());
-
     #[cfg(target_os = "android")]
     let builder = builder.plugin(almena_keystore::init());
 
@@ -241,8 +238,6 @@ pub fn run() {
             messaging::contact_rename,
             messaging::profile_read,
             messaging::profile_write,
-            messaging::call_ice_servers,
-            messaging::call_send,
             messaging::profile_photo_read,
             messaging::profile_photo_write,
             messaging::live::live_start,

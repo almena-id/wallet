@@ -432,9 +432,9 @@ export function LinkSheet({
   }
 
   const same = details.current === details.mediator;
-  // A new mediator would leave every relationship's DIDs routed through the
-  // old one, which the wallet would no longer collect from.
-  const blocked = !same && details.current !== null && details.contacts > 0;
+  // Another mediator replaces the current one: the relationships move to it,
+  // and the old one is still collected for 30 days.
+  const moving = !same && details.current !== null && details.contacts > 0;
   const rows: ConfirmDetail[] = [
     { label: t.confirm.mediator.mediator, value: mediatorName(details.mediator) },
     {
@@ -452,11 +452,11 @@ export function LinkSheet({
       note={
         same
           ? t.confirm.mediator.same
-          : blocked
-            ? plural(t.confirm.mediator.blocked, details.contacts, locale)
+          : moving
+            ? plural(t.confirm.mediator.move, details.contacts, locale)
             : null
       }
-      confirmDisabled={same || blocked}
+      confirmDisabled={same}
       confirmLabel={t.confirm.accept}
       onConfirm={() =>
         void act(async () => {

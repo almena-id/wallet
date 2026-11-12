@@ -132,15 +132,15 @@
       "current": "You use now",
       "none": "None",
       "same": "You are already connected to this mediator.",
-      "blocked": {
-        "one": "You have {count} contact through your current mediator. Changing it from a link is not possible yet: their messages would stop arriving.",
-        "other": "You have {count} contacts through your current mediator. Changing it from a link is not possible yet: their messages would stop arriving."
+      "move": {
+        "one": "Your {count} contact moves to this mediator. Messages sent to your current one are still picked up for 30 days.",
+        "other": "Your {count} contacts move to this mediator. Messages sent to your current one are still picked up for 30 days."
       }
     },
     "registry": {
       "signInTitle": "Sign in to {name}",
       "linkTitle": "Link this wallet to {name}",
-      "aRegistry": "a registry",
+      "aRegistry": "a portal",
       "signInLead": "You sign in with a key this wallet keeps for this portal only.",
       "linkLead": "Your account there will take this wallet as a way in.",
       "portal": "Portal",
@@ -152,10 +152,10 @@
       "errors": {
         "registry_locked": "Open the wallet first.",
         "registry_unreadable": "This request cannot be read.",
-        "registry_insecure": "This registry is not reached securely.",
-        "registry_unreachable": "The registry cannot be reached. Try again in a moment.",
+        "registry_insecure": "This site is not reached securely.",
+        "registry_unreachable": "The site cannot be reached. Try again in a moment.",
         "registry_expired": "This request has expired. Ask for a new code.",
-        "registry_refused": "The registry did not accept the answer.",
+        "registry_refused": "The site did not accept the answer.",
         "registry_not_a_signer": "This wallet is not one of those that may sign it.",
         "registry_not_the_holder": "This application was started with another wallet.",
         "registry_nothing_to_present": "This wallet holds no credentials yet.",
@@ -351,6 +351,14 @@
       "none": "Not connected. A mediator holds your messages while this device is offline, and it is the address others reach you at. It cannot read them: they are encrypted to you.",
       "connect": "Connect to a mediator",
       "nameLabel": "Connected to",
+      "addressesLabel": "Addresses",
+      "addressesOf": "{count} of {max}",
+      "addressesHint": "Each contact takes one address at the mediator; your mailbox and your invitation take one each.",
+      "contactsNear": {
+        "one": "Room for {count} more contact at this mediator. When it is full, change to one with more room.",
+        "other": "Room for {count} more contacts at this mediator. When it is full, change to one with more room."
+      },
+      "contactsFull": "Your mailbox at this mediator is full: no new contact fits. Change to a mediator with more room.",
       "waitingLabel": "Waiting",
       "waiting": {
         "one": "{count} message",
@@ -359,7 +367,14 @@
       "waitingUnknown": "—",
       "check": "Check for messages",
       "checking": "Checking…",
-      "disconnect": "Disconnect"
+      "change": "Change mediator",
+      "previous": "Your previous mediator, {name}, is still checked until {date}, so nothing your contacts sent there before the change is lost.",
+      "disconnect": "Disconnect",
+      "disconnectContacts": {
+        "one": "Your {count} contact will not reach you until you connect to a mediator again.",
+        "other": "Your {count} contacts will not reach you until you connect to a mediator again."
+      },
+      "disconnectEmpty": "You will have no address for new contacts until you connect to a mediator again."
     },
     "backup": {
       "exportTitle": "Make a backup",
@@ -444,7 +459,6 @@
     "repeatSubtitle": "So a slip does not become a lock nobody can open.",
     "unlockTitle": "Your PIN",
     "unlockSubtitle": "The wallet is locked.",
-    "callSubtitle": "Somebody is calling. Unlock the wallet to answer.",
     "mismatch": "Those two do not match. Start again.",
     "progress": "{typed} of {digits} digits entered",
     "delete": "Delete",
@@ -528,7 +542,9 @@
       "messaging_mediator_unreachable": "The mediator could not be reached. Check the connection and the address, and try again.",
       "messaging_mediator_refused": "The mediator turned the request down.",
       "messaging_mediator_full": "This mediator is full and is not taking new wallets right now. Try again later, or choose another mediator.",
+      "messaging_mediator_private": "This mediator is private: it keeps the mailboxes of the wallets its administrators invite. Ask one of them for an invitation, and open it with this wallet.",
       "messaging_not_connected": "This wallet is not connected to a mediator.",
+      "messaging_mailbox_full": "Your mailbox at this mediator is full: no new contact fits. Change to a mediator with more room in Profile → Messaging.",
       "messaging_keys": "The keys for talking to the mediator could not be used.",
       "messaging_unreadable": "What this device holds about the mediator could not be read.",
       "messaging_storage": "The mediator could not be written down on this device.",
@@ -539,8 +555,7 @@
       "messaging_pending": "They have not answered your invitation yet. You can write once they do.",
       "messaging_contact_unknown": "That contact is not on this device.",
       "messaging_message_invalid": "A message cannot be empty or longer than 4,000 characters.",
-      "messaging_photo_invalid": "That picture is not one this wallet can keep. Try another one.",
-      "messaging_calls_unavailable": "Your mediator does not relay calls, so none can be made."
+      "messaging_photo_invalid": "That picture is not one this wallet can keep. Try another one."
     }
   },
   "conversations": {
@@ -601,35 +616,6 @@
         "rejected": "Application not accepted",
         "issued": "Credential ready to collect"
       }
-    }
-  },
-  "calls": {
-    "audio": "Voice call",
-    "video": "Video call",
-    "calling": "Calling…",
-    "incomingAudio": "Incoming voice call",
-    "incomingVideo": "Incoming video call",
-    "connecting": "Connecting…",
-    "accept": "Accept",
-    "decline": "Decline",
-    "hangUp": "Hang up",
-    "mute": "Mute",
-    "unmute": "Unmute",
-    "cameraOff": "Turn camera off",
-    "cameraOn": "Turn camera on",
-    "ended": {
-      "ended": "Call ended",
-      "cancelled": "Call cancelled",
-      "unanswered": "No answer",
-      "declined": "Declined",
-      "busy": "Busy",
-      "failed": "The call dropped",
-      "missed": "Missed call"
-    },
-    "errors": {
-      "call_media": "The microphone or camera could not be used. Check the permissions.",
-      "call_relay": "The call relay could not be reached.",
-      "call_failed": "The call could not connect."
     }
   },
   "biometrics": {
