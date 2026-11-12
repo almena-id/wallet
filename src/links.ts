@@ -93,6 +93,13 @@ export type RegistryRequest = {
       status: "valid" | "suspended" | "revoked";
       holder: string | null;
     } | null;
+    /**
+     * `status_list`: no published list to compare it with, so every status
+     * on it but the one changed is valid.
+     */
+    allValid: boolean;
+    /** `did_log_entry`: who may sign the next entry, when it changes that. */
+    updateKeys: string[] | null;
   } | null;
   /**
    * `pair`, `present`, `submit`: an application to one of the registry's
@@ -101,6 +108,15 @@ export type RegistryRequest = {
   applying: {
     issuer: string;
     issuerDid: string;
+    /**
+     * Whether the wallet checked the issuer by itself, as a verifier is
+     * (`verifying.verified`); a credential is taken only from one that is.
+     */
+    verified: boolean;
+    /** Its tenant's DID, once that resolved. */
+    tenant: string | null;
+    /** The domains the tenant's document links to it: its own word. */
+    domains: string[];
     /** The credential applied for, by language. */
     credential: Record<string, string>;
     /** `submit`: what is signed, every answer by language. */
@@ -124,13 +140,14 @@ export type RegistryRequest = {
     verifierDid: string;
     /**
      * Whether the wallet checked it by itself: its `did:webvh` and its
-     * tenant's resolve on the registry asked, their logs signed by the
-     * tenant's own keys. False when anything did not hold or was unreachable.
+     * tenant's resolve on the registry asked, and its log's last entry is
+     * signed by one of the tenant's update keys. False when anything did not
+     * hold or was unreachable.
      */
     verified: boolean;
     /** Its tenant's DID, once that resolved. */
     tenant: string | null;
-    /** The domains the tenant's document links to it. */
+    /** The domains the tenant's document links to it: its own word. */
     domains: string[];
     /** What it asks for: its form's name, by language. */
     form: Record<string, string>;

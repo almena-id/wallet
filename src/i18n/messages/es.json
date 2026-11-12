@@ -194,6 +194,10 @@
       "credentialStatus": "Nuevo estado",
       "holder": "Titular",
       "entry": "Entrada",
+      "nextSigners": "Quién firma su próxima versión",
+      "thisWallet": "este wallet",
+      "othersOnList": "Las demás credenciales de la lista",
+      "allValid": "Válidas",
       "statuses": {
         "valid": "Válida (rehabilitada)",
         "suspended": "Suspendida",
@@ -215,7 +219,10 @@
       "verifierUnverified": "No se ha podido comprobar",
       "verifierResolved": "Publicado por su organización",
       "verifierTenant": "Su organización",
+      "verifierDomains": "Dominios que declara suyos",
       "verifierUnverifiedNote": "Este wallet no ha podido comprobar quién es este verificador: su nombre es solo lo que dice el registro. Acepta solo si estás ante él y esperas que te lo pida.",
+      "issuerUnverifiedNote": "Este wallet no ha podido comprobar quién es este emisor: su nombre es solo lo que dice el registro. Acepta solo si lo has empezado tú en {portal}.",
+      "issuerUnverifiedReceive": "Este wallet no ha podido comprobar quién es este emisor, así que no acepta una credencial suya.",
       "submitCollect": "Este wallet no recibe avisos de cómo va tu solicitud. Vuelve a catalog.almena.id para ver en qué punto está y, cuando se emita, para recoger tu credencial."
     }
   },
@@ -444,7 +451,8 @@
       "identity_no_draft": "No había ninguna frase que confirmar. Empieza de nuevo.",
       "identity_unknown": "No se ha podido crear la identidad. Inténtalo otra vez.",
       "identity_unconfirmed": "Confirma primero que eres tú y vuelve a escribir las palabras.",
-      "identity_locked": "El wallet está bloqueado. Desbloquéalo e inténtalo otra vez."
+      "identity_locked": "El wallet está bloqueado. Desbloquéalo e inténtalo otra vez.",
+      "identity_exists": "Este dispositivo ya guarda una identidad. Cierra su sesión primero para crear o restaurar otra."
     },
     "protect": {
       "title": "Elige un PIN",

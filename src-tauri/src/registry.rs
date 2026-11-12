@@ -265,6 +265,9 @@ struct CredentialTypeRef {
     id: String,
     #[serde(default)]
     labels: std::collections::BTreeMap<String, String>,
+    /// How an SD-JWT VC of it names it: what a credential taken is held to.
+    #[serde(default)]
+    vct: Option<String>,
 }
 
 /// `submit`: the application's content and its digest.
@@ -365,6 +368,9 @@ pub struct Verifying {
 pub struct Applying {
     issuer: String,
     issuer_did: String,
+    /// What this wallet checked of the issuer by itself (`issuers::vouch`).
+    #[serde(flatten)]
+    vouched: crate::issuers::Vouched,
     /// The credential applied for, by language.
     credential: std::collections::BTreeMap<String, String>,
     /// `submit`: every answer, by language, and whether a credential vouched for it.
@@ -483,6 +489,11 @@ pub struct Signing {
     holder: Option<String>,
     /// `status_list`: the status it changes, as the list says it.
     change: Option<StatusChange>,
+    /// `status_list`: there was no published list to compare it with, so
+    /// every status on it but the one changed is valid — said on the sheet.
+    all_valid: bool,
+    /// `did_log_entry`: who may sign the next entry, when it changes that.
+    update_keys: Option<Vec<String>>,
 }
 
 /// One claim of a credential to sign, as the sheet shows it.
@@ -638,7 +649,9 @@ fn applies_as_it_says(request: &Request) -> bool {
     let Some(issuer) = &request.issuer else {
         return false;
     };
-    if issuer.did.is_empty() || request.credential_type.is_none() {
+    // A registry issuer is a `did:webvh`: anything else — a contact's card,
+    // say — would be paired with as if it were one.
+    if !issuer.did.starts_with("did:webvh:") || request.credential_type.is_none() {
         return false;
     }
     match request.purpose.as_str() {
@@ -709,12 +722,26 @@ fn told_as_it_is(sign: &Sign) -> bool {
                 .and_then(|id| id.split('-').next())
                 .and_then(|number| number.parse::<u64>().ok());
             let made = text(&document["state"]["id"]);
+            let first = version == Some(1);
+            // What the registry writes, and nothing else: the method and the
+            // SCID, named once, and who may sign the next entry — shown. A
+            // deactivation, witnesses or pre-rotation would be signed unseen.
+            let parameters = document["parameters"].as_object();
+            let only_shown = parameters.is_some_and(|parameters| {
+                parameters
+                    .keys()
+                    .all(|key| matches!(key.as_str(), "method" | "scid" | "updateKeys"))
+                    && (!first
+                        || (parameters.contains_key("method") && parameters.contains_key("scid")))
+            });
             sign.verification_method.is_none()
                 && sign.proof_purpose == "assertionMethod"
                 && version.is_some()
                 && version == sign.version
                 && made.is_some()
-                && (sign.did.is_none() || sign.did == made)
+                && only_shown
+                // A new DID is a first entry, and a first entry a new DID.
+                && if first { sign.did.is_none() } else { sign.did == made }
         }
         // An issuer's credential: signed as a key of its DID, every claim
         // shown, valid until when the sheet says.
@@ -773,6 +800,23 @@ fn told_as_it_is(sign: &Sign) -> bool {
         }
         _ => false,
     }
+}
+
+/// Does a status list to sign change what the sheet says and nothing else?
+/// Compared with the list the issuer publishes now ([`crate::status::changes_only`]);
+/// `true` when there was none to compare with, and every other status is valid.
+async fn list_as_told(sign: &Sign) -> Result<bool, RegistryError> {
+    let issuer = sign.verification_method.as_deref().unwrap_or_default();
+    let uri = sign.document["payload"]["sub"].as_str().unwrap_or_default();
+    let current = crate::status::published(uri, issuer)
+        .await
+        .map_err(|_| RegistryError::Unreadable)?;
+    crate::status::changes_only(
+        current.as_ref(),
+        &sign.document["payload"],
+        sign.status_change.as_ref().map(|change| change.index),
+    )
+    .ok_or(RegistryError::Unreadable)
 }
 
 /// Does a credential to sign say nothing beyond what the sheet shows or the
@@ -928,6 +972,10 @@ pub async fn registry_request(
 ) -> Result<RegistryRequest, RegistryError> {
     let seed = seed(&held)?;
     let (uri, request) = fetch(&input).await?;
+    let all_valid = match &request.sign {
+        Some(sign) if sign.kind == "status_list" => list_as_told(sign).await?,
+        _ => false,
+    };
     let (_, did) = identity_for(&seed, &uri, issuer_of(&request));
     // Refused before anything is kept: the portal must at least be a web one.
     let portal = portal(&request.client_id)?;
@@ -936,9 +984,11 @@ pub async fn registry_request(
     } else {
         (Vec::new(), true)
     };
-    let vouched = match &request.verifier {
-        Some(verifier) => {
-            Some(crate::issuers::vouch(&verifier.did, uri.host_str().unwrap_or_default()).await)
+    // Whoever the request names — a verifier, or the issuer applied to — is
+    // checked on its own before the sheet shows it.
+    let vouched = match request.verifier.as_ref().or(request.issuer.as_ref()) {
+        Some(them) => {
+            Some(crate::issuers::vouch(&them.did, uri.host_str().unwrap_or_default()).await)
         }
         None => None,
     };
@@ -987,6 +1037,10 @@ pub async fn registry_request(
             })
             .flatten(),
         change: sign.status_change.clone(),
+        all_valid,
+        update_keys: (sign.kind == "did_log_entry")
+            .then(|| crate::webvh::keys_named(&sign.document["parameters"]["updateKeys"]))
+            .flatten(),
     });
     let asked = request
         .dcql_query
@@ -1011,6 +1065,7 @@ pub async fn registry_request(
         complete,
         issuer: issuer.name.chars().take(200).collect(),
         issuer_did: issuer.did.clone(),
+        vouched: vouched.clone().unwrap_or_default(),
         credential: request
             .credential_type
             .as_ref()
@@ -1376,6 +1431,14 @@ async fn receive(
     if request.holder.as_deref() != Some(did.as_str()) {
         return Err(RegistryError::NotTheHolder);
     }
+    // Only an issuer this wallet can tie to its tenant's signers is taken a
+    // credential from: any site could otherwise issue in any name it wrote.
+    if !crate::issuers::vouch(&issuer.did, uri.host_str().unwrap_or_default())
+        .await
+        .verified
+    {
+        return Err(RegistryError::IssuerUnverified);
+    }
     let document =
         crate::issuers::document(&issuer.did)
             .await
@@ -1410,11 +1473,21 @@ async fn receive(
         _ => return Err(RegistryError::Refused),
     }
     let received: Received = json_of(response).await?;
-    if received.format != "dc+sd-jwt" || received.issuer.did != issuer.did {
+    // Of the type applied for, and named as the credential itself names it.
+    let applied = request
+        .credential_type
+        .as_ref()
+        .map(|kind| kind.id.as_str());
+    let vct = received.credential_type.vct.as_deref();
+    if received.format != "dc+sd-jwt"
+        || received.issuer.did != issuer.did
+        || applied.is_some_and(|id| id != received.credential_type.id)
+        || vct.is_none()
+    {
         return Err(RegistryError::Unreadable);
     }
     let (claims, issued_at, valid_until) =
-        crate::credentials::read(&received.credential, &did, &issuer.did, None)
+        crate::credentials::read(&received.credential, &did, &issuer.did, vct)
             .map_err(|_| RegistryError::Unreadable)?;
     let jws = received.credential.split('~').next().unwrap_or_default();
     if crate::issuers::signed_by(jws, "dc+sd-jwt", &issuer.did, &document).is_none() {
@@ -1582,6 +1655,7 @@ mod tests {
             proof_purpose: "assertionMethod".into(),
             document: json!({
                 "versionId": "2-Qm",
+                "parameters": {},
                 "state": {"id": "did:webvh:Qm:almena.id:ids:idn_a"},
             }),
             status_change: None,
@@ -1592,10 +1666,33 @@ mod tests {
     fn what_is_shown_must_be_what_is_signed() {
         assert!(told_as_it_is(&log_entry()));
         // A first entry names no DID yet; the one it makes is in the entry.
-        assert!(told_as_it_is(&Sign {
+        let mut first = Sign {
+            did: None,
+            version: Some(1),
+            ..log_entry()
+        };
+        first.document["versionId"] = json!("1-Qm");
+        first.document["parameters"] =
+            json!({"method": "did:webvh:1.0", "scid": "Qm", "updateKeys": ["z6Mk"]});
+        assert!(told_as_it_is(&first));
+        // Nor the other way round: "new" for a later version, or a first
+        // entry that names no method.
+        assert!(!told_as_it_is(&Sign {
             did: None,
             ..log_entry()
         }));
+        first.document["parameters"] = json!({"updateKeys": ["z6Mk"]});
+        assert!(!told_as_it_is(&first));
+        // What the sheet would not show: a deactivation, witnesses, pre-rotation.
+        for unshown in [
+            json!({"deactivated": true}),
+            json!({"witness": {"threshold": 1}}),
+            json!({"nextKeyHashes": ["Qm"]}),
+        ] {
+            let mut entry = log_entry();
+            entry.document["parameters"] = unshown;
+            assert!(!told_as_it_is(&entry));
+        }
         assert!(!told_as_it_is(&Sign {
             version: Some(3),
             ..log_entry()
@@ -2001,6 +2098,7 @@ mod tests {
             credential_type: Some(CredentialTypeRef {
                 id: "membership".into(),
                 labels: Default::default(),
+                vct: None,
             }),
             holder: None,
             dcql_query: (purpose == "present").then(|| json!({"credential_sets": [{}]})),
@@ -2051,6 +2149,11 @@ mod tests {
         let mut unnamed = application("pair", None);
         unnamed.issuer = None;
         assert!(!applies_as_it_says(&unnamed));
+        // An issuer that is not a registry's `did:webvh` — a contact's card,
+        // public in its invitation — is no issuer to pair with.
+        let mut card = application("pair", None);
+        card.issuer.as_mut().unwrap().did = "did:peer:2.Vz6MkCard".into();
+        assert!(!applies_as_it_says(&card));
         // A sign-in names no issuer.
         let mut sign_in = application("pair", None);
         sign_in.purpose = "sign_in".into();

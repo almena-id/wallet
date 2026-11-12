@@ -147,8 +147,11 @@ pub fn generate(language: Language, length: Length) -> Result<Mnemonic, Identity
 /// first would only add a question they can get wrong about words that already
 /// say which they are.
 ///
-/// Normalised first — lower case, and any run of whitespace becomes one space —
-/// so a phrase pasted out of a note with line breaks in it is the same phrase.
+/// Normalised first — lower case, NFKD as the wordlists are written (a
+/// keyboard's composed "á" is the list's "a" and accent), and any run of
+/// whitespace becomes one space — so a phrase pasted out of a note with line
+/// breaks in it, or typed with accents, is the same phrase. Built straight
+/// into memory that is wiped, with no copy of a word left behind.
 /// Then counted, then checked: each step answers a different question about what
 /// is wrong with it, and the frontend says so in the person's own language.
 ///
@@ -158,13 +161,15 @@ pub fn generate(language: Language, length: Length) -> Result<Mnemonic, Identity
 /// [`Length`], and [`IdentityError::Checksum`] when they are not a phrase this
 /// scheme ever produced — a typo, or words in the wrong order.
 pub fn read(input: &str) -> Result<Mnemonic, IdentityError> {
-    let joined = Zeroizing::new(
-        input
-            .split_whitespace()
-            .map(str::to_lowercase)
-            .collect::<Vec<_>>()
-            .join(" "),
-    );
+    use unicode_normalization::UnicodeNormalization as _;
+
+    let mut joined = Zeroizing::new(String::with_capacity(input.len() * 2));
+    for word in input.split_whitespace() {
+        if !joined.is_empty() {
+            joined.push(' ');
+        }
+        joined.extend(word.chars().flat_map(char::to_lowercase).nfkd());
+    }
 
     let count = joined.split(' ').filter(|word| !word.is_empty()).count();
     Length::of(count)?;
@@ -177,6 +182,7 @@ pub fn read(input: &str) -> Result<Mnemonic, IdentityError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use unicode_normalization::UnicodeNormalization as _;
 
     #[test]
     fn only_twelve_and_twenty_four_words_are_lengths() {
@@ -193,6 +199,19 @@ mod tests {
         tags.sort_unstable();
         tags.dedup();
         assert_eq!(tags.len(), Language::ALL.len());
+    }
+
+    #[test]
+    fn a_phrase_typed_with_composed_accents_reads_as_written() {
+        // One with an accented word in it, as most Spanish phrases have.
+        let made = std::iter::repeat_with(|| generate(Language::Spanish, Length::Twelve).unwrap())
+            .take(100)
+            .find(|made| !made.to_string().is_ascii())
+            .expect("an accented phrase");
+        let typed: String = made.to_string().nfc().collect();
+        assert_ne!(typed, made.to_string());
+        assert_eq!(read(&typed).unwrap(), made);
+        assert_eq!(read(&typed.to_uppercase()).unwrap(), made);
     }
 
     #[test]

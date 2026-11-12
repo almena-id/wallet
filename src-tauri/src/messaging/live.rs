@@ -278,7 +278,17 @@ impl Socket {
         };
         let (stream, _) = timeout(
             HANDSHAKE,
-            connect_async_tls_with_config(uri, None, true, Some(connector)),
+            // A pushed `delivery` is held to what an asked-for one is.
+            connect_async_tls_with_config(
+                uri,
+                Some(
+                    tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
+                        .max_message_size(Some(mediator::ANSWER_BYTES))
+                        .max_frame_size(Some(mediator::ANSWER_BYTES)),
+                ),
+                true,
+                Some(connector),
+            ),
         )
         .await
         .map_err(|_| MessagingError::MediatorUnreachable)?

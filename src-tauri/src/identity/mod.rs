@@ -45,6 +45,9 @@ pub enum IdentityError {
     Unconfirmed,
     /// No identity is open, so there is nothing to check the phrase against.
     Locked,
+    /// There is already an identity on this device, open or locked: another
+    /// is not put in memory over it. Signing out comes first.
+    Exists,
 }
 
 impl IdentityError {
@@ -56,6 +59,7 @@ impl IdentityError {
             Self::NoDraft => "identity_no_draft",
             Self::Unconfirmed => "identity_unconfirmed",
             Self::Locked => "identity_locked",
+            Self::Exists => "identity_exists",
         }
     }
 }
@@ -178,12 +182,15 @@ pub fn identity_draft(
 /// # Errors
 ///
 /// [`IdentityError::NoDraft`] when no phrase is being shown — the interface asked
-/// to finish something it never started.
+/// to finish something it never started — and [`IdentityError::Exists`] when
+/// the device already keeps one.
 #[tauri::command]
-pub fn identity_create(
+pub fn identity_create<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     draft: State<'_, Draft>,
     held: State<'_, Held>,
 ) -> Result<Identity, IdentityError> {
+    vacant(&app)?;
     let mnemonic = draft
         .0
         .lock()
@@ -203,13 +210,25 @@ pub fn identity_create(
 /// # Errors
 ///
 /// [`IdentityError::WordCount`] or [`IdentityError::Checksum`], depending on what
-/// is wrong with what they wrote.
+/// is wrong with what they wrote, and [`IdentityError::Exists`] when the device
+/// already keeps one.
 #[tauri::command]
-pub fn identity_restore(
+pub fn identity_restore<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     input: Zeroizing<String>,
     held: State<'_, Held>,
 ) -> Result<Identity, IdentityError> {
+    vacant(&app)?;
     restore(&input, &held)
+}
+
+/// Refuses to put an identity in memory while the device keeps one, locked or
+/// not: one put there behind the lock screen would be open without its PIN.
+fn vacant<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<(), IdentityError> {
+    match crate::vault::occupied(app) {
+        Ok(false) => Ok(()),
+        _ => Err(IdentityError::Exists),
+    }
 }
 
 /// What `identity_restore` does, without the command wrapper around it, so the

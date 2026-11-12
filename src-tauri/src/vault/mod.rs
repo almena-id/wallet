@@ -280,19 +280,14 @@ pub fn vault_create<R: Runtime>(
     let _guard = gate.0.lock();
     let digits = pin
         .as_deref()
-        .map(|pin| check(pin, shortest(None)))
+        .map(|pin| check(pin, shortest(store::next_home(&app))))
         .transpose()?;
     if pin.is_none() && !store::device_lockable() {
         return Err(VaultError::NoDeviceStore);
     }
 
-    // Anything at all where the record goes, readable or not, means there is
-    // already an identity on this device.
-    match load(&app) {
-        Ok(None) => {}
-        Ok(Some(_)) => return Err(VaultError::Exists),
-        Err(VaultError::Unreadable | VaultError::TooNew) => return Err(VaultError::Exists),
-        Err(failure) => return Err(failure),
+    if occupied(&app)? {
+        return Err(VaultError::Exists);
     }
 
     let seed = held.seed().ok_or(VaultError::NoIdentity)?;
@@ -306,7 +301,15 @@ pub fn vault_create<R: Runtime>(
             record
         }
     };
-    store::write(&app, &record.write())?;
+    let home = store::write(&app, &record.write())?;
+    // Four digits were allowed for a record hardware keeps on the device; one
+    // the Android Keystore would not seal after all went to a plain file,
+    // which could be copied off and tried against every four-digit PIN. It is
+    // taken back; asked again, `next_home` says six.
+    if digits.is_some_and(|digits| digits < shortest(Some(home))) {
+        store::clear(&app);
+        return Err(VaultError::PinTooShort);
+    }
 
     Ok(status(&app))
 }
@@ -373,9 +376,32 @@ pub fn vault_open_with_device<R: Runtime>(
         }
     };
     let seed = record.seed(&key)?;
+    let record = forgive(&app, record)?;
     to_device_lock(&app, &record, &key);
 
     Ok(crate::identity::adopt(seed, &held))
+}
+
+/// The record with its count of wrong PINs back at nought, written down if it
+/// was not: the device's own check proved the holder as the PIN would have,
+/// and a count left at nine would let the next slip of a finger destroy it.
+fn forgive<R: Runtime>(app: &tauri::AppHandle<R>, record: Record) -> Result<Record, VaultError> {
+    match forgiven(&record) {
+        Some(clean) => {
+            store::write(app, &clean.write())?;
+            Ok(clean)
+        }
+        None => Ok(record),
+    }
+}
+
+/// [`forgive`]'s rule: a record with wrong answers counted, without them.
+fn forgiven(record: &Record) -> Option<Record> {
+    (record.wrong > 0).then(|| {
+        let mut clean = record.clone();
+        clean.wrong = 0;
+        clean
+    })
 }
 
 /// **Moves a wallet with a PIN over to the iPhone's lock**, once it can be.
@@ -509,6 +535,7 @@ pub fn vault_confirm<R: Runtime>(
         };
         // A key that does not open the record proves nothing.
         record.seed(&key)?;
+        forgive(&app, record)?;
     }
     held.confirm();
     Ok(())
@@ -674,8 +701,27 @@ fn status<R: Runtime>(app: &tauri::AppHandle<R>) -> VaultStatus {
                 version: Some(record.version),
             }
         }
-        Ok(None) => VaultStatus::nothing(None),
+        Ok(None) => VaultStatus {
+            min_digits: shortest(store::next_home(app)),
+            ..VaultStatus::nothing(None)
+        },
         Err(failure) => VaultStatus::nothing(Some(failure.code())),
+    }
+}
+
+/// Whether there is already an identity on this device: anything at all where
+/// the record goes, readable or not. Nothing is made or put in memory over it
+/// (`vault_create`, `identity::identity_create`, `identity::identity_restore`);
+/// signing out is the way to another.
+///
+/// # Errors
+///
+/// What reading the store failed with, other than a record it cannot read.
+pub(crate) fn occupied<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<bool, VaultError> {
+    match load(app) {
+        Ok(None) => Ok(false),
+        Ok(Some(_)) | Err(VaultError::Unreadable | VaultError::TooNew) => Ok(true),
+        Err(failure) => Err(failure),
     }
 }
 
@@ -683,14 +729,29 @@ fn load<R: Runtime>(
     app: &tauri::AppHandle<R>,
 ) -> Result<Option<(Record, store::Home)>, VaultError> {
     match store::read(app)? {
-        Some((bytes, home)) => Ok(Some((Record::parse(&bytes)?, home))),
+        Some((bytes, home)) => {
+            let record = Record::parse(&bytes)?;
+            // A record without a PIN is one only an iPhone with a passcode
+            // writes. Anywhere else it is one somebody stripped, and would
+            // leave the device's key as the only lock it never had.
+            if !held_here(&record, store::device_lockable()) {
+                return Err(VaultError::Unreadable);
+            }
+            Ok(Some((record, home)))
+        }
         None => Ok(None),
     }
 }
 
+/// Whether `record` is one this platform writes: with a PIN, or without one
+/// only where the device keeps its key behind its own lock (`lockable`).
+fn held_here(record: &Record, lockable: bool) -> bool {
+    record.has_pin() || lockable
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{counted, record::Record, record::ATTEMPTS, VaultError};
+    use super::{counted, forgiven, held_here, record::Record, record::ATTEMPTS, VaultError};
 
     #[test]
     fn every_answer_is_written_down_as_an_attempt_before_it_is_checked() {
@@ -728,6 +789,25 @@ mod tests {
         .unwrap();
         assert_eq!(written, vec![4, 0]);
         assert_eq!(opened.wrong, 0);
+    }
+
+    #[test]
+    fn a_record_without_a_pin_is_read_only_where_one_is_written() {
+        let (pin, _) = Record::seal(&[7u8; 64], "2468", 4).unwrap();
+        let (bare, _) = Record::seal_device(&[7u8; 64]).unwrap();
+        assert!(held_here(&pin, false) && held_here(&pin, true));
+        assert!(held_here(&bare, true));
+        assert!(!held_here(&bare, false));
+    }
+
+    #[test]
+    fn the_device_check_forgives_the_wrong_pins_counted() {
+        let (mut record, _) = Record::seal(&[7u8; 64], "2468", 4).unwrap();
+        assert!(forgiven(&record).is_none());
+        record.wrong = ATTEMPTS - 1;
+        let clean = forgiven(&record).expect("counted answers are forgiven");
+        assert_eq!(clean.wrong, 0);
+        assert_eq!(clean.left(), ATTEMPTS);
     }
 
     #[test]

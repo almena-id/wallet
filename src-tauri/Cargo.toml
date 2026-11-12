@@ -28,6 +28,9 @@ serde_json = "1"
 # the wallet is read in and a phrase in any of them can be brought back; then
 # SLIP-0010 (HMAC-SHA512) down to the ed25519 key a `did:key` names.
 bip39 = { version = "2.2", features = ["zeroize", "all-languages"] }
+# NFKD, as the wordlists are written: a phrase typed with composed accents
+# (Spanish, French) reads as the same words.
+unicode-normalization = "0.1"
 # `serde`: the PIN and the phrase arrive from the interface straight into
 # memory that is wiped when they are dropped.
 zeroize = { version = "1.9", features = ["serde"] }

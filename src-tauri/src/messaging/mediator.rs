@@ -55,7 +55,7 @@ const TIMEOUT: Duration = Duration::from_secs(20);
 /// attachment and the whole sealed in a JWE, base64 again: about 18 MiB. A
 /// mediator that sends more is not read to the end, so it cannot fill this
 /// device's memory.
-const ANSWER_BYTES: usize = 24 * 1024 * 1024;
+pub(crate) const ANSWER_BYTES: usize = 24 * 1024 * 1024;
 
 /// The largest DID document read for a `did:web`: the mediator holds the ones
 /// it fetches to the same 1 MiB (its SPEC.md §6.8), and a mediator's is a few
@@ -146,6 +146,8 @@ pub struct Mediator {
     /// when it has one this wallet may use.
     pub socket: Option<String>,
     resolver: ChainResolver,
+    /// Its document, as fetched: what [`Mediator::reader`] starts from.
+    document: DidDocument,
 }
 
 impl Mediator {
@@ -162,7 +164,7 @@ impl Mediator {
         let endpoint = endpoint(&document)?;
         let socket = socket(&document);
         let resolver = ChainResolver::new(vec![
-            Arc::new(StaticResolver::new([document])),
+            Arc::new(StaticResolver::new([document.clone()])),
             Arc::new(LocalResolver::new()),
             Arc::new(WebResolver),
         ]);
@@ -172,6 +174,7 @@ impl Mediator {
             endpoint,
             socket,
             resolver,
+            document,
         })
     }
 
@@ -267,6 +270,20 @@ impl Mediator {
     /// the network.
     pub fn resolver(&self) -> &ChainResolver {
         &self.resolver
+    }
+
+    /// Resolves DIDs for reading what arrives: as [`Mediator::resolver`], but
+    /// a `did:web` over the network only when it is one of `known` — those
+    /// this wallet has a relationship with. Anybody else's is not looked up:
+    /// a stranger's slow host would hold up every message behind it, and
+    /// learn when this wallet syncs; what it sent cannot be opened, and is
+    /// dropped.
+    pub fn reader(&self, known: Vec<String>) -> ChainResolver {
+        ChainResolver::new(vec![
+            Arc::new(StaticResolver::new([self.document.clone()])),
+            Arc::new(LocalResolver::new()),
+            Arc::new(KnownWeb(known)),
+        ])
     }
 
     /// Adds or removes `peer` as a recipient of the inbox's mediation, and
@@ -430,6 +447,19 @@ async fn fetch(did: &str) -> Result<DidDocument, MessagingError> {
         return Err(MessagingError::MediatorUnreachable);
     }
     Ok(document)
+}
+
+/// [`WebResolver`] for the DIDs it holds and no other.
+struct KnownWeb(Vec<String>);
+
+#[async_trait]
+impl DidResolver for KnownWeb {
+    async fn resolve(&self, did: &str) -> almena_didcomm::Result<DidDocument> {
+        if !self.0.iter().any(|known| known == did) {
+            return Err(almena_didcomm::Error::DidNotFound(did.to_owned()));
+        }
+        WebResolver.resolve(did).await
+    }
 }
 
 /// Resolves `did:web` over HTTPS (and loopback HTTP in a debug build): how a

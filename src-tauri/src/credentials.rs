@@ -236,7 +236,12 @@ pub async fn credentials_check<R: Runtime>(
     let seed = held.seed().ok_or(MessagingError::Locked)?;
     let mut learnt = Vec::new();
     for credential in all(&app, &seed)? {
-        let outcome = status::check(&credential.credential, &credential.issuer_did).await;
+        let outcome = status::check(
+            &credential.credential,
+            &credential.issuer_did,
+            credential.checked.listed,
+        )
+        .await;
         learnt.push((
             credential.id.clone(),
             credential.checked.after(outcome, status::now()),

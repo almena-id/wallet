@@ -166,12 +166,13 @@ export function LinkSheet({
         { label: copy.verifier, value: verifying.verifier },
         {
           label: copy.verifierChecked,
-          value: !verifying.verified
-            ? copy.verifierUnverified
-            : verifying.domains.length > 0
-              ? verifying.domains.join(", ")
-              : copy.verifierResolved,
+          value: verifying.verified ? copy.verifierResolved : copy.verifierUnverified,
         },
+        // The organisation's own signed word, which the registry checked by
+        // DNS and this wallet cannot: said as that, not as checked.
+        ...(verifying.verified && verifying.domains.length > 0
+          ? [{ label: copy.verifierDomains, value: verifying.domains.join(", ") }]
+          : []),
         { label: copy.verifierDid, value: verifying.verifierDid, mono: true },
         ...(verifying.tenant
           ? [{ label: copy.verifierTenant, value: verifying.tenant, mono: true }]
@@ -223,8 +224,17 @@ export function LinkSheet({
       const presenting = purpose === "present";
       // Nothing held answers the request: it is shown, and cannot be accepted.
       const nothing = presenting && applying.presenting.length === 0;
+      // A credential is taken only from an issuer the wallet could check.
+      const refused = purpose === "receive" && !applying.verified;
       const rows: ConfirmDetail[] = [
         { label: copy.issuer, value: applying.issuer },
+        {
+          label: copy.verifierChecked,
+          value: applying.verified ? copy.verifierResolved : copy.verifierUnverified,
+        },
+        ...(applying.verified && applying.domains.length > 0
+          ? [{ label: copy.verifierDomains, value: applying.domains.join(", ") }]
+          : []),
         { label: copy.credential, value: say(applying.credential) },
         ...(presenting ? presentedRows(applying.presenting) : []),
         ...(purpose === "submit"
@@ -247,13 +257,17 @@ export function LinkSheet({
           lead={copy[`${purpose}Lead`].split("{issuer}").join(applying.issuer)}
           details={rows}
           note={
-            nothing
-              ? copy.nothingHeld
-              : presenting && !applying.complete
-                ? copy.someMissing
-                : copy.note.replace("{portal}", request.portal)
+            refused
+              ? copy.issuerUnverifiedReceive
+              : nothing
+                ? copy.nothingHeld
+                : presenting && !applying.complete
+                  ? copy.someMissing
+                  : !applying.verified
+                    ? copy.issuerUnverifiedNote.replace("{portal}", request.portal)
+                    : copy.note.replace("{portal}", request.portal)
           }
-          confirmDisabled={nothing}
+          confirmDisabled={nothing || refused}
           confirmLabel={copy[purpose]}
           onConfirm={() =>
             void (async () => {
@@ -310,6 +324,7 @@ export function LinkSheet({
                   { label: copy.entry, value: String(signing.change.index) },
                 ]
               : []),
+            ...(signing.allValid ? [{ label: copy.othersOnList, value: copy.allValid }] : []),
             { label: copy.identity, value: signing.did ?? "", mono: true },
             { label: copy.as, value: request.did, mono: true },
           ]
@@ -320,6 +335,20 @@ export function LinkSheet({
               ...(signing.tenant ? [{ label: copy.tenant, value: signing.tenant }] : []),
               { label: copy.identity, value: signing.did ?? copy.newDid, mono: signing.did !== null },
               { label: copy.version, value: String(signing.version ?? "") },
+              // A change of who signs next: shown key by key, this wallet's marked.
+              ...(signing.updateKeys
+                ? [
+                    {
+                      label: copy.nextSigners,
+                      value: signing.updateKeys
+                        .map((key) =>
+                          `did:key:${key}` === request.did ? `${key} (${copy.thisWallet})` : key,
+                        )
+                        .join(", "),
+                      mono: true,
+                    },
+                  ]
+                : []),
               { label: copy.as, value: request.did, mono: true },
             ]
           : [

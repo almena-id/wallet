@@ -194,6 +194,10 @@
       "credentialStatus": "New status",
       "holder": "Holder",
       "entry": "Entry",
+      "nextSigners": "Who signs its next version",
+      "thisWallet": "this wallet",
+      "othersOnList": "Every other credential on it",
+      "allValid": "Valid",
       "statuses": {
         "valid": "Valid (reinstated)",
         "suspended": "Suspended",
@@ -215,7 +219,10 @@
       "verifierUnverified": "Could not be checked",
       "verifierResolved": "Published by its organisation",
       "verifierTenant": "Its organisation",
+      "verifierDomains": "Domains it states are its own",
       "verifierUnverifiedNote": "This wallet could not check who this verifier is: its name is only what the registry says. Accept only if you are in front of it and expect it to ask.",
+      "issuerUnverifiedNote": "This wallet could not check who this issuer is: its name is only what the registry says. Accept only if you started this yourself on {portal}.",
+      "issuerUnverifiedReceive": "This wallet could not check who this issuer is, so it does not take a credential from it.",
       "submitCollect": "This wallet is not told how your application goes. Come back to catalog.almena.id to see how it stands and, once it is issued, to collect your credential."
     }
   },
@@ -444,7 +451,8 @@
       "identity_no_draft": "There was no phrase to confirm. Start again.",
       "identity_unknown": "The identity could not be made. Try again.",
       "identity_unconfirmed": "Confirm it is you first, then type the words again.",
-      "identity_locked": "The wallet is locked. Unlock it and try again."
+      "identity_locked": "The wallet is locked. Unlock it and try again.",
+      "identity_exists": "This device already keeps an identity. Sign out of it first to make or restore another."
     },
     "protect": {
       "title": "Choose a PIN",

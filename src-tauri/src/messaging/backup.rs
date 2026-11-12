@@ -208,10 +208,11 @@ fn gather<R: Runtime>(
 /// has is kept as it is.
 fn merged(mut into: Contents, from: Contents) -> (Contents, Restored) {
     let mut restored = Restored::default();
-    for mediation in from.messaging.mediations {
-        if into.messaging.mediation(&mediation.mediator).is_none() {
-            into.messaging.mediations.push(mediation);
-        }
+    // One mediator: the file's are taken only by a device that has none. One
+    // that has its own keeps it, and the file's relationships on another are
+    // moved to it at the next sync (`stranded`, `settle`).
+    if into.messaging.mediations.is_empty() {
+        into.messaging.mediations = from.messaging.mediations;
     }
     if into.messaging.profile.is_none() {
         into.messaging.profile = from.messaging.profile;
@@ -370,6 +371,33 @@ mod tests {
             history.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
             ["m1", "m2"]
         );
+    }
+
+    #[test]
+    fn a_device_with_a_mediator_keeps_it_and_no_other() {
+        let mediation = |mediator: &str| crate::messaging::state::Mediation {
+            mediator: mediator.into(),
+            inbox: "did:inbox".into(),
+            leaving: None,
+            max_dids: None,
+        };
+        let mut device = contents(&[], &[], None);
+        device.messaging.mediations.push(mediation("did:web:here"));
+        let mut file = contents(&["did:a"], &[], None);
+        file.messaging.mediations.push(mediation("did:web:there"));
+
+        let (kept, _) = merged(device, file.clone());
+        let mediators: Vec<&str> = kept
+            .messaging
+            .mediations
+            .iter()
+            .map(|m| m.mediator.as_str())
+            .collect();
+        assert_eq!(mediators, ["did:web:here"]);
+
+        // A device with none takes the file's.
+        let (taken, _) = merged(contents(&[], &[], None), file);
+        assert_eq!(taken.messaging.mediations[0].mediator, "did:web:there");
     }
 
     #[test]

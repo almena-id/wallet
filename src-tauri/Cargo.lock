@@ -6147,6 +6147,7 @@ dependencies = [
  "tauri-plugin-window-state",
  "tokio",
  "tokio-tungstenite",
+ "unicode-normalization",
  "url",
  "webpki-roots 1.0.9",
  "windows",

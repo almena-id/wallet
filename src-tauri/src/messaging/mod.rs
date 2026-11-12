@@ -73,13 +73,12 @@ enum Sender {
     /// The counterparty of that relationship (its index), from their current
     /// pairwise DID.
     Theirs(usize),
-    /// Somebody else, while the relationship is still pending: their pairwise
-    /// is not known until the rotation in their `ping-response` is read, so
-    /// a message that overtook it is left queued for the round after.
-    NotYetKnown,
     /// Nobody this wallet speaks with there: no relationship has that DID, or
-    /// it is open and the message is not from its counterparty. Acknowledged
-    /// and dropped, rather than downloaded again on every sync.
+    /// the message is not from its counterparty — pending ones included, since
+    /// the `ping-response` carrying the rotation is the first thing their new
+    /// pairwise sends, so nothing from it overtakes that in the queue.
+    /// Acknowledged and dropped, rather than downloaded again on every sync:
+    /// kept, a handful of them would stop every sync at the head of the queue.
     Nobody,
 }
 
@@ -92,23 +91,22 @@ fn sender(relationships: &[Relationship], to: &[String], from: Option<&str>) -> 
     let relationship = &relationships[at];
     if from == Some(relationship.theirs.as_str()) {
         Sender::Theirs(at)
-    } else if relationship.pending {
-        Sender::NotYetKnown
     } else {
         Sender::Nobody
     }
 }
 
-/// How many relationships opened through the card, with nothing said in
-/// them yet, a day may bring before strangers' pings are dropped.
+/// How many relationships a day may open through the card before strangers'
+/// pings are dropped.
 const WELCOMES: usize = 20;
 
-/// The relationships opened through the card in the last day that nothing
-/// has been said in — what `WELCOMES` counts.
-fn silent_welcomes(relationships: &[Relationship], now: u64) -> usize {
+/// The relationships opened through the card in the last day — what
+/// `WELCOMES` counts. Whether anything was said in them does not matter: a
+/// stranger who writes once after every ping would not be counted otherwise.
+fn recent_welcomes(relationships: &[Relationship], now: u64) -> usize {
     relationships
         .iter()
-        .filter(|r| r.welcomed && r.last.is_none() && r.since + 86_400 > now)
+        .filter(|r| r.welcomed && r.since + 86_400 > now)
         .count()
 }
 
@@ -392,12 +390,18 @@ pub async fn mediator_connect<R: Runtime>(
     let _guard = gate.0.lock().await;
     let mut state = state::read(&app, &seed)?;
     let now = almena_didcomm::message::now();
-    let previous: Vec<String> = state
+    // The current one, and any a disconnect left relationships waiting on.
+    let mut previous: Vec<String> = state
         .mediations
         .iter()
         .filter(|m| m.leaving.is_none() && m.mediator != mediation.mediator)
         .map(|m| m.mediator.clone())
         .collect();
+    for old in stranded(&state) {
+        if old != mediation.mediator && !previous.contains(&old) {
+            previous.push(old);
+        }
+    }
     state
         .mediations
         .retain(|m| m.mediator != mediation.mediator);
@@ -447,7 +451,8 @@ pub async fn mediator_check<R: Runtime>(
 /// Leaves the mediator: takes the inbox off its recipients if it answers, and
 /// forgets the mediation either way — a mediator that is gone must not keep a
 /// wallet from choosing another. Its relationships have nowhere to go: they
-/// stay, unreachable, until another mediator is chosen and they move there.
+/// stay, unreachable ([`stranded`]), until another mediator is chosen and
+/// they move there.
 /// One still being left after a change goes on being collected.
 #[tauri::command]
 pub async fn mediator_disconnect<R: Runtime>(
@@ -1015,13 +1020,19 @@ pub(crate) async fn issuer_channel<R: Runtime>(
     issuer: &str,
     name: &str,
 ) -> Option<String> {
+    if !issuer.starts_with("did:webvh:") {
+        return None;
+    }
     let gate = app.try_state::<Gate>()?;
     let _guard = gate.0.lock().await;
     let mut state = state::read(app, seed).ok()?;
+    // Only the relationship an earlier pairing with this issuer opened: one
+    // whose counterparty is its `did:web` name. A contact is never taken for
+    // it, nor renamed by it.
     let found = state
         .relationships
         .iter()
-        .find(|r| r.origin == issuer)
+        .find(|r| r.origin == issuer && r.theirs == web_name(issuer))
         .filter(|r| state.mediation(&r.mediator).is_some())
         .cloned();
     let through = match &found {
@@ -1153,8 +1164,8 @@ async fn sync_at(
 
         let received = handle(seed, state, &mediator, &inbox, &card, deliveries, outcome).await?;
 
-        // Nothing taken this round means what is left is for a later version;
-        // asking again would only bring the same messages back.
+        // Every message is acknowledged (`handle`); nothing taken means
+        // nothing came, and asking again would only bring the same back.
         if received.is_empty() {
             break;
         }
@@ -1215,6 +1226,21 @@ async fn relocate(
     Ok(())
 }
 
+/// The mediators relationships still go through that this wallet has no
+/// mediation with any more — a disconnect left them there: what is moved off,
+/// like a mediator being left, once there is another.
+fn stranded(state: &state::State) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for relationship in &state.relationships {
+        if state.mediation(&relationship.mediator).is_none()
+            && !found.contains(&relationship.mediator)
+        {
+            found.push(relationship.mediator.clone());
+        }
+    }
+    found
+}
+
 /// Moves every relationship that goes through `leaving` to the default
 /// mediator, as far as each counterparty can be told now. Returns how many
 /// moved.
@@ -1243,12 +1269,13 @@ async fn relocate_all(seed: &[u8; 64], state: &mut state::State, leaving: &str, 
 /// first. Returns how many relationships changed.
 async fn settle(seed: &[u8; 64], state: &mut state::State, now: u64) -> usize {
     let mut changed = 0;
-    let leaving: Vec<String> = state
+    let mut leaving: Vec<String> = state
         .mediations
         .iter()
         .filter(|m| m.leaving.is_some())
         .map(|m| m.mediator.clone())
         .collect();
+    leaving.extend(stranded(state));
     for mediator in &leaving {
         changed += relocate_all(seed, state, mediator, now).await;
     }
@@ -1305,9 +1332,10 @@ async fn settle(seed: &[u8; 64], state: &mut state::State, now: u64) -> usize {
 /// asked for or pushed live — into `state` and `outcome`, and returns the ids
 /// to acknowledge.
 ///
-/// A message this version does not handle is left queued, so a later version
-/// can; one that cannot be opened at all is acknowledged, because it never will
-/// be.
+/// Every message is acknowledged, whatever comes of it — one that cannot be
+/// opened, that this version does not speak, or that cannot be answered: the
+/// mediator delivers the oldest first, so a few left queued would come back at
+/// the head of every delivery and nothing behind them would ever arrive.
 async fn handle(
     seed: &[u8; 64],
     state: &mut state::State,
@@ -1334,9 +1362,18 @@ async fn handle(
         }
     }
 
+    // Only a counterparty's `did:web` is looked up to read what it sent.
+    let reader = mediator.reader(
+        state
+            .relationships
+            .iter()
+            .filter(|r| r.theirs.starts_with("did:web:"))
+            .map(|r| r.theirs.clone())
+            .collect(),
+    );
     let mut received = Vec::new();
     for (id, envelope) in deliveries {
-        let Ok((message, metadata)) = unpack(&envelope, mediator.resolver(), &secrets).await else {
+        let Ok((message, metadata)) = unpack(&envelope, &reader, &secrets).await else {
             received.push(id);
             continue;
         };
@@ -1366,22 +1403,20 @@ async fn handle(
         match message.type_.as_str() {
             contacts::PING if to.contains(&card.did) => {
                 // Whoever holds the invitation may open a relationship, but
-                // not without end: past `WELCOMES` new ones in a day that
-                // nothing has been said in, a stranger's ping is dropped. One
-                // who is already a contact is always answered.
+                // not without end: past `WELCOMES` new ones in a day, a
+                // stranger's ping is dropped. One who is already a contact is
+                // always answered.
                 let known = message
                     .from
                     .as_deref()
                     .is_some_and(|from| state.relationships.iter().any(|r| r.origin == from));
                 if !known
-                    && silent_welcomes(&state.relationships, almena_didcomm::message::now())
+                    && recent_welcomes(&state.relationships, almena_didcomm::message::now())
                         >= WELCOMES
                 {
                     received.push(id);
                     continue;
                 }
-                // A sender that cannot be answered now is left queued and
-                // tried again on the next sync, without holding up the rest.
                 match contacts::welcome(
                     seed,
                     mediator,
@@ -1398,10 +1433,11 @@ async fn handle(
                         outcome.changed += 1;
                         received.push(id);
                     }
-                    // No room for another contact here: it will not fit on
-                    // a later sync either, so it is dropped, not kept.
-                    Err(MessagingError::MailboxFull) => received.push(id),
-                    Err(_) => {}
+                    // No room for another contact, or a sender that cannot be
+                    // answered: dropped, not kept. Left queued it would stop
+                    // every sync at the head of the queue; whoever really
+                    // meant it accepts the invitation again.
+                    Err(_) => received.push(id),
                 }
             }
             contacts::PING_RESPONSE => {
@@ -1421,7 +1457,6 @@ async fn handle(
                 let relationship = match sender(&state.relationships, &to, message.from.as_deref())
                 {
                     Sender::Theirs(at) => &mut state.relationships[at],
-                    Sender::NotYetKnown => continue,
                     Sender::Nobody => {
                         received.push(id);
                         continue;
@@ -1530,34 +1565,43 @@ fn apply<R: Runtime>(
     let mut changed = outcome.changed;
     let mut fresh = Vec::new();
     let mut failure = None;
+    // By conversation, in the order they came: each history read and written
+    // once per batch, however many messages it brought.
+    let mut batches: Vec<(String, Vec<Entry>)> = Vec::new();
     for arrival in outcome.arrivals {
-        let Some(relationship) = state
-            .relationships
-            .iter_mut()
-            .find(|r| r.id() == arrival.id)
-        else {
+        match batches.iter_mut().find(|(id, _)| *id == arrival.id) {
+            Some((_, entries)) => entries.push(arrival.entry),
+            None => batches.push((arrival.id, vec![arrival.entry])),
+        }
+    }
+    for (id, entries) in batches {
+        let Some(relationship) = state.relationships.iter_mut().find(|r| r.id() == id) else {
             continue;
         };
-        let last = Last {
-            content: arrival.entry.content.clone(),
-            at: arrival.entry.at,
-            mine: false,
-            notice: arrival.entry.notice.as_ref().map(|n| n.status.clone()),
-        };
-        match conversation::put(app, seed, &arrival.id, arrival.entry) {
-            Ok(true) => {
-                relationship.unread += 1;
-                relationship.cleared = false;
-                fresh.push(crate::notify::Fresh {
-                    from: Contact::from(&*relationship).name,
-                    content: last.content.clone(),
-                });
-                if relationship.last.as_ref().is_none_or(|l| l.at <= last.at) {
-                    relationship.last = Some(last);
+        let lasts: Vec<Last> = entries
+            .iter()
+            .map(|entry| Last {
+                content: entry.content.clone(),
+                at: entry.at,
+                mine: false,
+                notice: entry.notice.as_ref().map(|n| n.status.clone()),
+            })
+            .collect();
+        match conversation::put_all(app, seed, &id, entries) {
+            Ok(news) => {
+                for (last, _) in lasts.into_iter().zip(news).filter(|(_, new)| *new) {
+                    relationship.unread += 1;
+                    relationship.cleared = false;
+                    fresh.push(crate::notify::Fresh {
+                        from: Contact::from(&*relationship).name,
+                        content: last.content.clone(),
+                    });
+                    if relationship.last.as_ref().is_none_or(|l| l.at <= last.at) {
+                        relationship.last = Some(last);
+                    }
+                    changed += 1;
                 }
-                changed += 1;
             }
-            Ok(false) => {}
             Err(error) => failure = Some(error),
         }
     }
@@ -1739,10 +1783,11 @@ mod tests {
             sender(&all, &to("did:ours:9"), Some("did:theirs:1")),
             Sender::Nobody
         );
-        // Pending: their pairwise is not known yet, so it waits.
+        // Pending: only the card answers; anyone else is dropped, not kept
+        // where it would stop every sync.
         assert_eq!(
             sender(&all, &to("did:ours:2"), Some("did:new:2")),
-            Sender::NotYetKnown
+            Sender::Nobody
         );
         assert_eq!(
             sender(&all, &to("did:ours:2"), Some("did:card:2")),
@@ -1751,8 +1796,34 @@ mod tests {
     }
 
     #[test]
-    fn only_silent_recent_welcomes_count_against_the_card() {
-        use super::{silent_welcomes, Relationship};
+    fn relationships_a_disconnect_left_behind_are_stranded() {
+        use super::{stranded, Relationship};
+        let on = |mediator: &str| {
+            Relationship::new(
+                mediator,
+                "did:ours".into(),
+                format!("did:{mediator}"),
+                false,
+            )
+        };
+        let mut state = super::state::State {
+            relationships: vec![on("did:web:kept"), on("did:web:gone"), on("did:web:gone")],
+            ..Default::default()
+        };
+        state.mediations.push(super::state::Mediation {
+            mediator: "did:web:kept".into(),
+            inbox: "did:inbox".into(),
+            leaving: None,
+            max_dids: None,
+        });
+        assert_eq!(stranded(&state), ["did:web:gone"]);
+        state.relationships.truncate(1);
+        assert!(stranded(&state).is_empty());
+    }
+
+    #[test]
+    fn every_recent_welcome_counts_against_the_card() {
+        use super::{recent_welcomes, Relationship};
         let now = 1_800_000_000;
         let fresh = |welcomed: bool| Relationship {
             since: now - 60,
@@ -1769,7 +1840,8 @@ mod tests {
             notice: None,
         });
         let all = vec![fresh(true), fresh(false), old, spoken];
-        assert_eq!(silent_welcomes(&all, now), 1);
+        // Saying something in it does not take it off the count.
+        assert_eq!(recent_welcomes(&all, now), 2);
     }
 
     use super::*;

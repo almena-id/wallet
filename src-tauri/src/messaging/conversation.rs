@@ -71,23 +71,50 @@ pub fn put<R: Runtime>(
     id: &str,
     entry: Entry,
 ) -> Result<bool, MessagingError> {
+    Ok(put_all(app, seed, id, vec![entry])?[0])
+}
+
+/// [`put`] for several entries at once — a sync's batch — read and written
+/// once rather than once each. Returns, entry by entry, whether it was new.
+pub fn put_all<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    seed: &[u8; 64],
+    id: &str,
+    added: Vec<Entry>,
+) -> Result<Vec<bool>, MessagingError> {
     let mut entries = read(app, seed, id)?;
-    let new = match entries.iter_mut().find(|e| e.id == entry.id) {
-        // A second delivery of something already here changes nothing; a
-        // retried message of this wallet's own does.
-        Some(existing) if existing.mine => {
-            *existing = entry;
-            false
-        }
-        Some(_) => return Ok(false),
-        None => {
-            entries.push(entry);
-            true
-        }
-    };
-    entries.sort_by_key(|e| e.at);
-    state::store(&file(app, id)?, seed, aad(id).as_bytes(), &entries)?;
-    Ok(new)
+    let (news, changed) = merge(&mut entries, added);
+    if changed {
+        entries.sort_by_key(|e| e.at);
+        state::store(&file(app, id)?, seed, aad(id).as_bytes(), &entries)?;
+    }
+    Ok(news)
+}
+
+/// Puts `added` into `entries`: a second delivery of something already there
+/// changes nothing; a retried message of this wallet's own replaces it.
+/// Whether each was new, and whether anything changed.
+fn merge(entries: &mut Vec<Entry>, added: Vec<Entry>) -> (Vec<bool>, bool) {
+    let mut changed = false;
+    let news = added
+        .into_iter()
+        .map(
+            |entry| match entries.iter_mut().find(|e| e.id == entry.id) {
+                Some(existing) if existing.mine => {
+                    *existing = entry;
+                    changed = true;
+                    false
+                }
+                Some(_) => false,
+                None => {
+                    entries.push(entry);
+                    changed = true;
+                    true
+                }
+            },
+        )
+        .collect();
+    (news, changed)
 }
 
 /// Writes the conversation `id` as `entries`, whatever it held: for a
@@ -138,6 +165,42 @@ fn aad(id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn entry(id: &str, mine: bool, content: &str) -> Entry {
+        Entry {
+            id: id.into(),
+            mine,
+            content: content.into(),
+            at: 1,
+            failed: false,
+            notice: None,
+        }
+    }
+
+    #[test]
+    fn a_batch_adds_what_is_new_and_retries_only_this_wallets_own() {
+        let mut entries = vec![entry("a", false, "hi"), entry("b", true, "sent")];
+        let (news, changed) = merge(
+            &mut entries,
+            vec![
+                entry("a", false, "again"),
+                entry("c", false, "new"),
+                entry("c", false, "twice"),
+            ],
+        );
+        assert_eq!(news, [false, true, false]);
+        assert!(changed);
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].content, "hi");
+        // Delivered again, nothing changes and nothing is written.
+        assert_eq!(
+            merge(&mut entries, vec![entry("a", false, "x")]),
+            (vec![false], false)
+        );
+        // A retry of this wallet's own replaces it.
+        let (_, changed) = merge(&mut entries, vec![entry("b", true, "sent, retried")]);
+        assert!(changed && entries[1].content == "sent, retried");
+    }
 
     #[test]
     fn an_id_is_a_stable_hex_hash() {

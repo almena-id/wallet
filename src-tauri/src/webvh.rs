@@ -81,6 +81,11 @@ fn without_proof(entry: &Map<String, Value>) -> Map<String, Value> {
         .collect()
 }
 
+/// The keys a log entry's `updateKeys` names, when it names them.
+pub fn keys_named(value: &Value) -> Option<Vec<String>> {
+    strings(value)
+}
+
 fn strings(value: &Value) -> Option<Vec<String>> {
     value
         .as_array()?
@@ -95,10 +100,11 @@ fn ed25519(multikey: &str) -> Option<VerifyingKey> {
     VerifyingKey::from_bytes(raw.try_into().ok()?).ok()
 }
 
-/// Whether `proof` is an `eddsa-jcs-2022` signature over `entry` (its proof
-/// left out) by one of `signers`, named as that key's `did:key`.
-fn proves(entry: &Map<String, Value>, proof: &Value, signers: &[String]) -> bool {
-    let check = || -> Option<()> {
+/// The key of `signers` that made `proof`, if it is an `eddsa-jcs-2022`
+/// signature over `entry` (its proof left out) by one of them, named as that
+/// key's `did:key`.
+fn proves(entry: &Map<String, Value>, proof: &Value, signers: &[String]) -> Option<String> {
+    let check = || -> Option<String> {
         let options = proof.as_object()?;
         let method = options.get("verificationMethod")?.as_str()?;
         let value = options.get("proofValue")?.as_str()?;
@@ -123,14 +129,33 @@ fn proves(entry: &Map<String, Value>, proof: &Value, signers: &[String]) -> bool
             Signature::from_slice(&bs58::decode(value.strip_prefix('z')?).into_vec().ok()?).ok()?;
         // Strict: no small-order keys, no non-canonical `R` — a signature
         // only one key could have made.
-        ed25519(key)?.verify_strict(&hashed, &signature).ok()
+        ed25519(key)?.verify_strict(&hashed, &signature).ok()?;
+        Some(key.to_owned())
     };
-    check().is_some()
+    check()
 }
 
-/// The DID document `did`'s log ends in, if every entry of `log` (JSON Lines,
-/// oldest first) holds; `None` for anything else, a deactivated DID included.
-pub fn resolve(log: &str, did: &str) -> Option<Value> {
+/// What a log that holds comes to.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Resolved {
+    /// The DID document its last entry states.
+    pub document: Value,
+    /// The update keys in force after it: who may sign the next entry.
+    pub update_keys: Vec<String>,
+    /// The keys whose proofs of its last entry hold: who stands behind the
+    /// document as it is now.
+    pub signed_by: Vec<String>,
+}
+
+/// [`resolve_log`]'s document alone, as the tests read it.
+#[cfg(test)]
+fn resolve(log: &str, did: &str) -> Option<Value> {
+    resolve_log(log, did).map(|resolved| resolved.document)
+}
+
+/// What `did`'s log comes to, if every entry of `log` (JSON Lines, oldest
+/// first) holds; `None` for anything else, a deactivated DID included.
+pub fn resolve_log(log: &str, did: &str) -> Option<Resolved> {
     let scid = scid_of(did).filter(|scid| !scid.is_empty())?;
     let entries: Vec<Map<String, Value>> = log
         .lines()
@@ -146,6 +171,7 @@ pub fn resolve(log: &str, did: &str) -> Option<Value> {
     let mut time = String::new();
     let mut deactivated = false;
     let mut state = None;
+    let mut signed_by: Vec<String> = Vec::new();
 
     for (at, entry) in entries.iter().enumerate() {
         if deactivated {
@@ -205,7 +231,11 @@ pub fn resolve(log: &str, did: &str) -> Option<Value> {
             Value::Array(items) => items.clone(),
             single => vec![single.clone()],
         };
-        if !proofs.iter().any(|proof| proves(entry, proof, &signers)) {
+        signed_by = proofs
+            .iter()
+            .filter_map(|proof| proves(entry, proof, &signers))
+            .collect();
+        if signed_by.is_empty() {
             return None;
         }
 
@@ -240,7 +270,11 @@ pub fn resolve(log: &str, did: &str) -> Option<Value> {
     if deactivated {
         return None;
     }
-    state
+    Some(Resolved {
+        document: state?,
+        update_keys,
+        signed_by,
+    })
 }
 
 #[cfg(test)]

@@ -164,17 +164,29 @@ pub async fn welcome(
         .from
         .as_deref()
         .ok_or(MessagingError::InvitationUnreadable)?;
+    let known = relationships.iter().any(|r| r.origin == sender);
     let pairwise = Peer::pairwise(seed, &mediator.did, sender)?;
     mediator.register(inbox, &pairwise).await?;
 
-    let rotation = FromPrior::new(&card.did, &pairwise.did)
-        .pack(None, mediator.resolver(), &card.secrets())
-        .await
-        .map_err(|_| MessagingError::Keys)?;
-    let mut response = Message::new(PING_RESPONSE, json!({}));
-    response.thid = Some(ping.id.clone());
-    response.from_prior = Some(rotation);
-    send(mediator, &pairwise, sender, response).await?;
+    let answered = async {
+        let rotation = FromPrior::new(&card.did, &pairwise.did)
+            .pack(None, mediator.resolver(), &card.secrets())
+            .await
+            .map_err(|_| MessagingError::Keys)?;
+        let mut response = Message::new(PING_RESPONSE, json!({}));
+        response.thid = Some(ping.id.clone());
+        response.from_prior = Some(rotation);
+        send(mediator, &pairwise, sender, response).await
+    }
+    .await;
+    if let Err(error) = answered {
+        // The ping is dropped; so is the address it would have had, or a
+        // stranger who cannot be answered would fill the mailbox with them.
+        if !known {
+            let _ = mediator.recipient(inbox, &pairwise, "remove").await;
+        }
+        return Err(error);
+    }
     // The relationship is open whether or not this arrives; a name is only
     // missing until the next time it is sent.
     let _ = chat::send_profile(mediator, &pairwise, sender, profile, true).await;

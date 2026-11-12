@@ -8,15 +8,18 @@
 //! `{issuer}#{multikey}`, that multikey is one the document lists under
 //! `assertionMethod`, and the signature verifies with it (`EdDSA`, ed25519).
 //!
-//! **A verifier** is checked the same way before the sheet shows it
+//! **A verifier or an issuer** is vouched for before the sheet shows it
 //! ([`vouch`]): its DID must be a `did:webvh` of the registry the request was
 //! read from, its log must hold — which also means it is published, since a
 //! draft has no log — and so must the log of the tenant its document names as
-//! `controller`. Those logs are signed by the tenant's own update keys, which
-//! the registry does not hold, so the registry alone cannot make one up. The
-//! domains the tenant's document links to it (`LinkedDomains`) are what the
-//! sheet can say about who it is; the verifier's name is in no signed
-//! document, and stays the registry's word.
+//! `controller`; and the last entry of its log must be signed by one of the
+//! update keys in force in the tenant's. That last rule is what ties the two:
+//! `controller` is only the item's own word, which any tenant could write
+//! about another, but a tenant's update keys are its signers' wallets, which
+//! neither another tenant nor the registry holds. The domains the tenant's
+//! document links to it (`LinkedDomains`) are the tenant's own signed word,
+//! which the registry checked by DNS and this wallet cannot; the name is in no
+//! signed document, and stays the registry's word.
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use base64::Engine as _;
@@ -127,21 +130,26 @@ pub async fn get(url: &str, accept: &str) -> Result<String, Unresolved> {
 /// The issuer's DID document: the state its `did:webvh` log ends in, once
 /// every entry holds.
 pub async fn document(issuer: &str) -> Result<Value, Unresolved> {
-    let url = crate::webvh::log_url(issuer).ok_or(Unresolved::Unreadable)?;
-    let log = get(&url, "text/jsonl, application/jsonl, */*").await?;
-    crate::webvh::resolve(&log, issuer).ok_or(Unresolved::Unreadable)
+    resolved(issuer).await.map(|resolved| resolved.document)
 }
 
-/// What this wallet could check about a verifier on its own.
+/// `did`'s log, walked: its document and who signed it.
+async fn resolved(did: &str) -> Result<crate::webvh::Resolved, Unresolved> {
+    let url = crate::webvh::log_url(did).ok_or(Unresolved::Unreadable)?;
+    let log = get(&url, "text/jsonl, application/jsonl, */*").await?;
+    crate::webvh::resolve_log(&log, did).ok_or(Unresolved::Unreadable)
+}
+
+/// What this wallet could check about a verifier or an issuer on its own.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Vouched {
-    /// Its DID and its tenant's both resolve, on the registry asked: see the
-    /// module's notes.
+    /// Its DID and its tenant's both resolve, on the registry asked, and the
+    /// tenant's signers signed it: see the module's notes.
     pub verified: bool,
     /// The tenant it belongs to, by DID, once that resolved.
     pub tenant: Option<String>,
-    /// The domains the tenant's document links to it.
+    /// The domains the tenant's document links to it: its own word.
     pub domains: Vec<String>,
 }
 
@@ -201,26 +209,39 @@ fn controller_of(document: &Value, did: &str, host: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Checks the verifier `did`, named by a request read from `host`.
+/// Checks the verifier or issuer `did`, named by a request read from `host`.
 /// Unverified — never an error — when anything does not hold or cannot be
 /// reached: the sheet says so and the person decides.
 pub async fn vouch(did: &str, host: &str) -> Vouched {
     if !on_host(did, host) {
         return Vouched::default();
     }
-    let Ok(verifier) = document(did).await else {
+    let Ok(item) = resolved(did).await else {
         return Vouched::default();
     };
-    let Some(tenant) = controller_of(&verifier, did, host) else {
+    let Some(tenant) = controller_of(&item.document, did, host) else {
         return Vouched::default();
     };
-    match document(&tenant).await {
-        Ok(owner) if names(&owner, &tenant) => Vouched {
-            verified: true,
-            domains: linked_domains(&owner),
-            tenant: Some(tenant),
-        },
-        _ => Vouched::default(),
+    match resolved(&tenant).await {
+        Ok(owner) => vouched(&item, &tenant, &owner),
+        Err(_) => Vouched::default(),
+    }
+}
+
+/// [`vouch`]'s rule, once both logs are walked: the tenant's document is its
+/// own, and one of its update keys in force signed the item's last entry.
+fn vouched(item: &crate::webvh::Resolved, tenant: &str, owner: &crate::webvh::Resolved) -> Vouched {
+    let signed_by_tenant = item
+        .signed_by
+        .iter()
+        .any(|key| owner.update_keys.contains(key));
+    if !names(&owner.document, tenant) || !signed_by_tenant {
+        return Vouched::default();
+    }
+    Vouched {
+        verified: true,
+        domains: linked_domains(&owner.document),
+        tenant: Some(tenant.to_owned()),
     }
 }
 
@@ -313,6 +334,57 @@ pub(crate) mod tests {
         assert!(controller_of(&elsewhere, VERIFIER, "almena.id").is_none());
         let own = json!({"id": VERIFIER, "controller": VERIFIER});
         assert!(controller_of(&own, VERIFIER, "almena.id").is_none());
+    }
+
+    #[test]
+    fn only_the_tenants_own_signers_make_an_item_its_own() {
+        use crate::webvh::resolve_log;
+        use crate::webvh::tests::{following, genesis, lines};
+
+        let walk = |did: &str, entries: &[Value]| resolve_log(&lines(entries), did).unwrap();
+        let ours = SigningKey::from_bytes(&[1; 32]);
+        let theirs = SigningKey::from_bytes(&[2; 32]);
+        let our_key = keys::written(&ours.verifying_key().to_bytes());
+        let domains = json!({"service": [
+            {"type": "LinkedDomains", "serviceEndpoint": "https://club.example"},
+        ]});
+
+        let (tenant, tenant_first) = genesis("almena.id:ids:idn_club", &ours, domains);
+        let owner = walk(&tenant, &[tenant_first]);
+
+        // Signed by the tenant's own signer: vouched for, with its domains.
+        let (door, door_first) = genesis(
+            "almena.id:ids:idn_door",
+            &ours,
+            json!({"controller": tenant}),
+        );
+        let item = walk(&door, &[door_first]);
+        let found = vouched(&item, &tenant, &owner);
+        assert!(found.verified);
+        assert_eq!(found.domains, ["club.example"]);
+        assert_eq!(found.tenant.as_deref(), Some(tenant.as_str()));
+
+        // Another tenant's verifier naming this one as its controller — even
+        // once it hands its log over to this tenant's (public) update keys,
+        // the entry that did so is still its own signer's.
+        let (fake, fake_first) = genesis(
+            "almena.id:ids:idn_fake",
+            &theirs,
+            json!({"controller": tenant}),
+        );
+        let mut state = fake_first["state"].clone();
+        state["controller"] = json!(tenant);
+        let handed = following(
+            &fake_first,
+            json!({"updateKeys": [our_key]}),
+            state,
+            &theirs,
+        );
+        let item = walk(&fake, &[fake_first.clone(), handed]);
+        assert_eq!(item.update_keys, std::slice::from_ref(&our_key));
+        assert_eq!(vouched(&item, &tenant, &owner), Vouched::default());
+        let item = walk(&fake, &[fake_first]);
+        assert_eq!(vouched(&item, &tenant, &owner), Vouched::default());
     }
 
     #[test]

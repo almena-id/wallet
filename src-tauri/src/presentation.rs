@@ -50,17 +50,45 @@ fn vct_of(credential: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// The claim names a credential query asks for: the first step of each path.
-fn asked(query: &Value) -> Vec<String> {
-    query["claims"]
+/// The claims of a held credential to disclose for a credential query, by
+/// name; `None` when it cannot answer the query as asked.
+///
+/// A credential here is a disclosure per claim, so a claim is answered only
+/// when its path is that one step: a path into a claim (`["address",
+/// "postal_code"]`) would disclose all of it, and is left unanswered. A claim
+/// with `values` is answered only by one of them. With `claim_sets`, the first
+/// set this credential answers whole is disclosed, and nothing more; without,
+/// every claim it holds of those asked.
+fn disclosing(
+    query: &Value,
+    held: &std::collections::BTreeMap<String, Value>,
+) -> Option<Vec<String>> {
+    let claims = query["claims"]
         .as_array()
-        .map(|claims| {
-            claims
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let answer = |claim: &Value| -> Option<String> {
+        let [step] = claim["path"].as_array()?.as_slice() else {
+            return None;
+        };
+        let name = step.as_str()?;
+        let value = held.get(name)?;
+        if let Some(values) = claim["values"].as_array() {
+            if !values.contains(value) {
+                return None;
+            }
+        }
+        Some(name.to_owned())
+    };
+    match query["claim_sets"].as_array() {
+        Some(sets) => sets.iter().find_map(|set| {
+            set.as_array()?
                 .iter()
-                .filter_map(|claim| claim["path"][0].as_str().map(str::to_owned))
-                .collect()
-        })
-        .unwrap_or_default()
+                .map(|id| answer(claims.iter().find(|claim| claim["id"] == *id)?))
+                .collect::<Option<Vec<_>>>()
+        }),
+        None => Some(claims.iter().filter_map(answer).collect()),
+    }
 }
 
 /// The held credentials that answer `query`: the format and a `vct` it
@@ -172,12 +200,14 @@ pub fn offers(dcql: &Value, held: &[Credential], now: u64) -> (Vec<Offer>, bool)
             let Some((id, query)) = option[0].as_str().and_then(|id| Some((id, by_id(id)?))) else {
                 continue;
             };
-            let wanted = asked(query);
             for credential in answering(query, held, now) {
                 // One credential is one choice, whichever option it answers first.
                 if found.iter().any(|seen| seen.credential.id == credential.id) {
                     continue;
                 }
+                let Some(wanted) = disclosing(query, &credential.claims) else {
+                    continue;
+                };
                 found.push(Chosen {
                     query: id.to_owned(),
                     credential: credential.clone(),
@@ -319,6 +349,47 @@ mod tests {
     }
 
     #[test]
+    fn only_the_claims_asked_as_a_whole_are_disclosed() {
+        let held: std::collections::BTreeMap<String, Value> = [
+            ("name", json!("Ada")),
+            (
+                "address",
+                json!({"postal_code": "28001", "street": "Mayor 1"}),
+            ),
+            ("country", json!("ES")),
+        ]
+        .into_iter()
+        .map(|(name, value)| (name.to_owned(), value))
+        .collect();
+
+        // A claim, and a path into one: the second would disclose it all.
+        let query = json!({"claims": [{"path": ["name"]}, {"path": ["address", "postal_code"]}]});
+        assert_eq!(disclosing(&query, &held), Some(vec!["name".to_owned()]));
+
+        // Values: only one of those asked answers.
+        let query = json!({"claims": [{"path": ["country"], "values": ["FR", "ES"]}]});
+        assert_eq!(disclosing(&query, &held), Some(vec!["country".to_owned()]));
+        let query = json!({"claims": [{"path": ["country"], "values": ["FR"]}]});
+        assert_eq!(disclosing(&query, &held), Some(vec![]));
+
+        // Claim sets: the first answered whole, and nothing of the others.
+        let query = json!({
+            "claims": [
+                {"id": "a", "path": ["passport"]},
+                {"id": "b", "path": ["name"]},
+                {"id": "c", "path": ["country"]},
+            ],
+            "claim_sets": [["a"], ["b", "c"], ["b"]],
+        });
+        assert_eq!(
+            disclosing(&query, &held),
+            Some(vec!["name".to_owned(), "country".to_owned()])
+        );
+        let query = json!({"claims": [{"id": "a", "path": ["passport"]}], "claim_sets": [["a"]]});
+        assert_eq!(disclosing(&query, &held), None);
+    }
+
+    #[test]
     fn only_what_is_asked_of_a_valid_credential_is_chosen() {
         let (chosen, complete) = choose(&dcql(false), &[held(10)], 5);
         assert!(complete);
@@ -332,7 +403,13 @@ mod tests {
         assert!(!choose(&dcql(true), &[held(10)], 5).1);
         // Nor one its issuer's list says is revoked or suspended.
         let mut revoked = held(10);
-        revoked.checked = Checked::default().after(Ok(Status::Revoked), 1);
+        revoked.checked = Checked::default().after(
+            Ok(crate::status::Read {
+                status: Status::Revoked,
+                issued: None,
+            }),
+            1,
+        );
         assert!(choose(&dcql(false), &[revoked], 5).0.is_empty());
         let mut dropped = held(10);
         dropped.checked = Checked::default().after(Err(Unchecked::Signature), 1);

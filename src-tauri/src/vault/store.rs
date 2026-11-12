@@ -256,6 +256,20 @@ pub const fn hardware_bound(home: Option<Home>) -> bool {
     false
 }
 
+/// Where a record written now would be kept, as far as the PIN it may hold
+/// goes: on Android the Keystore is asked to seal something first, since a
+/// phone whose Keystore refuses would get a plain file instead.
+pub fn next_home<R: Runtime>(app: &tauri::AppHandle<R>) -> Option<Home> {
+    #[cfg(target_os = "android")]
+    {
+        if almena_keystore::seal(app, b"almena-probe").is_err() {
+            return Some(Home::File);
+        }
+    }
+    let _ = app;
+    None
+}
+
 /// Reads the record, from wherever it is.
 ///
 /// # Errors
@@ -322,6 +336,18 @@ pub fn write<R: Runtime>(app: &tauri::AppHandle<R>, bytes: &[u8]) -> Result<Home
         return Err(VaultError::Storage);
     }
 
+    // **Whatever the store still holds goes first.** It would not take this
+    // write, so what it holds is older — and reading prefers the store. Left
+    // there, it would come back and undo this write; for a count of wrong
+    // PINs, every guess would be forgotten as it was made. A copy it will not
+    // let go of fails the write, and with it the attempt it was counting.
+    if let Ok(entry) = record_entry() {
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring_core::Error::NoEntry) => {}
+            Err(_) => return Err(VaultError::Storage),
+        }
+    }
+
     let path = file(app)?;
     if let Some(parent) = path.parent() {
         // Nothing else creates this: `Library/Application Support` does not
@@ -355,14 +381,6 @@ pub fn write<R: Runtime>(app: &tauri::AppHandle<R>, bytes: &[u8]) -> Result<Home
     handle.sync_all().map_err(|_| VaultError::Storage)?;
     drop(handle);
     fs::rename(&temporary, &path).map_err(|_| VaultError::Storage)?;
-
-    // The store would not take it, so whatever it is still holding is older than
-    // what was just written — and reading prefers the store. Left there, it
-    // would come back the moment the store started answering again and quietly
-    // undo this write.
-    if let Ok(entry) = record_entry() {
-        let _ = entry.delete_credential();
-    }
 
     Ok(home)
 }

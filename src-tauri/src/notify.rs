@@ -85,6 +85,15 @@ fn notices(config: &Config, fresh: &[Fresh]) -> Vec<(String, String)> {
     if fresh.is_empty() || config.new_message.is_empty() {
         return Vec::new();
     }
+    // One per sender, their latest: a burst is one notification, not fifty.
+    let mut latest: Vec<&Fresh> = Vec::new();
+    for message in fresh {
+        match latest.iter_mut().find(|kept| kept.from == message.from) {
+            Some(kept) => *kept = message,
+            None => latest.push(message),
+        }
+    }
+    let fresh = latest;
     match config.privacy {
         Privacy::None => vec![(config.app_name.clone(), config.new_message.clone())],
         Privacy::Name => fresh
@@ -178,6 +187,23 @@ mod tests {
         assert_eq!(
             notices(&config(Privacy::None), &fresh()),
             vec![("Almena Wallet".into(), "New message".into())]
+        );
+    }
+
+    #[test]
+    fn a_burst_from_one_sender_is_one_notification_with_the_latest() {
+        let mut burst = fresh();
+        burst.push(Fresh {
+            from: "Lucía".into(),
+            content: "Mejor a las once".into(),
+        });
+        let shown = notices(&config(Privacy::Full), &burst);
+        assert_eq!(
+            shown,
+            vec![
+                ("Lucía".into(), "Mejor a las once".into()),
+                ("Papá".into(), "Perfecto".into()),
+            ]
         );
     }
 

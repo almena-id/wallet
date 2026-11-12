@@ -101,6 +101,7 @@ export type IdentityErrorCode =
   | "identity_no_draft"
   | "identity_unconfirmed"
   | "identity_locked"
+  | "identity_exists"
   | "identity_unknown";
 
 const CODES: IdentityErrorCode[] = [
@@ -110,6 +111,7 @@ const CODES: IdentityErrorCode[] = [
   "identity_no_draft",
   "identity_unconfirmed",
   "identity_locked",
+  "identity_exists",
 ];
 
 /** Whatever a rejected command threw, as a code this interface has a word for. */
