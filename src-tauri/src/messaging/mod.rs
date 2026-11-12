@@ -43,7 +43,6 @@ mod contacts;
 mod conversation;
 pub mod live;
 pub(crate) mod mediator;
-pub(crate) mod notice;
 mod peer;
 mod photo;
 mod push;
@@ -781,7 +780,6 @@ pub async fn message_send<R: Runtime>(
             .created_time
             .unwrap_or_else(almena_didcomm::message::now),
         failed: false,
-        notice: None,
     };
     written(&app, &seed, &mut state, &id, entry, message).await
 }
@@ -994,90 +992,6 @@ async fn accept(
     .await?;
     upsert(&mut state.relationships, relationship.clone());
     Ok(relationship)
-}
-
-/// The `did:web` name of a registry DID — the form this wallet's messaging
-/// resolves: `did:webvh:{SCID}:host…` is `did:web:host…`.
-fn web_name(did: &str) -> String {
-    match did.strip_prefix("did:webvh:") {
-        Some(rest) => rest
-            .split_once(':')
-            .map_or_else(|| did.to_owned(), |(_, name)| format!("did:web:{name}")),
-        None => did.to_owned(),
-    }
-}
-
-/// Where an issuer this wallet is pairing with (`registry.rs`, `pair`) may
-/// write to it: the pairwise for the issuer's DID, registered with the
-/// mediator the relationship with it goes through (the default for a new
-/// one), and the relationship it opens — named as the issuer,
-/// open from the start, its counterparty the issuer's `did:web` name. Its
-/// DID goes in the pairing token; `None` when there is no mediator or it
-/// cannot be reached, and the pairing goes on without notices.
-pub(crate) async fn issuer_channel<R: Runtime>(
-    app: &tauri::AppHandle<R>,
-    seed: &[u8; 64],
-    issuer: &str,
-    name: &str,
-) -> Option<String> {
-    if !issuer.starts_with("did:webvh:") {
-        return None;
-    }
-    let gate = app.try_state::<Gate>()?;
-    let _guard = gate.0.lock().await;
-    let mut state = state::read(app, seed).ok()?;
-    // Only the relationship an earlier pairing with this issuer opened: one
-    // whose counterparty is its `did:web` name. A contact is never taken for
-    // it, nor renamed by it.
-    let found = state
-        .relationships
-        .iter()
-        .find(|r| r.origin == issuer && r.theirs == web_name(issuer))
-        .filter(|r| state.mediation(&r.mediator).is_some())
-        .cloned();
-    let through = match &found {
-        Some(found) => found.mediator.clone(),
-        None => state.default_mediation()?.mediator.clone(),
-    };
-    let mediator = Mediator::resolve(&through).await.ok()?;
-    let inbox = Peer::inbox(seed, &mediator.did).ok()?;
-    mediator.ensure(&inbox, None).await.ok()?;
-    let pairwise = Peer::pairwise(seed, &mediator.did, issuer).ok()?;
-    mediator.register(&inbox, &pairwise).await.ok()?;
-    let name: String = name.chars().take(chat::NAME_CHARS).collect();
-    let relationship = match found {
-        Some(found) => Relationship {
-            theirs: web_name(issuer),
-            name: Some(name),
-            ..found
-        },
-        None => Relationship {
-            origin: issuer.to_owned(),
-            name: Some(name),
-            ..Relationship::new(&mediator.did, pairwise.did.clone(), web_name(issuer), false)
-        },
-    };
-    upsert(&mut state.relationships, relationship);
-    state::write(app, seed, &state).ok()?;
-    Some(pairwise.did)
-}
-
-/// An issuer's notice in a conversation, and the issuer's DID as this wallet
-/// paired with it (the relationship's origin): what collecting needs.
-pub(crate) fn notice_of<R: Runtime>(
-    app: &tauri::AppHandle<R>,
-    seed: &[u8; 64],
-    contact: &str,
-    entry: &str,
-) -> Result<(String, notice::Notice), MessagingError> {
-    let state = state::read(app, seed)?;
-    let relationship = find(&state.relationships, contact)?;
-    conversation::read(app, seed, contact)?
-        .into_iter()
-        .find(|e| e.id == entry)
-        .and_then(|e| e.notice)
-        .map(|found| (relationship.origin.clone(), found))
-        .ok_or(MessagingError::ContactUnknown)
 }
 
 /// A message of text that arrived, for the relationship whose conversation
@@ -1481,7 +1395,6 @@ async fn handle(
                                         .map_or(now, |at| at.min(now + CLOCK_SKEW))
                                 },
                                 failed: false,
-                                notice: None,
                             },
                         });
                     }
@@ -1506,32 +1419,6 @@ async fn handle(
                             .await;
                         }
                     }
-                }
-                received.push(id);
-            }
-            notice::STATUS => {
-                // An issuer this wallet applied to, over the pairwise named
-                // when pairing; from anybody else it is dropped.
-                let from_them = state
-                    .relationships
-                    .iter()
-                    .find(|r| r.is_for(&to))
-                    .filter(|r| message.from.as_deref() == Some(r.theirs.as_str()));
-                if let (Some(relationship), Some(read)) = (from_them, notice::read(&message)) {
-                    let now = almena_didcomm::message::now();
-                    outcome.arrivals.push(Arrival {
-                        id: relationship.id(),
-                        entry: Entry {
-                            id: message.id.clone(),
-                            mine: false,
-                            content: String::new(),
-                            at: message
-                                .created_time
-                                .map_or(now, |at| at.min(now + CLOCK_SKEW)),
-                            failed: false,
-                            notice: Some(read),
-                        },
-                    });
                 }
                 received.push(id);
             }
@@ -1584,7 +1471,6 @@ fn apply<R: Runtime>(
                 content: entry.content.clone(),
                 at: entry.at,
                 mine: false,
-                notice: entry.notice.as_ref().map(|n| n.status.clone()),
             })
             .collect();
         match conversation::put_all(app, seed, &id, entries) {
@@ -1638,7 +1524,6 @@ async fn written<R: Runtime>(
             content: entry.content.clone(),
             at: entry.at,
             mine: true,
-            notice: None,
         });
     }
     state::write(app, seed, state)?;
@@ -1735,16 +1620,6 @@ fn seed(held: &Held) -> Result<Zeroizing<[u8; 64]>, MessagingError> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn a_registry_did_is_written_to_by_its_did_web_name() {
-        use super::web_name;
-        assert_eq!(
-            web_name("did:webvh:QmScid:almena.id:ids:idn_1"),
-            "did:web:almena.id:ids:idn_1"
-        );
-        assert_eq!(web_name("did:web:almena.id"), "did:web:almena.id");
-    }
-
-    #[test]
     fn a_message_is_taken_only_from_the_counterparty_of_the_pairwise_it_is_for() {
         use super::{sender, Relationship, Sender};
         let mut open = Relationship::new(
@@ -1837,7 +1712,6 @@ mod tests {
             content: "hi".into(),
             mine: false,
             at: now,
-            notice: None,
         });
         let all = vec![fresh(true), fresh(false), old, spoken];
         // Saying something in it does not take it off the count.

@@ -6,9 +6,10 @@
 //! ([`super::state`]), and each is bound to its conversation's id, so one
 //! cannot be passed off as another.
 //!
-//! A conversation's id is a hash of the pairwise DID this wallet speaks as in
-//! it: stable, the same length for every file name, and it says nothing about
-//! the DID without the DID.
+//! A conversation's id is a hash of the relationship's `origin` — the DID it
+//! was opened with —, so it survives a move to another mediator: stable, the
+//! same length for every file name, and it says nothing about the DID without
+//! the DID.
 
 use std::fs;
 use std::path::PathBuf;
@@ -40,10 +41,6 @@ pub struct Entry {
     /// Sent by this wallet and not taken by the other side's mediator.
     #[serde(default)]
     pub failed: bool,
-    /// An issuer's notice about an application (`notice.rs`): drawn from
-    /// this, translated, rather than from `content`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub notice: Option<super::notice::Notice>,
 }
 
 /// The id of the conversation of the relationship opened with `origin`:
@@ -173,7 +170,6 @@ mod tests {
             content: content.into(),
             at: 1,
             failed: false,
-            notice: None,
         }
     }
 

@@ -2888,31 +2888,6 @@ button.credential-card:focus-visible {
   cursor: pointer;
 }
 
-/* An issuer's notice: its note set apart, and the credential to collect. */
-.bubble__note {
-  font-size: 13px;
-  opacity: 0.85;
-}
-
-.bubble__action {
-  align-self: flex-start;
-  margin-top: 4px;
-  padding: 6px 14px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--brand);
-  color: var(--brand-ink);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.bubble__action:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
 .composer {
   display: flex;
   align-items: flex-end;

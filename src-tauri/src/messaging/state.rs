@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use base64::Engine as _;
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
-use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
+use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, Runtime};
@@ -173,10 +173,6 @@ pub struct Last {
     pub content: String,
     pub at: u64,
     pub mine: bool,
-    /// An issuer's notice: its status (`accepted`, `rejected`, `issued`),
-    /// which the inbox words in its own language.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub notice: Option<String>,
 }
 
 /// Everything in the file.
@@ -295,9 +291,10 @@ pub(crate) fn seal<T: Serialize>(
     getrandom::fill(&mut nonce).map_err(|_| MessagingError::Entropy)?;
 
     let key = keys::derive(seed, &[STATE]);
-    let ciphertext = XChaCha20Poly1305::new(Key::from_slice(&*key))
+    let ciphertext = XChaCha20Poly1305::new_from_slice(&*key)
+        .map_err(|_| MessagingError::Storage)?
         .encrypt(
-            XNonce::from_slice(&nonce),
+            &XNonce::from(nonce),
             Payload {
                 msg: &plaintext,
                 aad,
@@ -332,9 +329,10 @@ pub(crate) fn open<T: DeserializeOwned>(
         .map_err(|_| MessagingError::Unreadable)?;
 
     let key = keys::derive(seed, &[STATE]);
-    let plaintext = XChaCha20Poly1305::new(Key::from_slice(&*key))
+    let plaintext = XChaCha20Poly1305::new_from_slice(&*key)
+        .map_err(|_| MessagingError::Unreadable)?
         .decrypt(
-            XNonce::from_slice(&nonce),
+            &XNonce::try_from(nonce.as_slice()).map_err(|_| MessagingError::Unreadable)?,
             Payload {
                 msg: &ciphertext,
                 aad,
@@ -395,7 +393,6 @@ mod tests {
                     content: "hello".into(),
                     at: 1,
                     mine: false,
-                    notice: None,
                 }),
                 cleared: false,
                 welcomed: false,
@@ -452,9 +449,10 @@ mod tests {
         let older = serde_json::json!({"mediation": null});
         let key = keys::derive(&seed, &[STATE]);
         let nonce = [0u8; NONCE_BYTES];
-        let ciphertext = XChaCha20Poly1305::new(Key::from_slice(&*key))
+        let ciphertext = XChaCha20Poly1305::new_from_slice(&*key)
+            .expect("a key")
             .encrypt(
-                XNonce::from_slice(&nonce),
+                &XNonce::from(nonce),
                 Payload {
                     msg: older.to_string().as_bytes(),
                     aad: AAD,

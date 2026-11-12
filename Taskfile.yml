@@ -743,7 +743,6 @@ tasks:
   # --------------------------------------------------------------------------
   # Store artefacts, built on this machine and left in release/
   #
-  # The same builds as the android and ios jobs of .github/workflows/release.yml.
   # The version and the production push entitlement are stamped for the build
   # alone: the files they touch are put back afterwards, byte for byte, whether
   # it worked or not. A build interrupted too hard to do so is put right by the
@@ -814,7 +813,7 @@ tasks:
         export JAVA_HOME='{{.ANDROID_JDK}}'
         export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 
-        node .github/scripts/stamp-version.mjs '{{.VERSION}}'
+        node scripts/stamp-version.mjs '{{.VERSION}}'
 
         # So what gets signed can only be what this run produced.
         outputs=src-tauri/gen/android/app/build/outputs
@@ -905,7 +904,7 @@ tasks:
       - defer: { task: release:restore }
       - |
         set -e
-        node .github/scripts/stamp-version.mjs '{{.VERSION}}'
+        node scripts/stamp-version.mjs '{{.VERSION}}'
 
         # The committed entitlement says development, which is what a build on a
         # cable needs. An App Store profile grants production only, and a build

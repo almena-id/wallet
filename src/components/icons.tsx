@@ -41,15 +41,6 @@ export function QrIcon({ className }: IconProps) {
   );
 }
 
-export function SettingsIcon({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <circle cx="12" cy="12" r="3.1" />
-      <path strokeWidth={1.5} d="M 10.43 5.69 L 10.59 3.11 L 13.41 3.11 L 13.57 5.69 L 15.35 6.43 L 17.29 4.72 L 19.28 6.71 L 17.57 8.65 L 18.31 10.43 L 20.89 10.59 L 20.89 13.41 L 18.31 13.57 L 17.57 15.35 L 19.28 17.29 L 17.29 19.28 L 15.35 17.57 L 13.57 18.31 L 13.41 20.89 L 10.59 20.89 L 10.43 18.31 L 8.65 17.57 L 6.71 19.28 L 4.72 17.29 L 6.43 15.35 L 5.69 13.57 L 3.11 13.41 L 3.11 10.59 L 5.69 10.43 L 6.43 8.65 L 4.72 6.71 L 6.71 4.72 L 8.65 6.43 Z" />
-    </svg>
-  );
-}
-
 /** A person: the profile, which is the identity this wallet holds. */
 export function ProfileIcon({ className }: IconProps) {
   return (
@@ -103,15 +94,6 @@ export function MessagesIcon({ className }: IconProps) {
     <svg {...base} className={className}>
       <rect x="3.5" y="6" width="17" height="12" rx="2.5" />
       <path d="m4.5 7.5 7.5 5.5 7.5-5.5" />
-    </svg>
-  );
-}
-
-export function BellIcon({ className }: IconProps) {
-  return (
-    <svg {...base} className={className}>
-      <path d="M18 15.5V11a6 6 0 1 0-12 0v4.5L4.5 18h15L18 15.5Z" />
-      <path d="M9.7 18a2.4 2.4 0 0 0 4.6 0" />
     </svg>
   );
 }

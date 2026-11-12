@@ -287,8 +287,7 @@ export function LinkSheet({
           }
         >
           {presenting ? picker(applying.presenting) : null}
-          {/* Issuers' notices are off since the vault went (no server-held
-              key sends them), so nothing here will say how it went: the
+          {/* Nothing tells this wallet how an application goes: the
               catalog is where the holder looks and collects. */}
           {purpose === "submit" ? <p className="card__note">{copy.submitCollect}</p> : null}
         </ConfirmSheet>

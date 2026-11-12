@@ -27,7 +27,7 @@ serde_json = "1"
 # The identity: every BIP-39 wordlist, so the phrase is written in the language
 # the wallet is read in and a phrase in any of them can be brought back; then
 # SLIP-0010 (HMAC-SHA512) down to the ed25519 key a `did:key` names.
-bip39 = { version = "2.2", features = ["zeroize", "all-languages"] }
+bip39 = { version = "3", features = ["zeroize", "all-languages"] }
 # NFKD, as the wordlists are written: a phrase typed with composed accents
 # (Spanish, French) reads as the same words.
 unicode-normalization = "0.1"
@@ -35,37 +35,37 @@ unicode-normalization = "0.1"
 # memory that is wiped when they are dropped.
 zeroize = { version = "1.9", features = ["serde"] }
 bs58 = "0.5"
-ed25519-dalek = "2"
-hmac = "0.12"
-sha2 = "0.10"
+ed25519-dalek = "3"
+hmac = "0.13"
+sha2 = "0.11"
 # Comparing a typed phrase's seed with the open one in constant time
 # (`identity::identity_check_phrase`); already in the tree, through the ciphers.
 subtle = "2.6"
 # The Public Suffix List (ICANN and private sections), for `registry::vouched`.
 psl = "2"
 getrandom = "0.4"
-base64 = "0.22"
+base64 = "0.23"
 # Reading the status lists an issuer's signer signs: zlib, as the IETF Token
 # Status List packs them (already in the tree, through the PNG decoder).
-miniz_oxide = { version = "0.8", features = ["with-alloc"] }
+miniz_oxide = { version = "0.9", features = ["with-alloc"] }
 # Keeping the identity between launches. XChaCha20-Poly1305 rather than AES-GCM:
 # its nonce is wide enough to be drawn at random with no counter to keep, and it
 # is constant-time in software everywhere. Argon2id is what stands between four
 # digits and a stolen record, so its cost parameters are written into the record.
 # `alloc` only: the randomness comes from `getrandom`.
-chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
-argon2 = { version = "0.5", features = ["zeroize"] }
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
+argon2 = { version = "0.6", features = ["zeroize"] }
 # Windows Hello's signature turned into the key that wraps the data key
 # (`vault::presence::hello`); on every host, so the derivation is tested there.
-hkdf = "0.12"
+hkdf = "0.13"
 # The platform's own secret store, named per platform below rather than picked
 # by the `keyring` umbrella crate, whose Android choice is an in-memory stub
 # that loses the identity on every launch. See `vault::store`.
 keyring-core = "1"
 # Messaging: DIDComm v2.0 messages, envelopes and DID resolution, from the
 # mediator's own repository — the same code the mediator answers with. Pinned
-# to a commit on `develop` until a release tag carries `Urgency` (none up to
-# v2026.09.4 does); move back to a tag then. See SPEC.md there.
+# to a commit, so a build never changes under it; moved on by hand, with the
+# mediator's SPEC.md read for what changed.
 almena-didcomm = { git = "https://github.com/almena-id/mediator", rev = "96fb5fc28ad637719665191688e7ed286d438772" }
 url = "2.5"
 # Reaching a mediator. Rustls with `ring` and the Mozilla roots rather than the
@@ -98,7 +98,7 @@ tauri-plugin-barcode-scanner = "2"
 # Push: the FCM or APNs device token the mediator notifies (`messaging::push`).
 # A release candidate, pinned exactly; `notify-rust` is its desktop half, which
 # the wallet does not use.
-tauri-plugin-notifications = { version = "=0.5.0-rc.14", default-features = false, features = ["push-notifications"] }
+tauri-plugin-notifications = { version = "=0.5.0-rc.16", default-features = false, features = ["push-notifications"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 # The system's trusted roots, read by a debug build only (`mediator::tls`), so

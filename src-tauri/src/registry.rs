@@ -1190,15 +1190,7 @@ pub async fn registry_answer(
             presented_entry(&request, &chosen, vouched.as_ref(), &uri, now()),
         );
     } else {
-        // Pairing with an issuer: where it may write to this wallet over
-        // DIDComm, when there is a mediator to receive at.
-        let channel = match (&request.purpose[..], &request.issuer) {
-            ("pair", Some(issuer)) => {
-                crate::messaging::issuer_channel(&app, &seed, &issuer.did, &issuer.name).await
-            }
-            _ => None,
-        };
-        answer(&seed, &uri, &request, channel.as_deref()).await?;
+        answer(&seed, &uri, &request).await?;
     }
     if let Ok(mut kept) = shown.0.lock() {
         if kept.as_ref().is_some_and(|kept| kept.input == input) {
@@ -1248,12 +1240,7 @@ fn presented_entry(
     }
 }
 
-async fn answer(
-    seed: &[u8; 64],
-    uri: &Url,
-    request: &Request,
-    channel: Option<&str>,
-) -> Result<(), RegistryError> {
+async fn answer(seed: &[u8; 64], uri: &Url, request: &Request) -> Result<(), RegistryError> {
     let (key, did) = identity_for(seed, uri, issuer_of(request));
     match request.purpose.as_str() {
         // Presenting needs the held credentials: `registry_answer` does it.
@@ -1302,94 +1289,23 @@ async fn answer(
         let proof = proof(&key, named, &sign.proof_purpose, &sign.document, &created)?;
         return post(&request.response_uri, Body::Json(json!({ "proof": proof }))).await;
     }
-    let token = id_token(&key, &did, token_claims(&did, request, channel, now()));
+    let token = id_token(&key, &did, token_claims(&did, request, now()));
     let body = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("id_token", &token)
         .finish();
     post(&request.response_uri, Body::Form(body)).await
 }
 
-/// The claims of an `id_token` answer. Pairing names, as `didcomm`, the
-/// pairwise the issuer may write to (`issuer_channel`); nothing else does.
-fn token_claims(
-    did: &str,
-    request: &Request,
-    channel: Option<&str>,
-    issued: u64,
-) -> serde_json::Value {
-    let mut claims = json!({
+/// The claims of an `id_token` answer.
+fn token_claims(did: &str, request: &Request, issued: u64) -> serde_json::Value {
+    json!({
         "iss": did,
         "sub": did,
         "aud": request.client_id,
         "nonce": request.nonce,
         "iat": issued,
         "exp": issued + TOKEN_LIFETIME,
-    });
-    if let Some(channel) = channel.filter(|_| request.purpose == "pair") {
-        claims["didcomm"] = json!(channel);
-    }
-    claims
-}
-
-/// What collecting answers: the `receive` request to put to the person.
-#[derive(Deserialize)]
-struct Collected {
-    deep_link: String,
-}
-
-/// Asks the issuer of an `issued` notice (`messaging/notice.rs`) for the
-/// credential: an `id_token` by the key this wallet paired with that issuer —
-/// derived again from the `collect` address's origin and the issuer's DID —
-/// for that address, with the application's id as nonce. The registry
-/// answers with a `receive` request, returned as its link (`https://almena.id/w/…`
-/// or `almena://`, `crate::links`) for the
-/// sheet to read and the person to accept, as the portal's third code would.
-#[tauri::command]
-pub async fn registry_collect(
-    app: tauri::AppHandle,
-    held: State<'_, Held>,
-    contact: String,
-    entry: String,
-) -> Result<String, RegistryError> {
-    let seed = seed(&held)?;
-    let (issuer, notice) = crate::messaging::notice_of(&app, &seed, &contact, &entry)
-        .map_err(|_| RegistryError::Unreadable)?;
-    let collect = notice.collect.ok_or(RegistryError::Unreadable)?;
-    let url = Url::parse(&collect).map_err(|_| RegistryError::Unreadable)?;
-    let (key, did) = identity_for(&seed, &url, Some(&issuer));
-    let issued = now();
-    let token = id_token(
-        &key,
-        &did,
-        json!({
-            "iss": did,
-            "sub": did,
-            "aud": collect,
-            "nonce": notice.application,
-            "iat": issued,
-            "exp": issued + TOKEN_LIFETIME,
-        }),
-    );
-    let response = client()
-        .map_err(|_| RegistryError::Unreachable)?
-        .post(reachable(&url)?)
-        .header("Content-Type", "application/json")
-        .body(json!({ "id_token": token }).to_string())
-        .send()
-        .await
-        .map_err(|_| RegistryError::Unreachable)?;
-    match response.status().as_u16() {
-        200 => {}
-        404 | 409 | 410 => return Err(RegistryError::Expired),
-        _ => return Err(RegistryError::Refused),
-    }
-    let collected: Collected = json_of(response).await?;
-    // Only a request on the same registry it was collected from.
-    let link = request_uri(&collected.deep_link)?;
-    if link.origin() != url.origin() {
-        return Err(RegistryError::Unreadable);
-    }
-    Ok(collected.deep_link)
+    })
 }
 
 /// A compact JWS, `EdDSA`, over the header and payload given.
@@ -1798,7 +1714,7 @@ mod tests {
             .unwrap();
 
         let (uri, request) = fetch(asked["deep_link"].as_str().unwrap()).await.unwrap();
-        answer(&SEED, &uri, &request, None).await.unwrap();
+        answer(&SEED, &uri, &request).await.unwrap();
 
         let result: serde_json::Value = http
             .post(format!(
@@ -1815,7 +1731,7 @@ mod tests {
         assert_eq!(result["status"], "signed_in", "{result}");
 
         // A request answered once is not answered again.
-        let again = answer(&SEED, &uri, &request, None).await;
+        let again = answer(&SEED, &uri, &request).await;
         assert!(matches!(again, Err(RegistryError::Expired)));
 
         // The account the wallet signed up is its tenant's admin, and the
@@ -1849,7 +1765,7 @@ mod tests {
             .await
             .unwrap();
         let (uri, request) = fetch(asked["deep_link"].as_str().unwrap()).await.unwrap();
-        answer(&SEED, &uri, &request, None).await.unwrap();
+        answer(&SEED, &uri, &request).await.unwrap();
         let result: serde_json::Value = http
             .post(format!(
                 "{api}/api/v1/auth/wallet/requests/{}/result",
@@ -1931,15 +1847,15 @@ mod tests {
     }
 
     #[test]
-    fn only_pairing_names_where_the_issuer_may_write() {
-        let request = |purpose: &str| Request {
+    fn an_id_token_answers_the_request_and_names_nothing_else() {
+        let request = Request {
             response_type: "id_token".into(),
             response_mode: "direct_post".into(),
             client_id: "https://registry.almena.id".into(),
             client_name: "Club".into(),
             response_uri: "https://api.almena.id/r".into(),
             nonce: "n".into(),
-            purpose: purpose.into(),
+            purpose: "pair".into(),
             sign: None,
             issuer: None,
             credential_type: None,
@@ -1949,14 +1865,11 @@ mod tests {
             verifier: None,
             form: None,
         };
-        let paired = token_claims("did:key:z", &request("pair"), Some("did:peer:2.x"), 1);
-        assert_eq!(paired["didcomm"], "did:peer:2.x");
-        assert_eq!(paired["exp"], 1 + TOKEN_LIFETIME);
-        let signed_in = token_claims("did:key:z", &request("sign_in"), Some("did:peer:2.x"), 1);
-        assert!(signed_in.get("didcomm").is_none());
-        assert!(token_claims("did:key:z", &request("pair"), None, 1)
-            .get("didcomm")
-            .is_none());
+        let claims = token_claims("did:key:z", &request, 1);
+        assert_eq!(claims["aud"], "https://registry.almena.id");
+        assert_eq!(claims["nonce"], "n");
+        assert_eq!(claims["exp"], 1 + TOKEN_LIFETIME);
+        assert!(claims.get("didcomm").is_none());
     }
 
     #[test]
@@ -2175,13 +2088,13 @@ mod tests {
     async fn nothing_is_presented_and_only_the_paired_key_submits() {
         let present = application("present", None);
         assert!(matches!(
-            answer(&SEED, &api(), &present, None).await,
+            answer(&SEED, &api(), &present).await,
             Err(RegistryError::NothingToPresent)
         ));
         let mut submit = application("submit", Some(content()));
         submit.holder = Some("did:key:z6MkOther".into());
         assert!(matches!(
-            answer(&SEED, &api(), &submit, None).await,
+            answer(&SEED, &api(), &submit).await,
             Err(RegistryError::NotTheHolder)
         ));
     }

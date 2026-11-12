@@ -611,19 +611,6 @@
       "aliasLabel": "Nombre",
       "save": "Guardar",
       "clear": "Usar su nombre"
-    },
-    "notice": {
-      "accepted": "{issuer} aceptó tu solicitud de {credential}.",
-      "rejected": "{issuer} no aceptó tu solicitud de {credential}.",
-      "issued": "{issuer} emitió tu {credential}. Recógela para guardarla en este wallet.",
-      "note": "Su nota",
-      "collect": "Recoger",
-      "collecting": "Pidiéndola…",
-      "preview": {
-        "accepted": "Solicitud aceptada",
-        "rejected": "Solicitud no aceptada",
-        "issued": "Credencial lista para recoger"
-      }
     }
   },
   "biometrics": {

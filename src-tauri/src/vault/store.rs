@@ -304,8 +304,9 @@ pub fn read<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Option<(Vec<u8>, Ho
             let record = almena_keystore::open(app, sealed).map_err(|_| VaultError::Unreadable)?;
             return Ok(Some((record, Home::Keystore)));
         }
-        // Written before the Keystore was used: sealed now, so the copy that
-        // could be guessed at offline does not stay on the phone.
+        // Written plain because the Keystore would not seal it then: sealed
+        // now if it will, so the copy that could be guessed at offline does
+        // not stay on the phone.
         let home = write(app, &bytes).unwrap_or(Home::File);
         Ok(Some((bytes, home)))
     }

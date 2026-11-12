@@ -1,8 +1,9 @@
 // Writes a release's version into src-tauri/tauri.conf.json, in the shape
-// each platform accepts. Run by the release workflow on its own checkout; the
-// committed file keeps its development version.
+// each platform accepts. Run by `task release:android` and `release:ios`,
+// which put the file back afterwards: the committed one keeps its
+// development version.
 //
-//   node .github/scripts/stamp-version.mjs 2026.09.1
+//   node scripts/stamp-version.mjs 2026.09.1
 //
 // The release is year.month.sequence, the month with its leading zero (the
 // git tag is v2026.09.1). What each platform is given:

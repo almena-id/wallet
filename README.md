@@ -32,9 +32,9 @@ nothing until Accept:
 - **Signing in** to a registry portal, or linking the wallet to an account
   there, with a DID made for that registry alone.
 - **Applying** for a credential at catalog.almena.id: pairing with the issuer,
-  presenting credentials the form asks for, and signing the answers. Issuers
-  send no notices for now, so the wallet says to come back to the catalog to
-  see how an application stands and to collect the credential. Once the
+  presenting credentials the form asks for, and signing the answers. Nothing
+  tells the wallet how an application goes: the catalog is where to see how it
+  stands and to collect the credential. Once the
   issuer has signed it, the credential is **received** and checked — bound to
   this wallet's key for that issuer, signed by a key the issuer's `did:webvh`
   lists, every disclosure accounted for — and kept on the device, encrypted.

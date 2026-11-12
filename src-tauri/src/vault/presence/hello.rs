@@ -77,9 +77,10 @@ pub fn seal(
 ) -> Result<Vec<u8>, VaultError> {
     let wrapping = wrapping(&signer.sign(challenge)?, challenge);
     let nonce = crate::vault::record::random::<NONCE_BYTES>()?;
-    let wrapped = XChaCha20Poly1305::new(chacha20poly1305::Key::from_slice(wrapping.as_slice()))
+    let wrapped = XChaCha20Poly1305::new_from_slice(wrapping.as_slice())
+        .map_err(|_| VaultError::Unreadable)?
         .encrypt(
-            XNonce::from_slice(&nonce),
+            &XNonce::from(nonce),
             Payload {
                 msg: key,
                 aad: MAGIC,
@@ -105,9 +106,10 @@ pub fn unseal(signer: &impl Signer, sealed: &[u8]) -> Result<Zeroizing<Key>, Vau
     let (nonce, wrapped) = rest.split_at(NONCE_BYTES);
 
     let wrapping = wrapping(&signer.sign(challenge)?, challenge);
-    let key = XChaCha20Poly1305::new(chacha20poly1305::Key::from_slice(wrapping.as_slice()))
+    let key = XChaCha20Poly1305::new_from_slice(wrapping.as_slice())
+        .map_err(|_| VaultError::DeviceChanged)?
         .decrypt(
-            XNonce::from_slice(nonce),
+            &XNonce::try_from(nonce).map_err(|_| VaultError::DeviceChanged)?,
             Payload {
                 msg: wrapped,
                 aad: MAGIC,
@@ -265,7 +267,7 @@ mod system {
 
 #[cfg(test)]
 mod tests {
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
 
     use super::*;
 
@@ -274,7 +276,7 @@ mod tests {
 
     impl Signer for Fixed {
         fn sign(&self, challenge: &[u8]) -> Result<Vec<u8>, VaultError> {
-            let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(self.0).unwrap();
+            let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(self.0).unwrap();
             mac.update(challenge);
             Ok(mac.finalize().into_bytes().to_vec())
         }

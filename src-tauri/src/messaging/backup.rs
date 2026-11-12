@@ -304,7 +304,6 @@ mod tests {
             content: id.into(),
             at,
             failed: false,
-            notice: None,
         }
     }
 

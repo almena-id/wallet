@@ -246,7 +246,6 @@ pub fn run() {
             messaging::push_unregister,
             registry::registry_request,
             registry::registry_answer,
-            registry::registry_collect,
             credentials::credentials_list,
             credentials::credentials_check,
             credentials::credentials_remove,

@@ -611,19 +611,6 @@
       "aliasLabel": "Name",
       "save": "Save",
       "clear": "Use their name"
-    },
-    "notice": {
-      "accepted": "{issuer} accepted your application for {credential}.",
-      "rejected": "{issuer} did not accept your application for {credential}.",
-      "issued": "{issuer} issued your {credential}. Collect it to keep it in this wallet.",
-      "note": "Their note",
-      "collect": "Collect",
-      "collecting": "Asking…",
-      "preview": {
-        "accepted": "Application accepted",
-        "rejected": "Application not accepted",
-        "issued": "Credential ready to collect"
-      }
     }
   },
   "biometrics": {

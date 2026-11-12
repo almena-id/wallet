@@ -4,7 +4,6 @@ import { SyncIcon } from "../components/icons";
 import { useI18n } from "../i18n";
 import {
   MESSAGE_CHARS,
-  collectCredential,
   markSeen,
   onMessagesChanged,
   readConversation,
@@ -13,11 +12,9 @@ import {
   syncMessages,
   type Conversation,
   type Entry,
-  type Notice,
 } from "../contacts";
 import { errorCode } from "../mediator";
 import { usePlatform } from "../platform";
-import { fill } from "../i18n/format";
 import { moment } from "../when";
 import { initial } from "./MessagesScreen";
 import { BackButton } from "../components/BackButton";
@@ -27,8 +24,6 @@ type ConversationScreenProps = {
   onBack: () => void;
   /** Opens the contact, where it is renamed. */
   onContact: () => void;
-  /** Puts an `almena://` link to the person, as one from outside would be. */
-  onLink: (url: string) => void;
 };
 
 /**
@@ -38,7 +33,7 @@ type ConversationScreenProps = {
  * opens; a message that did not go stays in the conversation, marked, to be
  * tried again.
  */
-export function ConversationScreen({ id, onBack, onContact, onLink }: ConversationScreenProps) {
+export function ConversationScreen({ id, onBack, onContact }: ConversationScreenProps) {
   const { t, locale } = useI18n();
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [draft, setDraft] = useState("");
@@ -144,29 +139,6 @@ export function ConversationScreen({ id, onBack, onContact, onLink }: Conversati
     }
   }
 
-  // An issued notice's credential: the issuer answers with the request to
-  // receive it, which goes to the sheet that asks, like any link.
-  const [collecting, setCollecting] = useState<string | null>(null);
-  async function collect(entry: Entry) {
-    setCollecting(entry.id);
-    setError(null);
-    try {
-      onLink(await collectCredential(id, entry.id));
-    } catch (failure) {
-      const errors = t.confirm.registry.errors;
-      setError(errors[errorCode(failure) as keyof typeof errors] ?? null);
-    } finally {
-      setCollecting(null);
-    }
-  }
-
-  // What an issuer's notice says, in this wallet's language.
-  function noticeText(notice: Notice): string {
-    const credential =
-      notice.credentialName[locale] ?? notice.credentialName.en ?? notice.credentialType;
-    return fill(t.conversations.notice[notice.status], { issuer: notice.issuer, credential });
-  }
-
   const contact = conversation?.contact;
 
   return (
@@ -210,30 +182,7 @@ export function ConversationScreen({ id, onBack, onContact, onLink }: Conversati
                 key={entry.id}
                 className={`bubble${entry.mine ? " bubble--mine" : ""}${entry.failed ? " bubble--failed" : ""}`}
               >
-                {entry.notice ? (
-                  <>
-                    <p className="bubble__text">{noticeText(entry.notice)}</p>
-                    {entry.notice.note ? (
-                      <p className="bubble__text bubble__note">
-                        {t.conversations.notice.note}: {entry.notice.note}
-                      </p>
-                    ) : null}
-                    {entry.notice.status === "issued" && entry.notice.collect ? (
-                      <button
-                        type="button"
-                        className="bubble__action"
-                        onClick={() => void collect(entry)}
-                        disabled={collecting !== null}
-                      >
-                        {collecting === entry.id
-                          ? t.conversations.notice.collecting
-                          : t.conversations.notice.collect}
-                      </button>
-                    ) : null}
-                  </>
-                ) : (
-                  <p className="bubble__text">{entry.content}</p>
-                )}
+                <p className="bubble__text">{entry.content}</p>
                 <span className="bubble__time">{moment(entry.at, locale)}</span>
                 {entry.failed ? (
                   <button

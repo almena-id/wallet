@@ -129,9 +129,7 @@ export function MessagesScreen({ onNewConversation, onOpen }: MessagesScreenProp
                 <span className="row__hint message-row__preview">
                   {contact.pending
                     ? t.conversations.new.pending
-                    : contact.last?.notice
-                      ? t.conversations.notice.preview[contact.last.notice]
-                      : contact.last
+                    : contact.last
                       ? contact.last.mine
                         ? fill(t.messages.mine, { content: contact.last.content })
                         : contact.last.content

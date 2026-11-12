@@ -26,7 +26,7 @@ use argon2::{Algorithm, Argon2, Params, Version};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use base64::Engine as _;
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
-use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
+use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
@@ -36,9 +36,6 @@ use super::{VaultError, LENGTHS};
 /// wallet that knows something this one does not, and is refused rather than
 /// guessed at.
 pub const VERSION: u32 = 2;
-
-/// The first version, in which every record had a PIN.
-const FIRST: u32 = 1;
 
 /// The only key derivation this version has a name for.
 const ARGON2ID: &str = "argon2id";
@@ -321,10 +318,10 @@ impl Record {
         if record.version > VERSION {
             return Err(VaultError::TooNew);
         }
-        // Zero is not a version this wallet ever wrote. It is what a record
-        // somebody assembled by hand looks like, and reading one as if it were
-        // version one would mean trusting a header nothing here produced.
-        if record.version == 0 {
+        // Only the version this wallet writes: nothing is in production, so
+        // no older record is carried forward, and one numbered lower is what a
+        // record somebody assembled by hand looks like.
+        if record.version != VERSION {
             return Err(VaultError::Unreadable);
         }
 
@@ -341,9 +338,9 @@ impl Record {
                 }
                 kdf.affordable()?;
             }
-            // No PIN, which only a second-version record may be, and only one
-            // the device holds a key to: otherwise nothing at all opens it.
-            (None, None, None) if record.version > FIRST && record.device_wrap => {}
+            // No PIN, only for a record the device holds a key to: otherwise
+            // nothing at all opens it.
+            (None, None, None) if record.device_wrap => {}
             _ => return Err(VaultError::Unreadable),
         }
 
@@ -400,9 +397,10 @@ fn derive(kdf: &Kdf, pin: &str) -> Result<Zeroizing<[u8; KEY_BYTES]>, VaultError
 
 fn seal_with(key: &[u8; KEY_BYTES], plaintext: &[u8], aad: &[u8]) -> Result<Sealed, VaultError> {
     let nonce = random::<NONCE_BYTES>()?;
-    let ciphertext = XChaCha20Poly1305::new(Key::from_slice(key))
+    let ciphertext = XChaCha20Poly1305::new_from_slice(key)
+        .map_err(|_| VaultError::Unreadable)?
         .encrypt(
-            XNonce::from_slice(&nonce),
+            &XNonce::from(nonce),
             Payload {
                 msg: plaintext,
                 aad,
@@ -420,9 +418,10 @@ fn open_with(key: &[u8; KEY_BYTES], sealed: &Sealed, aad: &[u8]) -> Option<Zeroi
     let nonce = B64.decode(&sealed.nonce).ok()?;
     let ciphertext = B64.decode(&sealed.ciphertext).ok()?;
 
-    XChaCha20Poly1305::new(Key::from_slice(key))
+    XChaCha20Poly1305::new_from_slice(key)
+        .ok()?
         .decrypt(
-            XNonce::from_slice(nonce.as_slice().get(..NONCE_BYTES)?),
+            &XNonce::try_from(nonce.as_slice().get(..NONCE_BYTES)?).ok()?,
             Payload {
                 msg: &ciphertext,
                 aad,
@@ -640,37 +639,40 @@ mod tests {
             Record::parse(&serde_json::to_vec(&written).expect("json")),
             Err(VaultError::Unreadable)
         ));
-
-        // And a first-version record never went without one.
-        written["deviceWrap"] = serde_json::json!(true);
-        written["version"] = serde_json::json!(FIRST);
-        assert!(matches!(
-            Record::parse(&serde_json::to_vec(&written).expect("json")),
-            Err(VaultError::Unreadable)
-        ));
     }
 
     #[test]
-    fn a_first_version_record_still_opens() {
-        // Sealed as the first version would have sealed it: the version is
-        // bound into the PIN wrap, so this is the version it has to be read at.
-        let (mut record, _) = sealed();
-        let kdf = record.kdf.clone().expect("a PIN record");
-        let (_, key) = sealed();
-        record.version = FIRST;
-        record.pin_wrap = Some(
-            seal_with(
-                &derive(&kdf, "1234").expect("derive"),
-                &*key,
-                &header(FIRST, &kdf),
-            )
-            .expect("seal"),
-        );
-        record.seed = seal_with(&key, &SEED, SEED_CONTEXT).expect("seal");
+    fn only_the_version_written_is_read() {
+        let (record, _) = sealed();
+        let mut written: serde_json::Value = serde_json::from_slice(&record.write()).expect("json");
+        for older in [0, VERSION - 1] {
+            written["version"] = serde_json::json!(older);
+            assert!(matches!(
+                Record::parse(&serde_json::to_vec(&written).expect("json")),
+                Err(VaultError::Unreadable)
+            ));
+        }
+    }
 
-        let read = Record::parse(&record.write()).expect("a first-version record");
-        let opened = read.unwrap_pin("1234").expect("the right PIN");
-        assert_eq!(*read.seed(&opened).expect("the seed"), SEED);
+    /// **The vector that pins the PIN's derivation.** Argon2id with the
+    /// record's own parameters, as `argon2` 0.5 computed it when every record
+    /// so far was sealed: a later version of the crate must give the same, or
+    /// no PIN would open the records already written.
+    #[test]
+    fn the_pin_derivation_is_what_sealed_the_records_already_written() {
+        let kdf = Kdf {
+            algorithm: ARGON2ID.to_owned(),
+            memory_kib: MEMORY_KIB,
+            iterations: ITERATIONS,
+            parallelism: PARALLELISM,
+            salt: B64.encode(b"almena-wallet-salt-16b"),
+        };
+        let derived = derive(&kdf, "246813").expect("derive");
+        let hex: String = derived.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(
+            hex,
+            "72478fa392baf09bec17a0a8d3f1b364d838785e624df9c15b1d0f9cbfc355cc"
+        );
     }
 
     #[test]

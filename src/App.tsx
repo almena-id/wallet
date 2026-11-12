@@ -366,10 +366,7 @@ export default function App() {
           {route === "home" ? (
             <HomeTab onScan={platform.barcodeScanner ? () => select("scan") : undefined} />
           ) : null}
-          {route === "messages" ? <MessagesTab
-              initialConversation={conversation}
-              onLink={(url) => void openLink(url, "link")}
-            /> : null}
+          {route === "messages" ? <MessagesTab initialConversation={conversation} /> : null}
           {route === "scan" ? (
             <ScanScreen
               onBack={() => setRoute("home")}

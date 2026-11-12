@@ -18,8 +18,6 @@ type View =
 type MessagesTabProps = {
   /** A conversation to open on, when something outside the tab led to it. */
   initialConversation?: string | null;
-  /** Puts an `almena://` link to the person (an issuer's credential to collect). */
-  onLink: (url: string) => void;
 };
 
 /**
@@ -27,7 +25,7 @@ type MessagesTabProps = {
  * screen's way back returns to whichever screen led to it — a conversation
  * opened from the contacts goes back to them, one opened from the inbox to it.
  */
-export function MessagesTab({ initialConversation = null, onLink }: MessagesTabProps) {
+export function MessagesTab({ initialConversation = null }: MessagesTabProps) {
   const { top, push, pop } = useStack<View>(() =>
     initialConversation
       ? [{ name: "inbox" }, { name: "conversation", id: initialConversation }]
@@ -58,7 +56,6 @@ export function MessagesTab({ initialConversation = null, onLink }: MessagesTabP
           id={top.id}
           onBack={pop}
           onContact={() => push({ name: "contact", id: top.id })}
-          onLink={onLink}
         />
       );
     case "contact":
