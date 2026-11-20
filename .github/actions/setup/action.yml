@@ -1,0 +1,42 @@
+# What every release build needs before its `task release:*`: pnpm and Node
+# with the front end's dependencies, Rust with the targets the platform builds
+# for, its cache, and Task. The checkout is the job's own.
+
+name: Set up the wallet's toolchain
+description: pnpm, Node, the front end's dependencies, Rust (with targets) and Task
+
+inputs:
+  targets:
+    description: Rust targets to install, comma-separated
+    required: false
+    default: ""
+  cache-key:
+    description: Key that keeps this platform's Rust cache apart from the others
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      with:
+        version: "12"
+
+    - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      with:
+        node-version: "24"
+        cache: pnpm
+
+    - name: Front-end dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile
+
+    - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      with:
+        targets: ${{ inputs.targets }}
+
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      with:
+        workspaces: src-tauri
+        key: ${{ inputs.cache-key }}
+
+    - uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1

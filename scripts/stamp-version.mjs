@@ -1,6 +1,6 @@
 // Writes a release's version into src-tauri/tauri.conf.json, in the shape
-// each platform accepts. Run by `task release:android` and `release:ios`,
-// which put the file back afterwards: the committed one keeps its
+// each platform accepts. Run by every `task release:*` (and so by the
+// release workflow), which put the file back afterwards: the committed one keeps its
 // development version.
 //
 //   node scripts/stamp-version.mjs 2026.09.1
@@ -29,7 +29,7 @@ if (sequence >= 1000) {
   process.exit(1);
 }
 
-const path = new URL("../../src-tauri/tauri.conf.json", import.meta.url);
+const path = new URL("../src-tauri/tauri.conf.json", import.meta.url);
 const conf = JSON.parse(readFileSync(path, "utf8"));
 
 conf.version = `${year}.${month}.${sequence}`;

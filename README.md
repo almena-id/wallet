@@ -229,11 +229,12 @@ layout.
 ## Releases
 
 Every merge into `main` builds the wallet for every platform, with a
-`year.month.sequence` version (e.g. `2026.10.1`): the Linux, Windows and macOS
-installers, signed (and notarized on macOS), become a GitHub release with
-signed checksums; the Android and iOS builds are uploaded to Google Play and
-App Store Connect. The secrets it needs, and how each one is obtained, are in
-[docs/releasing.md](docs/releasing.md).
+`year.month.sequence` version (e.g. `2026.11.1`): the Linux, Windows and macOS
+installers (notarized on macOS) become a GitHub release with signed checksums,
+and, after an approval, the Android and iOS builds are uploaded to Google Play
+internal testing and TestFlight. Each build is the same `task release:<platform>`
+that can be run by hand. The secrets it needs, and how each one is obtained,
+are in [docs/releasing.md](docs/releasing.md).
 
 ## Publishing to the stores
 

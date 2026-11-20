@@ -1,0 +1,481 @@
+# Builds Almena Wallet for every platform whenever something is merged into
+# main, publishes the computer installers as a GitHub release and sends the
+# phone builds to the stores' testing tracks.
+#
+#   Linux x86_64          .deb, .rpm, .AppImage          GitHub release
+#   Windows x86_64        .exe (NSIS), .msi              GitHub release (Authenticode once Azure Trusted Signing is set)
+#   macOS Apple silicon   .dmg, Developer ID, notarized  GitHub release
+#   Android               .aab, upload key               Google Play, internal testing
+#   iOS                   .ipa, Apple Distribution       App Store Connect, TestFlight
+#
+# Every build is the same `task release:<platform> VERSION=…` a person runs on
+# their own machine: this workflow only lays out the toolchain and turns the
+# secrets into the files and variables `.env.local` would name. What each one
+# is, and how to obtain it, is in docs/releasing.md.
+#
+# Versions are year.month.sequence (2026.11.1), as in the mediator and the CLI:
+# the sequence starts at 1 each month and counts the v<year>.<month>.* tags
+# already made. Running again on a commit that already has a v* tag builds
+# that same version again instead of taking a new number. Runs queue up (never
+# in parallel), so two merges cannot take the same number.
+#
+# The GitHub release (and its tag) is made once every platform has built, so
+# a failed build does not use up a number. The stores come after it, in the
+# `stores` environment, which asks for an approval before uploading: an upload
+# is the one step that cannot be undone, since a store never takes the same
+# build number twice. If one fails, re-run that job alone — the builds are kept
+# for a week — rather than merging again. Promoting an Android release and
+# sending an iOS build to review stay by hand, in Play Console and App Store
+# Connect.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      stores:
+        description: Upload the phone builds to Google Play and App Store Connect
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    name: Work out the version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tagged: ${{ steps.version.outputs.tagged }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - id: version
+        name: Next year.month.sequence
+        run: |
+          set -euo pipefail
+          existing=$(git tag --points-at HEAD --list 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n1)
+          if [ -n "$existing" ]; then
+            version="${existing#v}"
+            tagged=true
+          else
+            month=$(date -u +%Y.%m)
+            last=$(git tag --list "v${month}.*" \
+              | sed -n "s/^v${month//./\\.}\.\([0-9][0-9]*\)$/\1/p" \
+              | sort -n | tail -n1)
+            version="${month}.$(( ${last:-0} + 1 ))"
+            tagged=false
+          fi
+          {
+            echo "version=$version"
+            echo "tagged=$tagged"
+          } >> "$GITHUB_OUTPUT"
+          echo "Version $version (already tagged: $tagged)" >> "$GITHUB_STEP_SUMMARY"
+
+  check:
+    name: Check
+    uses: ./.github/workflows/check.yml
+
+  # ----- Computers -------------------------------------------------------------
+
+  linux:
+    name: Build Linux x86_64
+    needs: [version, check]
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Linux libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev xdg-utils
+
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: linux
+
+      - name: task release:linux
+        run: task release:linux VERSION="$VERSION"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: desktop-linux
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    name: Build Windows x86_64
+    needs: [version, check]
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      # Azure Trusted Signing: when the endpoint is set the installers are
+      # signed, otherwise they are built unsigned (SmartScreen warns).
+      AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+      AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+      AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Task's shell finds commands on PATH; Git for Windows' coreutils give it
+      # the same cp, ls and tar the other platforms have.
+      - name: Coreutils on PATH
+        run: echo 'C:\Program Files\Git\usr\bin' >> "$GITHUB_PATH"
+
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: windows
+
+      - name: Signing tool
+        if: env.AZURE_SIGNING_ENDPOINT != ''
+        run: cargo install trusted-signing-cli --locked
+
+      - name: task release:windows
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: task release:windows VERSION="$VERSION"
+
+      - name: Check the signatures
+        if: env.AZURE_SIGNING_ENDPOINT != ''
+        shell: pwsh
+        run: |
+          Get-ChildItem release | ForEach-Object {
+            $signature = Get-AuthenticodeSignature $_.FullName
+            "{0}: {1} ({2})" -f $_.Name, $signature.Status, $signature.SignerCertificate.Subject
+            if ($signature.Status -ne 'Valid') { exit 1 }
+          }
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: desktop-windows
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  macos:
+    name: Build macOS Apple silicon
+    needs: [version, check]
+    runs-on: macos-26
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: macos
+
+      - name: Signing keychain
+        # A keychain of its own for this run, holding the Developer ID
+        # Application certificate and the intermediate it chains to, first in
+        # the search list so codesign finds the identity by name.
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password=$(openssl rand -base64 24)
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/productbuild
+          rm -f "$RUNNER_TEMP/developer-id.p12"
+          curl -fsSL https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer -o "$RUNNER_TEMP/DeveloperIDG2CA.cer"
+          security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$keychain"
+
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+
+          identity=$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -n 1)
+          test -n "$identity" || { echo "No Developer ID Application identity in MACOS_CERTIFICATE_P12." >&2; exit 1; }
+          echo "MACOS_RELEASE_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "Signing as: $identity"
+
+      - name: Profile and notary key
+        env:
+          PROFILE: ${{ secrets.MACOS_PROVISION_PROFILE }}
+          NOTARY_KEY: ${{ secrets.ASC_API_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ vars.ASC_API_KEY_ID }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$PROFILE" | base64 --decode > "$RUNNER_TEMP/wallet.provisionprofile"
+          printf '%s\n' "$NOTARY_KEY" > "$RUNNER_TEMP/AuthKey_${NOTARY_KEY_ID}.p8"
+          echo "MACOS_RELEASE_PROFILE=$RUNNER_TEMP/wallet.provisionprofile" >> "$GITHUB_ENV"
+          echo "NOTARY_API_KEY_PATH=$RUNNER_TEMP/AuthKey_${NOTARY_KEY_ID}.p8" >> "$GITHUB_ENV"
+
+      - name: task release:macos
+        env:
+          APPLE_DEVELOPMENT_TEAM: ${{ vars.APPLE_TEAM_ID }}
+          NOTARY_API_KEY: ${{ vars.ASC_API_KEY_ID }}
+          NOTARY_API_ISSUER: ${{ vars.ASC_API_ISSUER_ID }}
+        run: task release:macos VERSION="$VERSION"
+
+      - name: Remove the keychain and keys
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP"/*.p8 "$RUNNER_TEMP"/*.provisionprofile
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: desktop-macos
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  # ----- Phones ----------------------------------------------------------------
+
+  android:
+    name: Build Android
+    needs: [version, check]
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android
+          cache-key: android
+
+      # Gradle 8 runs on 17 to 24; 17 is what the project builds Kotlin for.
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Firebase project and upload key
+        # Push: without google-services.json the app builds and gets no token,
+        # which is not a build to publish (the task refuses it).
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          KEYSTORE: ${{ secrets.ANDROID_UPLOAD_KEYSTORE }}
+        run: |
+          set -euo pipefail
+          test -n "$GOOGLE_SERVICES_JSON" || { echo "GOOGLE_SERVICES_JSON is not set." >&2; exit 1; }
+          test -n "$KEYSTORE" || { echo "ANDROID_UPLOAD_KEYSTORE is not set." >&2; exit 1; }
+          printf '%s' "$GOOGLE_SERVICES_JSON" > src-tauri/gen/android/app/google-services.json
+          printf '%s' "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/upload.jks"
+          echo "ANDROID_UPLOAD_KEYSTORE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+          # The runner carries several NDKs; the newest one is the one to build with.
+          echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+
+      - name: task release:android
+        env:
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ vars.ANDROID_UPLOAD_KEY_ALIAS || 'upload' }}
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: task release:android VERSION="$VERSION"
+
+      - name: Remove the upload key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.jks" src-tauri/gen/android/app/google-services.json
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: android
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  ios:
+    name: Build iOS
+    needs: [version, check]
+    runs-on: macos-26
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+        with:
+          targets: aarch64-apple-ios
+          cache-key: ios
+
+      - name: Certificate and profile
+        env:
+          CERTIFICATE: ${{ secrets.IOS_CERTIFICATE_P12 }}
+          PROFILE: ${{ secrets.IOS_PROVISION_PROFILE }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/distribution.p12"
+          printf '%s' "$PROFILE" | base64 --decode > "$RUNNER_TEMP/appstore.mobileprovision"
+          echo "IOS_RELEASE_CERTIFICATE=$RUNNER_TEMP/distribution.p12" >> "$GITHUB_ENV"
+          echo "IOS_RELEASE_PROFILE=$RUNNER_TEMP/appstore.mobileprovision" >> "$GITHUB_ENV"
+
+      - name: task release:ios
+        env:
+          APPLE_DEVELOPMENT_TEAM: ${{ vars.APPLE_TEAM_ID }}
+          IOS_RELEASE_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+        run: task release:ios VERSION="$VERSION"
+
+      - name: Remove the certificate and profile
+        if: always()
+        run: rm -f "$RUNNER_TEMP/distribution.p12" "$RUNNER_TEMP/appstore.mobileprovision"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ios
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  # ----- Publication -----------------------------------------------------------
+
+  release:
+    name: GitHub release ${{ needs.version.outputs.version }}
+    needs: [version, linux, windows, macos, android, ios]
+    runs-on: ubuntu-24.04
+    permissions:
+      # The release and its version tag.
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          path: dist
+          pattern: desktop-*
+          merge-multiple: true
+
+      - name: Checksums and their signature
+        # Linux has no notarization: the downloads are vouched for by the
+        # Almena release key's signature over their checksums.
+        working-directory: dist
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.RELEASE_GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.RELEASE_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          test -n "$GPG_PRIVATE_KEY" || { echo "RELEASE_GPG_PRIVATE_KEY is not set." >&2; exit 1; }
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --batch --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
+            --armor --detach-sign --output SHA256SUMS.asc SHA256SUMS
+          gpg --batch --verify SHA256SUMS.asc SHA256SUMS
+          rm -rf "$GNUPGHOME"
+
+      - name: Create the release and tag the commit
+        # Again on a version already released: its files are replaced, its
+        # tag stays where it is.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "v$VERSION" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "v$VERSION" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Almena Wallet $VERSION" \
+              --generate-notes
+          fi
+          {
+            echo "### Released $VERSION"
+            echo
+            echo "- GitHub release \`v$VERSION\` on \`${GITHUB_SHA::7}\`"
+            (cd dist && for f in *; do echo "- \`$f\`"; done)
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  google-play:
+    name: Google Play
+    needs: [version, release]
+    if: github.event_name == 'push' || inputs.stores
+    runs-on: ubuntu-24.04
+    environment: stores
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: android
+          path: dist
+
+      - name: Upload
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: id.almena.wallet
+          releaseFiles: dist/almena-wallet-${{ needs.version.outputs.version }}.aab
+          releaseName: ${{ needs.version.outputs.version }}
+          # R8's map from the shrunk names back to the real ones, for Play's
+          # crash reports.
+          mappingFile: dist/almena-wallet-${{ needs.version.outputs.version }}-mapping.txt
+          # internal, alpha (closed), beta (open) or production; promoted
+          # further by hand in Play Console.
+          track: ${{ vars.PLAY_TRACK || 'internal' }}
+          # draft while the app has never been reviewed: Play refuses anything
+          # else until then.
+          status: ${{ vars.PLAY_RELEASE_STATUS || 'completed' }}
+
+  app-store:
+    name: App Store Connect
+    needs: [version, release]
+    if: github.event_name == 'push' || inputs.stores
+    runs-on: macos-26
+    environment: stores
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ios
+          path: dist
+
+      - name: Upload to TestFlight
+        # The build lands in App Store Connect and TestFlight; sending it to
+        # review, with its notes and screenshots, is done there by hand.
+        env:
+          KEY: ${{ secrets.ASC_API_KEY_P8 }}
+          KEY_ID: ${{ vars.ASC_API_KEY_ID }}
+          ISSUER_ID: ${{ vars.ASC_API_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          keys="$RUNNER_TEMP/private_keys"
+          mkdir -p "$keys"
+          printf '%s\n' "$KEY" > "$keys/AuthKey_${KEY_ID}.p8"
+          export API_PRIVATE_KEYS_DIR="$keys"
+          xcrun altool --upload-app --type ios --file "dist/almena-wallet-${VERSION}.ipa" \
+            --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID"
+          rm -rf "$keys"
